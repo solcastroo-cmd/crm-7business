@@ -42,7 +42,10 @@ function extractData(lead, msg) {
   return lead;
 }
 
-// ─── Claude AI ────────────────────────────────────────────────────────────────
+// ─── Ollama AI (local) ───────────────────────────────────────────────────────
+const OLLAMA_URL = process.env.OLLAMA_URL || "http://localhost:11434";
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "llama3.2";
+
 async function askGroq(lead, message) {
   const system = `Você é um vendedor profissional de automóveis da 7Business Pro.
 Objetivo: qualificar o cliente descobrindo orçamento, tipo de veículo e forma de pagamento.
@@ -52,25 +55,19 @@ Seja breve, natural e persuasivo. Máximo 2 frases.`;
 
   try {
     const res = await axios.post(
-      "https://api.groq.com/openai/v1/chat/completions",
+      `${OLLAMA_URL}/api/chat`,
       {
-        model: "llama-3.3-70b-versatile",
-        max_tokens: 150,
+        model: OLLAMA_MODEL,
+        stream: false,
         messages: [
           { role: "system", content: system },
           { role: "user", content: `${context}\n\nCliente disse: "${message}"` }
         ],
-      },
-      {
-        headers: {
-          "Authorization": `Bearer ${GROQ_API_KEY}`,
-          "content-type": "application/json",
-        },
       }
     );
-    return res.data.choices[0].message.content;
+    return res.data.message.content;
   } catch (e) {
-    console.error("Groq error:", e.message);
+    console.error("Ollama error:", e.message);
     return "Olá! Como posso te ajudar a encontrar o carro ideal?";
   }
 }
@@ -267,11 +264,11 @@ app.post("/webhook/whatsapp", async (req, res) => {
       lead.history.push({ from: "7business", message: reply, ts: Date.now() });
 
       // Enviar resposta via Meta WhatsApp API
-      if (process.env.WA_PHONE_ID && process.env.WA_TOKEN) {
+      if (process.env.WHATSAPP_PHONE_NUMBER_ID && process.env.WHATSAPP_TOKEN) {
         await axios.post(
-          `https://graph.facebook.com/v19.0/${process.env.WA_PHONE_ID}/messages`,
+          `https://graph.facebook.com/v19.0/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`,
           { messaging_product: "whatsapp", to: msg.from, type: "text", text: { body: reply } },
-          { headers: { Authorization: `Bearer ${process.env.WA_TOKEN}` } }
+          { headers: { Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}` } }
         ).catch(e => console.error("[WhatsApp] Erro envio:", e.message));
       }
       console.log(`[WhatsApp] ${msg.from}: ${text} → ${reply}`);
@@ -285,7 +282,7 @@ app.post("/webhook/whatsapp", async (req, res) => {
 app.get("/api/integrations", (req, res) => {
   res.json({
     whatsapp_twilio: { active: true, webhook: "/webhook", desc: "Twilio WhatsApp Sandbox" },
-    whatsapp_meta:  { active: !!process.env.WA_TOKEN, webhook: "/webhook/whatsapp", verify_token: WA_VERIFY_TOKEN, phone_id: process.env.WA_PHONE_ID || "pendente" },
+    whatsapp_meta:  { active: !!process.env.WHATSAPP_TOKEN, webhook: "/webhook/whatsapp", verify_token: WA_VERIFY_TOKEN, phone_id: process.env.WHATSAPP_PHONE_NUMBER_ID || "pendente" },
     instagram:      { active: !!process.env.IG_PAGE_TOKEN, webhook: "/webhook/instagram", verify_token: IG_VERIFY_TOKEN },
     groq_ai:        { active: !!GROQ_API_KEY, model: "llama-3.3-70b-versatile" },
   });
