@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>7Business Pro CRM</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; color: #222; }
+header { background: linear-gradient(135deg, #1a1a2e, #16213e); color: #fff; padding: 14px 24px; display: flex; align-items: center; justify-content: space-between; }
+header h1 { font-size: 1.2rem; letter-spacing: 1px; }
+header span { font-size: 0.78rem; opacity: 0.7; }
+
+.tabs { display: flex; gap: 0; background: #fff; border-bottom: 2px solid #e0e0e0; padding: 0 24px; }
+.tab { padding: 12px 20px; cursor: pointer; font-size: 0.88rem; font-weight: 600; color: #888; border-bottom: 3px solid transparent; margin-bottom: -2px; }
+.tab.active { color: #2d89ef; border-bottom-color: #2d89ef; }
+.tab:hover { color: #2d89ef; }
+
+.page { display: none; }
+.page.active { display: block; }
+
+/* Métricas */
+.metrics { display: flex; gap: 12px; padding: 16px 24px; flex-wrap: wrap; }
+.metric-card { background: #fff; border-radius: 10px; padding: 14px 20px; flex: 1; min-width: 130px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); text-align: center; }
+.metric-card .val { font-size: 1.8rem; font-weight: 700; color: #2d89ef; }
+.metric-card .lbl { font-size: 0.72rem; color: #888; margin-top: 4px; }
+
+/* Kanban */
+.kanban { display: flex; gap: 12px; padding: 0 24px 24px; overflow-x: auto; }
+.column { background: #e4e8f0; border-radius: 10px; padding: 12px; min-width: 200px; width: 200px; flex-shrink: 0; }
+.column h3 { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: #555; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 2px solid #c8cfe0; display: flex; justify-content: space-between; }
+.column h3 .count { background: #2d89ef; color: #fff; border-radius: 10px; padding: 1px 7px; font-size: 0.68rem; }
+.card { background: #fff; border-radius: 8px; padding: 10px; margin-bottom: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); cursor: grab; font-size: 0.8rem; border-left: 3px solid #2d89ef; }
+.card:active { cursor: grabbing; opacity: 0.8; }
+.card .name { font-weight: 700; font-size: 0.88rem; margin-bottom: 4px; }
+.card .info { color: #666; margin-bottom: 2px; font-size: 0.78rem; }
+.card .badges { margin-top: 6px; display: flex; gap: 4px; flex-wrap: wrap; }
+.badge { display: inline-block; border-radius: 4px; padding: 1px 6px; font-size: 0.68rem; font-weight: 600; }
+.badge-wa  { background: #e8f9f0; color: #25d366; }
+.badge-ig  { background: #fce8f6; color: #c13584; }
+.badge-seller { background: #e8f4ff; color: #2d89ef; }
+.drag-over { background: #d0daf0; }
+
+/* Integrações */
+.integrations { padding: 20px 24px; display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
+.int-card { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+.int-card h3 { font-size: 1rem; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
+.int-card .status { font-size: 0.75rem; margin-bottom: 14px; }
+.status-on  { color: #22c55e; font-weight: 700; }
+.status-off { color: #f59e0b; font-weight: 700; }
+.int-card label { display: block; font-size: 0.78rem; color: #666; margin-bottom: 3px; margin-top: 10px; }
+.int-card input { width: 100%; padding: 7px 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 0.82rem; font-family: monospace; }
+.int-card .webhook-url { background: #f5f5f5; border-radius: 6px; padding: 8px 10px; font-family: monospace; font-size: 0.78rem; color: #333; display: flex; justify-content: space-between; align-items: center; margin-top: 10px; }
+.int-card .webhook-url button { background: #2d89ef; color: #fff; border: none; border-radius: 4px; padding: 3px 10px; font-size: 0.72rem; cursor: pointer; }
+.int-steps { margin-top: 12px; font-size: 0.78rem; color: #555; padding-left: 16px; }
+.int-steps li { margin-bottom: 4px; }
+.btn-save { background: #2d89ef; color: #fff; border: none; padding: 8px 18px; border-radius: 6px; cursor: pointer; font-size: 0.82rem; margin-top: 12px; }
+.btn-save:hover { background: #1a6ec8; }
+.ig-icon { background: linear-gradient(45deg,#f09433,#e6683c,#dc2743,#cc2366,#bc1888); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+
+/* Teste */
+.test-panel { background: #fff; margin: 0 24px 24px; border-radius: 10px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+.test-panel h2 { font-size: 0.95rem; margin-bottom: 12px; }
+.test-panel select, .test-panel input, .test-panel textarea { width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 6px; margin-bottom: 8px; font-size: 0.85rem; }
+.test-panel button { background: #2d89ef; color: #fff; border: none; padding: 9px 20px; border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
+#test-result { margin-top: 10px; background: #f0f7ff; border-radius: 6px; padding: 10px; font-size: 0.82rem; display: none; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>&#x1F3CE; 7Business Pro CRM</h1>
+  <span id="clock"></span>
+</header>
+
+<div class="tabs">
+  <div class="tab active" onclick="showTab('kanban')">&#x1F4CB; Kanban</div>
+  <div class="tab" onclick="showTab('integrations')">&#x1F517; Integrações</div>
+  <div class="tab" onclick="showTab('test')">&#x1F4AC; Testar IA</div>
+</div>
+
+<!-- KANBAN -->
+<div id="tab-kanban" class="page active">
+  <div class="metrics" id="metrics"></div>
+  <div class="kanban" id="kanban"></div>
+</div>
+
+<!-- INTEGRAÇÕES -->
+<div id="tab-integrations" class="page">
+  <div class="integrations" id="integrations-panel">
+
+    <!-- WhatsApp Twilio -->
+    <div class="int-card">
+      <h3>&#x1F4F1; WhatsApp <small style="font-size:0.7rem;color:#888">(Twilio)</small></h3>
+      <div class="status status-on" id="wa-twilio-status">&#x2705; Ativo — sandbox gratuito</div>
+      <label>Webhook URL (cole no Twilio):</label>
+      <div class="webhook-url">
+        <span id="wa-twilio-url">http://localhost:3001/webhook</span>
+        <button onclick="copy('wa-twilio-url')">Copiar</button>
+      </div>
+      <ol class="int-steps">
+        <li>Acesse <b>console.twilio.com</b></li>
+        <li>Messaging → Try it out → WhatsApp</li>
+        <li>Cole a URL acima em "When a message comes in"</li>
+        <li>Envie "join &lt;sandbox-code&gt;" no WhatsApp para o número Twilio</li>
+      </ol>
+    </div>
+
+    <!-- WhatsApp Meta -->
+    <div class="int-card">
+      <h3>&#x1F4F2; WhatsApp <small style="font-size:0.7rem;color:#888">(Meta API oficial)</small></h3>
+      <div class="status status-off" id="wa-meta-status">&#x23F3; Pendente configuração</div>
+      <label>Webhook URL:</label>
+      <div class="webhook-url">
+        <span id="wa-meta-url">http://SEU_DOMINIO/webhook/whatsapp</span>
+        <button onclick="copy('wa-meta-url')">Copiar</button>
+      </div>
+      <label>Verify Token:</label>
+      <div class="webhook-url">
+        <span id="wa-verify">7business_wa_token</span>
+        <button onclick="copy('wa-verify')">Copiar</button>
+      </div>
+      <label>Phone ID (Meta):</label>
+      <input id="wa-phone-id" placeholder="Ex: 123456789012345">
+      <label>Access Token (Meta):</label>
+      <input id="wa-token" placeholder="EAAxxxxx...">
+      <button class="btn-save" onclick="saveWaMeta()">Salvar</button>
+      <ol class="int-steps" style="margin-top:12px">
+        <li>Acesse <b>developers.facebook.com</b></li>
+        <li>Crie app → WhatsApp Business</li>
+        <li>Configure webhook com a URL e verify token acima</li>
+        <li>Copie o Phone ID e Access Token</li>
+      </ol>
+    </div>
+
+    <!-- Instagram -->
+    <div class="int-card">
+      <h3><span class="ig-icon">&#x1F4F7;</span> Instagram DM</h3>
+      <div class="status status-off" id="ig-status">&#x23F3; Pendente configuração</div>
+      <label>Webhook URL:</label>
+      <div class="webhook-url">
+        <span id="ig-url">http://SEU_DOMINIO/webhook/instagram</span>
+        <button onclick="copy('ig-url')">Copiar</button>
+      </div>
+      <label>Verify Token:</label>
+      <div class="webhook-url">
+        <span id="ig-verify">7business_ig_token</span>
+        <button onclick="copy('ig-verify')">Copiar</button>
+      </div>
+      <label>Page Access Token (Meta):</label>
+      <input id="ig-token" placeholder="EAAxxxxx...">
+      <button class="btn-save" onclick="saveIg()">Salvar</button>
+      <ol class="int-steps" style="margin-top:12px">
+        <li>Acesse <b>developers.facebook.com</b></li>
+        <li>Crie app → Instagram → Messenger API</li>
+        <li>Configure webhook com URL e verify token acima</li>
+        <li>Assine o evento <b>messages</b></li>
+        <li>Cole o Page Access Token</li>
+      </ol>
+    </div>
+
+    <!-- Groq IA -->
+    <div class="int-card">
+      <h3>&#x1F916; IA Groq (gratuito)</h3>
+      <div class="status status-on" id="groq-status">&#x2705; Ativo — llama-3.3-70b</div>
+      <label>Chave API:</label>
+      <div class="webhook-url">
+        <span>gsk_***...***</span>
+        <span style="font-size:0.72rem;color:#22c55e">Configurada</span>
+      </div>
+      <ol class="int-steps" style="margin-top:12px">
+        <li>Gratuito em <b>console.groq.com</b></li>
+        <li>~14.400 tokens/minuto grátis</li>
+        <li>Modelo: llama-3.3-70b-versatile</li>
+      </ol>
+    </div>
+
+  </div>
+</div>
+
+<!-- TESTE IA -->
+<div id="tab-test" class="page">
+  <div class="test-panel">
+    <h2>&#x1F4AC; Simular mensagem (WhatsApp / Instagram)</h2>
+    <select id="test-source">
+      <option value="whatsapp">WhatsApp</option>
+      <option value="instagram">Instagram</option>
+    </select>
+    <input type="text" id="test-phone" placeholder="Telefone/ID" value="whatsapp:+5585999999999">
+    <textarea id="test-msg" rows="2">Oi, quero um SUV ate 80 mil financiado</textarea>
+    <button onclick="sendTest()">Enviar para IA &#x1F916;</button>
+    <div id="test-result"></div>
+  </div>
+</div>
+
+<script>
+const STAGES=["Novo Lead","Contato Inicial","Interesse","Proposta","Negociacao","Fechado"];
+const COLORS={"Novo Lead":"#6c63ff","Contato Inicial":"#2d89ef","Interesse":"#f59e0b","Proposta":"#10b981","Negociacao":"#ef4444","Fechado":"#22c55e"};
+let leads=[];
+
+function showTab(name){
+  document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',['kanban','integrations','test'][i]===name));
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.getElementById('tab-'+name).classList.add('active');
+  if(name==='kanban') load();
+  if(name==='integrations') loadIntegrations();
+}
+
+async function load(){
+  try{
+    const[lr,mr]=await Promise.all([fetch("/api/leads"),fetch("/api/metrics")]);
+    leads=await lr.json(); const m=await mr.json();
+    renderMetrics(m); renderKanban();
+  }catch(e){}
+}
+
+function renderMetrics(m){
+  document.getElementById("metrics").innerHTML=
+    '<div class="metric-card"><div class="val">'+m.totalLeads+'</div><div class="lbl">Total Leads</div></div>'+
+    '<div class="metric-card"><div class="val">'+m.conversionRate+'</div><div class="lbl">Conversao</div></div>'+
+    STAGES.map(s=>'<div class="metric-card"><div class="val" style="font-size:1.3rem">'+(m.byStage[s]||0)+'</div><div class="lbl">'+s+'</div></div>').join("");
+}
+
+function renderKanban(){
+  const c=document.getElementById("kanban"); c.innerHTML="";
+  STAGES.forEach(stage=>{
+    const col=document.createElement("div"); col.className="column";
+    const sl=leads.filter(l=>l.stage===stage);
+    col.innerHTML='<h3>'+stage+'<span class="count">'+sl.length+'</span></h3>';
+    col.style.borderTop='3px solid '+(COLORS[stage]||'#999');
+    sl.forEach(l=>{
+      const card=document.createElement("div"); card.className="card"; card.draggable=true;
+      card.style.borderLeftColor=COLORS[stage]||'#999';
+      const srcBadge = l.source==='instagram'
+        ? '<span class="badge badge-ig">&#x1F4F7; Instagram</span>'
+        : '<span class="badge badge-wa">&#x1F4F1; WhatsApp</span>';
+      card.innerHTML='<div class="name">'+(l.name||"Sem nome")+'</div>'+
+        '<div class="info">'+l.phone+'</div>'+
+        '<div class="info">R$'+(l.budget||"-")+' | '+(l.type||"-")+' | '+(l.payment||"-")+'</div>'+
+        '<div class="badges">'+srcBadge+'<span class="badge badge-seller">'+(l.seller&&l.seller.name||"-")+'</span></div>';
+      card.ondragstart=e=>e.dataTransfer.setData("leadId",l.id);
+      col.appendChild(card);
+    });
+    col.ondragover=e=>{e.preventDefault();col.classList.add("drag-over");};
+    col.ondragleave=()=>col.classList.remove("drag-over");
+    col.ondrop=async e=>{
+      e.preventDefault();col.classList.remove("drag-over");
+      const id=e.dataTransfer.getData("leadId");
+      await fetch("/api/leads/"+id,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({stage})});
+      load();
+    };
+    c.appendChild(col);
+  });
+}
+
+async function loadIntegrations(){
+  try{
+    const r=await fetch("/api/integrations"); const d=await r.json();
+    if(d.whatsapp_meta.active) document.getElementById("wa-meta-status").innerHTML='&#x2705; Ativo';
+    if(d.instagram.active) document.getElementById("ig-status").innerHTML='&#x2705; Ativo';
+    // Atualizar URLs com hostname real
+    const host=window.location.origin;
+    document.getElementById("wa-meta-url").textContent=host+"/webhook/whatsapp";
+    document.getElementById("ig-url").textContent=host+"/webhook/instagram";
+  }catch(e){}
+}
+
+function copy(id){
+  const txt=document.getElementById(id).textContent;
+  navigator.clipboard.writeText(txt).then(()=>alert("Copiado!"));
+}
+
+function saveWaMeta(){alert("Configure WA_PHONE_ID e WA_TOKEN no arquivo .env e reinicie o servidor.");}
+function saveIg(){alert("Configure IG_PAGE_TOKEN no arquivo .env e reinicie o servidor.");}
+
+async function sendTest(){
+  const source=document.getElementById("test-source").value;
+  const phone=document.getElementById("test-phone").value;
+  const message=document.getElementById("test-msg").value;
+  try{
+    const r=await fetch("/api/test",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({phone,message,source})});
+    const d=await r.json();
+    const div=document.getElementById("test-result"); div.style.display="block";
+    const icon=source==='instagram'?'&#x1F4F7;':'&#x1F4F1;';
+    div.innerHTML=icon+' <b>IA respondeu:</b><br>'+d.reply+'<br><br><b>Lead qualificado:</b> '+(d.lead.name||"?")+" | "+(d.lead.type||"?")+" | R$"+(d.lead.budget||"?")+" | "+(d.lead.payment||"?");
+    load();
+  }catch(e){alert("Servidor offline. Rode: npm start");}
+}
+
+setInterval(()=>{document.getElementById("clock").textContent=new Date().toLocaleString("pt-BR");},1000);
+load();
+setInterval(load,5000);
+</script>
+</body>
+</html>

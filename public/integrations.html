@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>7Business — Integrações</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; color: #222; }
+header { background: linear-gradient(135deg, #1a1a2e, #16213e); color: #fff; padding: 14px 24px; display: flex; align-items: center; gap: 16px; }
+header a { color: #aac4ff; font-size: 0.82rem; text-decoration: none; }
+header h1 { font-size: 1.1rem; }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 20px; padding: 24px; }
+
+.card { background: #fff; border-radius: 14px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+.card-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.card-icon { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.6rem; flex-shrink: 0; }
+.icon-wa  { background: #e8f9f0; }
+.icon-ig  { background: linear-gradient(135deg,#fdf0e8,#fce8f8); }
+.icon-ai  { background: #e8f0ff; }
+.card h2  { font-size: 1rem; margin-bottom: 2px; }
+.card .sub { font-size: 0.78rem; color: #888; }
+
+.status { display: inline-flex; align-items: center; gap: 5px; font-size: 0.78rem; font-weight: 700; padding: 3px 10px; border-radius: 20px; margin-bottom: 16px; }
+.on  { background: #e8f9f0; color: #16a34a; }
+.off { background: #fff7e6; color: #d97706; }
+
+.steps { list-style: none; counter-reset: step; }
+.steps li { counter-increment: step; display: flex; gap: 10px; align-items: flex-start; margin-bottom: 12px; font-size: 0.85rem; }
+.steps li::before { content: counter(step); background: #2d89ef; color: #fff; border-radius: 50%; width: 22px; height: 22px; min-width: 22px; display: flex; align-items: center; justify-content: center; font-size: 0.72rem; font-weight: 700; }
+
+.btn { display: inline-flex; align-items: center; gap: 6px; padding: 9px 18px; border-radius: 8px; font-size: 0.85rem; font-weight: 600; cursor: pointer; text-decoration: none; border: none; margin-top: 4px; }
+.btn-green { background: #25d366; color: #fff; }
+.btn-ig    { background: linear-gradient(135deg,#833ab4,#fd1d1d,#fcb045); color: #fff; }
+.btn-blue  { background: #2d89ef; color: #fff; }
+.btn-gray  { background: #f0f0f0; color: #333; }
+.btn:hover { opacity: 0.9; }
+
+.url-box { background: #f5f7fa; border: 1px solid #e0e0e0; border-radius: 8px; padding: 10px 14px; font-family: monospace; font-size: 0.8rem; display: flex; justify-content: space-between; align-items: center; margin: 10px 0; word-break: break-all; }
+.url-box button { background: #2d89ef; color: #fff; border: none; border-radius: 6px; padding: 4px 12px; font-size: 0.75rem; cursor: pointer; flex-shrink: 0; margin-left: 8px; }
+
+.divider { border: none; border-top: 1px solid #f0f0f0; margin: 16px 0; }
+.tag { display: inline-block; background: #e8f4ff; color: #2d89ef; border-radius: 4px; padding: 1px 8px; font-size: 0.72rem; font-weight: 700; }
+.tag-free { background: #e8f9f0; color: #16a34a; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>&#x1F517; Integrações — 7Business Pro CRM</h1>
+  <a href="/">&#x2190; Voltar ao CRM</a>
+</header>
+
+<div class="grid">
+
+  <!-- WhatsApp -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-icon icon-wa">&#x1F4F1;</div>
+      <div>
+        <h2>WhatsApp Business</h2>
+        <div class="sub">Resposta automática com IA <span class="tag tag-free">GRÁTIS</span></div>
+      </div>
+    </div>
+    <div class="status on">&#x2705; Webhook pronto</div>
+    <p style="font-size:0.85rem;color:#555;margin-bottom:14px;">Use o <b>Z-API</b> — o jeito mais simples de conectar WhatsApp no Brasil. Sem Twilio, sem Meta, sem cartão.</p>
+    <ol class="steps">
+      <li>Acesse <b>z-api.io</b> e crie conta grátis (7 dias free)</li>
+      <li>Crie uma instância → escaneie o QR Code com seu WhatsApp</li>
+      <li>Em "Webhooks" cole a URL abaixo</li>
+      <li>Pronto — toda mensagem será respondida pela IA!</li>
+    </ol>
+    <div class="url-box">
+      <span id="wa-url">http://localhost:3001/webhook/whatsapp</span>
+      <button onclick="copy('wa-url')">Copiar</button>
+    </div>
+    <a href="https://z-api.io" target="_blank" class="btn btn-green">&#x1F680; Acessar Z-API</a>
+  </div>
+
+  <!-- Instagram -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-icon icon-ig">&#x1F4F7;</div>
+      <div>
+        <h2>Instagram DM</h2>
+        <div class="sub">Resposta automática no Direct <span class="tag">META</span></div>
+      </div>
+    </div>
+    <div class="status off">&#x23F3; Configuração necessária</div>
+    <p style="font-size:0.85rem;color:#555;margin-bottom:14px;">Conecte sua conta profissional do Instagram para responder DMs automaticamente com IA.</p>
+    <ol class="steps">
+      <li>Acesse <b>developers.facebook.com</b> → Criar app</li>
+      <li>Selecione <b>Instagram → Messenger API</b></li>
+      <li>Configure o Webhook com a URL abaixo</li>
+      <li>Verify Token: <b>7business_ig_token</b></li>
+      <li>Assine o evento <b>messages</b></li>
+      <li>Cole o Page Access Token no <b>.env</b></li>
+    </ol>
+    <div class="url-box">
+      <span id="ig-url">http://localhost:3001/webhook/instagram</span>
+      <button onclick="copy('ig-url')">Copiar</button>
+    </div>
+    <div class="url-box" style="margin-top:0">
+      <span>Verify Token: <b>7business_ig_token</b></span>
+      <button onclick="navigator.clipboard.writeText('7business_ig_token').then(()=>alert('Copiado!'))">Copiar</button>
+    </div>
+    <a href="https://developers.facebook.com" target="_blank" class="btn btn-ig">&#x1F4BB; Meta Developers</a>
+  </div>
+
+  <!-- IA Groq -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-icon icon-ai">&#x1F916;</div>
+      <div>
+        <h2>IA Groq — Llama 3.3</h2>
+        <div class="sub">Respostas inteligentes <span class="tag tag-free">GRÁTIS</span></div>
+      </div>
+    </div>
+    <div class="status on">&#x2705; Ativo e funcionando</div>
+    <p style="font-size:0.85rem;color:#555;margin-bottom:14px;">IA gratuita da Groq qualifica leads automaticamente: descobre orçamento, tipo de carro e forma de pagamento.</p>
+    <hr class="divider">
+    <div style="font-size:0.85rem;display:flex;flex-direction:column;gap:8px;">
+      <div>&#x1F9E0; Modelo: <b>llama-3.3-70b-versatile</b></div>
+      <div>&#x26A1; Velocidade: ultra-rápido (~0.3s)</div>
+      <div>&#x1F4CA; Limite: 14.400 tokens/minuto grátis</div>
+      <div>&#x1F511; Chave: <b style="color:#16a34a">Configurada</b></div>
+    </div>
+    <hr class="divider">
+    <a href="http://localhost:3001" class="btn btn-blue">&#x1F4AC; Testar IA agora</a>
+  </div>
+
+  <!-- Z-API guia rápido -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-icon icon-wa">&#x26A1;</div>
+      <div>
+        <h2>Como funciona?</h2>
+        <div class="sub">Fluxo completo de atendimento</div>
+      </div>
+    </div>
+    <ol class="steps">
+      <li><b>Cliente</b> envia mensagem no WhatsApp ou Instagram</li>
+      <li><b>Z-API / Meta</b> encaminha para o CRM via webhook</li>
+      <li><b>IA Groq</b> analisa e qualifica: orçamento, tipo, pagamento</li>
+      <li><b>Vendedor</b> é notificado — lead aparece no Kanban</li>
+      <li><b>IA responde</b> automaticamente no WhatsApp/Instagram</li>
+    </ol>
+    <hr class="divider">
+    <a href="http://localhost:3001" class="btn btn-blue" style="margin-right:8px">&#x1F4CB; Abrir Kanban</a>
+    <a href="http://localhost:3001#test" class="btn btn-gray">&#x1F9EA; Testar</a>
+  </div>
+
+</div>
+
+<script>
+function copy(id){
+  const txt=document.getElementById(id).textContent;
+  navigator.clipboard.writeText(txt).then(()=>alert("Copiado!"));
+}
+// Atualizar URLs com hostname real
+window.addEventListener('load',()=>{
+  const host=window.location.origin;
+  document.getElementById('wa-url').textContent=host+'/webhook/whatsapp';
+  document.getElementById('ig-url').textContent=host+'/webhook/instagram';
+});
+</script>
+</body>
+</html>
