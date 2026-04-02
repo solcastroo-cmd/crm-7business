@@ -238,6 +238,91 @@ header{
 ::-webkit-scrollbar{width:5px;height:5px;}
 ::-webkit-scrollbar-track{background:transparent;}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
+
+/* ── ESTOQUE ──────────────────────────────────────────────────────── */
+.estoque-wrap{padding:16px 20px;}
+.estoque-toolbar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:center;}
+.estoque-toolbar .search{width:240px;}
+.est-select{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:#e0e0e0;font-size:12px;cursor:pointer;}
+.est-select:focus{outline:none;border-color:#2d89ef;}
+.est-btn{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:7px 13px;color:var(--muted);font-size:12px;cursor:pointer;white-space:nowrap;}
+.est-btn:hover{border-color:#2d89ef;color:#60a5fa;}
+.est-btn.primary{background:#2d89ef;border-color:#2d89ef;color:#fff;}
+.est-btn.primary:hover{background:#1a6ec8;}
+.est-count{font-size:12px;color:var(--muted);margin-left:auto;}
+
+/* Vehicle Grid */
+.veiculo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;}
+.vcard{
+  background:var(--panel);border:1px solid var(--border);border-radius:12px;
+  overflow:hidden;cursor:pointer;transition:transform .12s,box-shadow .12s;
+  position:relative;
+}
+.vcard:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,0,0,.35);}
+.vcard-photo{
+  height:160px;background:#151821;display:flex;align-items:center;justify-content:center;
+  font-size:40px;position:relative;overflow:hidden;
+}
+.vcard-photo img{width:100%;height:100%;object-fit:cover;position:absolute;inset:0;}
+.vcard-status{
+  position:absolute;top:10px;right:10px;
+  border-radius:6px;padding:3px 9px;font-size:11px;font-weight:700;
+}
+.s-disp{background:#0d3b1e;color:#4ade80;}
+.s-res{background:#3b2400;color:#fb923c;}
+.s-vend{background:#1c0d0d;color:#f87171;}
+.vcard-body{padding:14px;}
+.vcard-title{font-size:14px;font-weight:700;color:#fff;margin-bottom:3px;}
+.vcard-sub{font-size:11px;color:var(--muted);margin-bottom:10px;}
+.vcard-price{font-size:18px;font-weight:800;color:#4ade80;margin-bottom:8px;}
+.vcard-price .old{font-size:12px;color:var(--muted);text-decoration:line-through;margin-left:6px;font-weight:400;}
+.vcard-meta{display:flex;flex-wrap:wrap;gap:5px;}
+.vchip{background:#151821;border:1px solid var(--border);border-radius:5px;padding:2px 8px;font-size:10px;color:var(--muted);}
+
+/* Vehicle Detail Sidebar */
+.vdetail-photo-wrap{height:200px;background:#151821;display:flex;align-items:center;justify-content:center;font-size:60px;position:relative;margin:-20px -20px 0;overflow:hidden;border-radius:0;}
+.vdetail-photo-wrap img{width:100%;height:100%;object-fit:cover;}
+.vdetail-nav{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);display:flex;gap:5px;}
+.vdetail-dot{width:7px;height:7px;background:rgba(255,255,255,.4);border-radius:50%;cursor:pointer;transition:.15s;}
+.vdetail-dot.active{background:#fff;}
+.vdetail-price{padding:16px 0 10px;}
+.vdetail-price .main{font-size:22px;font-weight:800;color:#4ade80;}
+.vdetail-price .promo{font-size:12px;color:#fb923c;margin-top:2px;}
+.vtabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:14px;}
+.vtab{padding:6px 12px;font-size:12px;font-weight:600;color:var(--muted);cursor:pointer;border-radius:6px 6px 0 0;border-bottom:2px solid transparent;}
+.vtab.active{color:#60a5fa;border-bottom-color:#2d89ef;}
+.vtab-panel{display:none;}
+.vtab-panel.active{display:block;}
+.opcionais-list{display:flex;flex-wrap:wrap;gap:6px;}
+.op-tag{background:#151821;border:1px solid var(--border);border-radius:5px;padding:3px 9px;font-size:11px;color:#e0e0e0;}
+
+/* Vehicle Modal */
+.modal-lg{width:640px;max-width:95vw;max-height:90vh;overflow-y:auto;}
+.modal-tabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:20px;}
+.modal-tab{padding:7px 14px;font-size:12px;font-weight:600;color:var(--muted);cursor:pointer;border-radius:6px 6px 0 0;border-bottom:2px solid transparent;}
+.modal-tab.active{color:#60a5fa;border-bottom-color:#2d89ef;}
+.modal-tab-panel{display:none;}
+.modal-tab-panel.active{display:block;}
+.form-row textarea{width:100%;background:#151821;border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:#e0e0e0;font-size:13px;resize:vertical;min-height:70px;}
+.form-row textarea:focus{outline:none;border-color:#2d89ef;}
+.tags-input-wrap{background:#151821;border:1px solid var(--border);border-radius:8px;padding:6px 10px;display:flex;flex-wrap:wrap;gap:5px;min-height:42px;cursor:text;}
+.tags-input-wrap:focus-within{border-color:#2d89ef;}
+.tags-input-wrap .ti{background:none;border:none;color:#e0e0e0;font-size:13px;outline:none;min-width:120px;flex:1;}
+.tip-tag{background:#1e2235;border:1px solid var(--border);border-radius:4px;padding:2px 7px;font-size:11px;color:#e0e0e0;display:inline-flex;align-items:center;gap:4px;}
+.tip-tag button{background:none;border:none;color:var(--muted);cursor:pointer;font-size:12px;padding:0;line-height:1;}
+.photos-drop{border:2px dashed var(--border);border-radius:10px;padding:24px;text-align:center;font-size:12px;color:var(--muted);margin-bottom:10px;transition:.15s;cursor:pointer;}
+.photos-drop:hover,.photos-drop.drag-active{border-color:#2d89ef;color:#60a5fa;}
+.photos-preview{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
+.photo-thumb{width:70px;height:70px;object-fit:cover;border-radius:6px;border:1px solid var(--border);position:relative;}
+.photo-thumb-wrap{position:relative;}
+.photo-thumb-wrap .rm{position:absolute;top:-5px;right:-5px;background:#7c1a1a;color:#fff;border:none;border-radius:50%;width:17px;height:17px;cursor:pointer;font-size:10px;display:flex;align-items:center;justify-content:center;}
+
+/* Vincular veículo no sidebar de lead */
+.link-veiculo{margin-top:8px;}
+.link-veiculo select{width:100%;background:#151821;border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:#e0e0e0;font-size:13px;}
+.link-veiculo select:focus{outline:none;border-color:#2d89ef;}
+.veiculo-linked{background:#0d3b1e;border:1px solid #1a5c2e;border-radius:8px;padding:10px 12px;font-size:12px;color:#4ade80;margin-top:8px;display:flex;justify-content:space-between;align-items:center;}
+.veiculo-linked button{background:none;border:none;color:#4ade80;cursor:pointer;font-size:11px;text-decoration:underline;}
 </style>
 </head>
 <body>
@@ -253,6 +338,7 @@ header{
   </div>
   <div class="h-tabs">
     <div class="h-tab active" onclick="showTab('kanban')">📋 Kanban</div>
+    <div class="h-tab" onclick="showTab('estoque')">🚗 Estoque</div>
     <div class="h-tab" onclick="showTab('integrations')">🔗 Integrações</div>
     <div class="h-tab" onclick="showTab('test')">🤖 Testar IA</div>
   </div>
@@ -323,6 +409,158 @@ header{
   </div>
 </div>
 
+<!-- ESTOQUE PAGE -->
+<div id="tab-estoque" class="page">
+  <div class="estoque-wrap">
+    <div class="estoque-toolbar">
+      <input class="search" type="text" id="estSearch" placeholder="🔍 Buscar marca, modelo, placa..." oninput="renderEstoque()">
+      <select class="est-select" id="estStatus" onchange="renderEstoque()">
+        <option value="">Todos os status</option>
+        <option value="Disponível">Disponível</option>
+        <option value="Reservado">Reservado</option>
+        <option value="Vendido">Vendido</option>
+      </select>
+      <select class="est-select" id="estTipo" onchange="renderEstoque()">
+        <option value="">0km e Seminovos</option>
+        <option value="0km">0km</option>
+        <option value="Seminovo">Seminovo</option>
+      </select>
+      <select class="est-select" id="estPreco" onchange="renderEstoque()">
+        <option value="">Qualquer preço</option>
+        <option value="0-30000">Até R$30.000</option>
+        <option value="30000-60000">R$30k – R$60k</option>
+        <option value="60000-100000">R$60k – R$100k</option>
+        <option value="100000-9999999">Acima de R$100k</option>
+      </select>
+      <span class="est-count" id="estCount">0 veículos</span>
+      <label class="est-btn" for="csvImport" title="Importar CSV">📥 Importar CSV</label>
+      <input type="file" id="csvImport" accept=".csv" style="display:none" onchange="importCSV(this)">
+      <button class="est-btn" onclick="exportCSV()">📤 Exportar</button>
+      <button class="est-btn primary" onclick="openVeiculoModal()">+ Novo Veículo</button>
+    </div>
+    <div class="veiculo-grid" id="veiculoGrid"></div>
+  </div>
+</div>
+
+<!-- VEICULO DETAIL SIDEBAR -->
+<div class="overlay" id="vOverlay" onclick="closeVDetail()"></div>
+<div class="sidebar" id="vSidebar">
+  <div class="sb-head" style="padding-bottom:10px;">
+    <div>
+      <h2 id="vsb-title">Veículo</h2>
+      <div class="sub" id="vsb-sub"></div>
+    </div>
+    <button class="sb-close" onclick="closeVDetail()">✕</button>
+  </div>
+  <div class="sb-body" style="padding-top:0">
+    <div class="vdetail-photo-wrap" id="vsb-photos"><span>🚗</span></div>
+    <div class="vdetail-price" id="vsb-price"></div>
+    <div class="vtabs">
+      <div class="vtab active" onclick="switchVTab(0)">Ficha</div>
+      <div class="vtab" onclick="switchVTab(1)">Opcionais</div>
+      <div class="vtab" onclick="switchVTab(2)">Leads</div>
+    </div>
+    <div class="vtab-panel active" id="vtab-0"></div>
+    <div class="vtab-panel" id="vtab-1"></div>
+    <div class="vtab-panel" id="vtab-2"></div>
+    <div class="sb-btn" style="margin-top:16px">
+      <button class="btn-primary" id="vsb-edit-btn" onclick="editCurrentVeiculo()">✏️ Editar</button>
+      <button class="btn-danger" id="vsb-del-btn" onclick="deleteCurrentVeiculo()">Arquivar</button>
+    </div>
+  </div>
+</div>
+
+<!-- VEICULO MODAL (Cadastro / Edição) -->
+<div class="modal-wrap" id="veiculoModal">
+  <div class="modal modal-lg">
+    <h3 id="vm-title">+ Novo Veículo</h3>
+    <div class="modal-tabs">
+      <div class="modal-tab active" onclick="switchModalTab(0)">🚘 Identificação</div>
+      <div class="modal-tab" onclick="switchModalTab(1)">💰 Comercial</div>
+      <div class="modal-tab" onclick="switchModalTab(2)">🔧 Técnico</div>
+      <div class="modal-tab" onclick="switchModalTab(3)">📷 Mídia</div>
+    </div>
+
+    <!-- Tab 0: Identificação -->
+    <div class="modal-tab-panel active" id="mtab-0">
+      <div class="form-grid">
+        <div class="form-row"><label>Placa *</label><input id="vm-placa" placeholder="ABC-1234" maxlength="8"></div>
+        <div class="form-row"><label>Tipo *</label>
+          <select id="vm-tipo"><option value="Seminovo">Seminovo</option><option value="0km">0km</option></select>
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="form-row"><label>Marca *</label><input id="vm-marca" placeholder="Chevrolet"></div>
+        <div class="form-row"><label>Modelo *</label><input id="vm-modelo" placeholder="Onix"></div>
+      </div>
+      <div class="form-row"><label>Versão</label><input id="vm-versao" placeholder="1.0 Turbo LT"></div>
+      <div class="form-grid">
+        <div class="form-row"><label>Ano Fabricação</label><input id="vm-ano-fab" type="number" placeholder="2023"></div>
+        <div class="form-row"><label>Ano Modelo</label><input id="vm-ano-mod" type="number" placeholder="2024"></div>
+      </div>
+      <div class="form-row"><label>Cor</label><input id="vm-cor" placeholder="Branco Polar"></div>
+      <div class="form-row"><label>Chassi</label><input id="vm-chassi" placeholder="9BWZZZ377VT00000"></div>
+      <div class="form-row"><label>RENAVAM</label><input id="vm-renavam" placeholder="00000000000"></div>
+    </div>
+
+    <!-- Tab 1: Comercial -->
+    <div class="modal-tab-panel" id="mtab-1">
+      <div class="form-grid">
+        <div class="form-row"><label>Preço de Venda *</label><input id="vm-preco" type="number" placeholder="65000"></div>
+        <div class="form-row"><label>Preço Promocional</label><input id="vm-preco-promo" type="number" placeholder="62500"></div>
+      </div>
+      <div class="form-row"><label>Status de Venda</label>
+        <select id="vm-status">
+          <option value="Disponível">Disponível</option>
+          <option value="Reservado">Reservado</option>
+          <option value="Vendido">Vendido</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Tab 2: Técnico -->
+    <div class="modal-tab-panel" id="mtab-2">
+      <div class="form-grid">
+        <div class="form-row"><label>Quilometragem</label><input id="vm-km" type="number" placeholder="0"></div>
+        <div class="form-row"><label>Motor</label><input id="vm-motor" placeholder="1.0 Turbo Flex"></div>
+      </div>
+      <div class="form-grid">
+        <div class="form-row"><label>Câmbio</label>
+          <select id="vm-cambio"><option value="Automático">Automático</option><option value="Manual">Manual</option></select>
+        </div>
+        <div class="form-row"><label>Combustível</label>
+          <select id="vm-comb"><option value="Flex">Flex</option><option value="Gasolina">Gasolina</option><option value="Diesel">Diesel</option><option value="Elétrico">Elétrico</option><option value="Híbrido">Híbrido</option></select>
+        </div>
+      </div>
+      <div class="form-row"><label>Portas</label>
+        <select id="vm-portas"><option value="4">4 portas</option><option value="2">2 portas</option><option value="5">5 portas</option></select>
+      </div>
+      <div class="form-row">
+        <label>Opcionais (Enter para adicionar)</label>
+        <div class="tags-input-wrap" id="opcionais-wrap" onclick="document.getElementById('op-input').focus()">
+          <input id="op-input" class="ti" placeholder="Digite um opcional e pressione Enter..." onkeydown="addOpcional(event)">
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 3: Mídia -->
+    <div class="modal-tab-panel" id="mtab-3">
+      <div class="form-row">
+        <label>Fotos (URLs, uma por linha)</label>
+        <textarea id="vm-fotos" rows="5" placeholder="https://exemplo.com/foto1.jpg&#10;https://exemplo.com/foto2.jpg"></textarea>
+      </div>
+      <div class="form-row"><label>Link do Vídeo (YouTube/Vimeo)</label>
+        <input id="vm-video" placeholder="https://youtube.com/watch?v=...">
+      </div>
+    </div>
+
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeVeiculoModal()">Cancelar</button>
+      <button class="btn-primary" onclick="saveVeiculo()">💾 Salvar Veículo</button>
+    </div>
+  </div>
+</div>
+
 <!-- OVERLAY + SIDEBAR -->
 <div class="overlay" id="overlay" onclick="closeSidebar()"></div>
 <div class="sidebar" id="sidebar">
@@ -337,6 +575,15 @@ header{
     <div class="sb-section">
       <h4>Informações do Lead</h4>
       <div id="sb-info"></div>
+    </div>
+    <div class="sb-section">
+      <h4>Veículo de Interesse</h4>
+      <div id="sb-veiculo-linked"></div>
+      <div class="link-veiculo">
+        <select id="sb-veiculo-select" onchange="linkVeiculoToLead()">
+          <option value="">— Vincular veículo do estoque —</option>
+        </select>
+      </div>
     </div>
     <div class="sb-section">
       <h4>Mover para Estágio</h4>
@@ -724,7 +971,7 @@ function filterLeads(){ renderKanban(); }
 // ── TABS ──────────────────────────────────────────────────────────────────────
 function showTab(name){
   document.querySelectorAll(".h-tab").forEach((t,i) =>
-    t.classList.toggle("active", ["kanban","integrations","test"][i] === name));
+    t.classList.toggle("active", ["kanban","estoque","integrations","test"][i] === name));
   document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
   document.getElementById("tab-"+name).classList.add("active");
   if(name === "kanban") load();
@@ -783,6 +1030,391 @@ setInterval(() => {
 
 load();
 setInterval(load, 6000);
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ESTOQUE DE VEÍCULOS
+// ══════════════════════════════════════════════════════════════════════════════
+let veiculos = [];
+let currentVeiculoId = null;
+let editingVeiculoId = null;
+let opcionaisList = [];
+let currentVtab = 0;
+let currentPhotoIdx = 0;
+
+// ── LOAD ──────────────────────────────────────────────────────────────────────
+async function loadEstoque(){
+  try{
+    const r = await fetch("/api/veiculos");
+    veiculos = await r.json();
+  }catch(e){ console.error("estoque load error",e); }
+  renderEstoque();
+}
+
+// ── FILTERS + RENDER GRID ─────────────────────────────────────────────────────
+function getFilteredVeiculos(){
+  let list = [...veiculos];
+  const q     = (document.getElementById("estSearch")||{}).value?.toLowerCase()||"";
+  const st    = (document.getElementById("estStatus")||{}).value||"";
+  const tp    = (document.getElementById("estTipo")||{}).value||"";
+  const preco = (document.getElementById("estPreco")||{}).value||"";
+  if(q) list = list.filter(v =>
+    (v.marca||"").toLowerCase().includes(q)||
+    (v.modelo||"").toLowerCase().includes(q)||
+    (v.versao||"").toLowerCase().includes(q)||
+    (v.placa||"").toLowerCase().includes(q)
+  );
+  if(st) list = list.filter(v => v.status_venda === st);
+  if(tp) list = list.filter(v => v.tipo === tp);
+  if(preco){
+    const [min,max] = preco.split("-").map(Number);
+    list = list.filter(v => (v.preco_venda||0) >= min && (v.preco_venda||0) <= max);
+  }
+  return list;
+}
+
+function renderEstoque(){
+  const list = getFilteredVeiculos();
+  document.getElementById("estCount").textContent = list.length + " veículo" + (list.length!==1?"s":"");
+  const grid = document.getElementById("veiculoGrid");
+  if(!list.length){
+    grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:60px;color:var(--muted)">
+      🚗<br><br>Nenhum veículo no estoque.<br>
+      <button class="est-btn primary" style="margin-top:14px" onclick="openVeiculoModal()">+ Cadastrar primeiro veículo</button>
+    </div>`;
+    return;
+  }
+  grid.innerHTML = list.map(v => {
+    const sCls = v.status_venda==="Disponível"?"s-disp":v.status_venda==="Reservado"?"s-res":"s-vend";
+    const thumb = (v.fotos&&v.fotos[0]) ? `<img src="${sanitize(v.fotos[0])}" onerror="this.style.display='none'">` : "";
+    const preco = v.preco_venda ? "R$ "+Number(v.preco_venda).toLocaleString("pt-BR") : "Consulte";
+    const promo = v.preco_promocional && v.preco_promocional < v.preco_venda
+      ? `<span class="old">R$ ${Number(v.preco_venda).toLocaleString("pt-BR")}</span>` : "";
+    const precoFinal = v.preco_promocional && v.preco_promocional < v.preco_venda
+      ? "R$ "+Number(v.preco_promocional).toLocaleString("pt-BR") : preco;
+    return `
+      <div class="vcard" onclick="openVDetail('${v.id}')">
+        <div class="vcard-photo">
+          ${thumb}<span style="${thumb?'display:none':''}">🚗</span>
+          <div class="vcard-status ${sCls}">${sanitize(v.status_venda||"Disponível")}</div>
+        </div>
+        <div class="vcard-body">
+          <div class="vcard-title">${sanitize(v.marca||"")} ${sanitize(v.modelo||"")}</div>
+          <div class="vcard-sub">${sanitize(v.versao||"")} ${v.ano_modelo||v.ano_fabricacao||""} · ${sanitize(v.cor||"")}</div>
+          <div class="vcard-price">${precoFinal}${promo}</div>
+          <div class="vcard-meta">
+            ${v.tipo?`<span class="vchip">${sanitize(v.tipo)}</span>`:""}
+            ${v.cambio?`<span class="vchip">${sanitize(v.cambio)}</span>`:""}
+            ${v.quilometragem!=null?`<span class="vchip">${Number(v.quilometragem).toLocaleString("pt-BR")} km</span>`:""}
+            ${v.combustivel?`<span class="vchip">${sanitize(v.combustivel)}</span>`:""}
+            ${v.portas?`<span class="vchip">${v.portas}p</span>`:""}
+            ${v.placa?`<span class="vchip">${sanitize(v.placa)}</span>`:""}
+          </div>
+        </div>
+      </div>`;
+  }).join("");
+}
+
+// ── DETAIL SIDEBAR ────────────────────────────────────────────────────────────
+async function openVDetail(id){
+  const v = veiculos.find(x => x.id===id);
+  if(!v) return;
+  currentVeiculoId = id;
+  currentPhotoIdx = 0;
+  document.getElementById("vsb-title").textContent = (v.marca||"")+" "+(v.modelo||"");
+  document.getElementById("vsb-sub").textContent = (v.versao||"")+" · "+(v.placa||"");
+
+  // Photos
+  const fotos = v.fotos||[];
+  const photoWrap = document.getElementById("vsb-photos");
+  if(fotos.length){
+    const imgs = fotos.map((f,i)=>`<img src="${sanitize(f)}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:${i===0?'block':'none'}" id="vsb-img-${i}">`).join("");
+    const dots = fotos.length>1?`<div class="vdetail-nav">${fotos.map((_,i)=>`<div class="vdetail-dot${i===0?' active':''}" onclick="switchPhoto(${i})" id="vsb-dot-${i}"></div>`).join("")}</div>`:"";
+    photoWrap.innerHTML = imgs+dots;
+  }else{
+    photoWrap.innerHTML="<span>🚗</span>";
+  }
+
+  // Price
+  const sCls = v.status_venda==="Disponível"?"s-disp":v.status_venda==="Reservado"?"s-res":"s-vend";
+  const preco = v.preco_promocional && v.preco_promocional < v.preco_venda
+    ? `<div class="main">R$ ${Number(v.preco_promocional).toLocaleString("pt-BR")}</div><div class="promo">De R$ ${Number(v.preco_venda).toLocaleString("pt-BR")} → PROMOÇÃO</div>`
+    : `<div class="main">R$ ${Number(v.preco_venda||0).toLocaleString("pt-BR")}</div>`;
+  document.getElementById("vsb-price").innerHTML = `
+    ${preco}
+    <span class="vcard-status ${sCls}" style="position:static;display:inline-block;margin-top:6px">${sanitize(v.status_venda||"Disponível")}</span>`;
+
+  // Tab 0: Ficha
+  const ficha = [
+    ["Placa", v.placa||"—"], ["Chassi", v.chassi||"—"], ["RENAVAM", v.renavam||"—"],
+    ["Marca/Modelo", (v.marca||"")+" "+(v.modelo||"")],
+    ["Versão", v.versao||"—"], ["Ano", (v.ano_fabricacao||"")+"/"+(v.ano_modelo||"")],
+    ["Cor", v.cor||"—"], ["Tipo", v.tipo||"—"],
+    ["Quilometragem", v.quilometragem!=null ? Number(v.quilometragem).toLocaleString("pt-BR")+" km" : "—"],
+    ["Motor", v.motor||"—"], ["Câmbio", v.cambio||"—"],
+    ["Combustível", v.combustivel||"—"], ["Portas", v.portas||"—"],
+    ["Cadastrado em", v.data_cadastro ? new Date(v.data_cadastro).toLocaleDateString("pt-BR") : "—"],
+  ];
+  document.getElementById("vtab-0").innerHTML = ficha.map(([k,val])=>
+    `<div class="info-row"><span class="k">${k}</span><span class="v">${sanitize(String(val))}</span></div>`
+  ).join("");
+
+  // Tab 1: Opcionais
+  const ops = Array.isArray(v.opcionais) ? v.opcionais : (typeof v.opcionais==="string" ? v.opcionais.split(",").filter(Boolean) : []);
+  document.getElementById("vtab-1").innerHTML = ops.length
+    ? `<div class="opcionais-list">${ops.map(op=>`<span class="op-tag">✓ ${sanitize(op.trim())}</span>`).join("")}</div>`
+    : `<span style="color:var(--muted);font-size:13px">Nenhum opcional cadastrado.</span>`;
+
+  // Tab 2: Leads interessados
+  try{
+    const lr = await fetch("/api/veiculos/"+id+"/leads");
+    const ll = await lr.json();
+    document.getElementById("vtab-2").innerHTML = ll.length
+      ? ll.map(l=>`<div class="info-row" style="cursor:pointer" onclick="closeVDetail();openSidebar(leads.find(x=>x.id==='${l.id}')||${JSON.stringify(l)})">
+          <span class="k">${sanitize(l.name||l.phone||"—")}</span>
+          <span class="v">${sanitize(l.stage||"")}</span>
+        </div>`).join("")
+      : `<span style="color:var(--muted);font-size:13px">Nenhum lead vinculado ainda.</span>`;
+  }catch(e){ document.getElementById("vtab-2").innerHTML="<span style='color:var(--muted)'>Erro ao carregar leads.</span>"; }
+
+  // Reset to first tab
+  switchVTab(0);
+  document.getElementById("vOverlay").classList.add("open");
+  document.getElementById("vSidebar").classList.add("open");
+}
+
+function switchPhoto(idx){
+  const fotos = (veiculos.find(v=>v.id===currentVeiculoId)||{}).fotos||[];
+  fotos.forEach((_,i)=>{
+    const el=document.getElementById("vsb-img-"+i);
+    const dot=document.getElementById("vsb-dot-"+i);
+    if(el) el.style.display=i===idx?"block":"none";
+    if(dot) dot.classList.toggle("active",i===idx);
+  });
+  currentPhotoIdx=idx;
+}
+
+function switchVTab(idx){
+  currentVtab=idx;
+  document.querySelectorAll(".vtab").forEach((t,i)=>t.classList.toggle("active",i===idx));
+  document.querySelectorAll(".vtab-panel").forEach((p,i)=>p.classList.toggle("active",i===idx));
+}
+
+function closeVDetail(){
+  document.getElementById("vOverlay").classList.remove("open");
+  document.getElementById("vSidebar").classList.remove("open");
+  currentVeiculoId=null;
+}
+
+async function deleteCurrentVeiculo(){
+  if(!currentVeiculoId) return;
+  if(!confirm("Arquivar este veículo?")) return;
+  await fetch("/api/veiculos/"+currentVeiculoId,{method:"DELETE"});
+  showToast("Veículo arquivado.");
+  closeVDetail();
+  loadEstoque();
+}
+
+function editCurrentVeiculo(){
+  if(!currentVeiculoId) return;
+  const v = veiculos.find(x=>x.id===currentVeiculoId);
+  if(!v) return;
+  closeVDetail();
+  openVeiculoModal(v);
+}
+
+// ── MODAL CADASTRO / EDIÇÃO ───────────────────────────────────────────────────
+function openVeiculoModal(v=null){
+  editingVeiculoId = v ? v.id : null;
+  opcionaisList = v ? (Array.isArray(v.opcionais)?[...v.opcionais]:(typeof v.opcionais==="string"?v.opcionais.split(",").filter(Boolean):[])) : [];
+
+  document.getElementById("vm-title").textContent = v ? "✏️ Editar Veículo" : "+ Novo Veículo";
+  // Reset tabs
+  switchModalTab(0);
+
+  // Fill fields
+  const set = (id,val) => { const el=document.getElementById(id); if(el) el.value=val||""; };
+  set("vm-placa",   v?.placa);   set("vm-tipo",    v?.tipo||"Seminovo");
+  set("vm-marca",   v?.marca);   set("vm-modelo",  v?.modelo);
+  set("vm-versao",  v?.versao);  set("vm-ano-fab", v?.ano_fabricacao);
+  set("vm-ano-mod", v?.ano_modelo);set("vm-cor",   v?.cor);
+  set("vm-chassi",  v?.chassi);  set("vm-renavam", v?.renavam);
+  set("vm-preco",   v?.preco_venda); set("vm-preco-promo", v?.preco_promocional);
+  set("vm-status",  v?.status_venda||"Disponível");
+  set("vm-km",      v?.quilometragem); set("vm-motor",  v?.motor);
+  set("vm-cambio",  v?.cambio||"Automático"); set("vm-comb", v?.combustivel||"Flex");
+  set("vm-portas",  v?.portas||"4");
+  set("vm-fotos",   Array.isArray(v?.fotos)?(v.fotos).join("\n"):"");
+  set("vm-video",   v?.video_url);
+
+  renderOpcionaisInput();
+  document.getElementById("veiculoModal").classList.add("open");
+}
+
+function closeVeiculoModal(){
+  document.getElementById("veiculoModal").classList.remove("open");
+  editingVeiculoId=null;
+  opcionaisList=[];
+}
+
+function switchModalTab(idx){
+  document.querySelectorAll(".modal-tab").forEach((t,i)=>t.classList.toggle("active",i===idx));
+  document.querySelectorAll(".modal-tab-panel").forEach((p,i)=>p.classList.toggle("active",i===idx));
+}
+
+function addOpcional(e){
+  if(e.key!=="Enter"&&e.key!==",") return;
+  e.preventDefault();
+  const v=document.getElementById("op-input").value.trim();
+  if(v && !opcionaisList.includes(v)){ opcionaisList.push(v); }
+  document.getElementById("op-input").value="";
+  renderOpcionaisInput();
+}
+function removeOpcional(idx){
+  opcionaisList.splice(idx,1);
+  renderOpcionaisInput();
+}
+function renderOpcionaisInput(){
+  const wrap=document.getElementById("opcionais-wrap");
+  const input=document.getElementById("op-input");
+  wrap.innerHTML="";
+  opcionaisList.forEach((op,i)=>{
+    const t=document.createElement("span");
+    t.className="tip-tag";
+    t.innerHTML=sanitize(op)+` <button type="button" onclick="removeOpcional(${i})">✕</button>`;
+    wrap.appendChild(t);
+  });
+  wrap.appendChild(input);
+  input.focus();
+}
+
+async function saveVeiculo(){
+  const marca = document.getElementById("vm-marca").value.trim();
+  const modelo= document.getElementById("vm-modelo").value.trim();
+  const placa = document.getElementById("vm-placa").value.trim();
+  if(!marca||!modelo){ showToast("Marca e Modelo são obrigatórios","error"); return; }
+
+  const fotosRaw = document.getElementById("vm-fotos").value;
+  const fotos = fotosRaw.split("\n").map(s=>s.trim()).filter(Boolean);
+
+  const body = {
+    placa:           placa,
+    tipo:            document.getElementById("vm-tipo").value,
+    marca, modelo,
+    versao:          document.getElementById("vm-versao").value.trim(),
+    ano_fabricacao:  Number(document.getElementById("vm-ano-fab").value)||undefined,
+    ano_modelo:      Number(document.getElementById("vm-ano-mod").value)||undefined,
+    cor:             document.getElementById("vm-cor").value.trim(),
+    chassi:          document.getElementById("vm-chassi").value.trim(),
+    renavam:         document.getElementById("vm-renavam").value.trim(),
+    preco_venda:     Number(document.getElementById("vm-preco").value)||undefined,
+    preco_promocional: Number(document.getElementById("vm-preco-promo").value)||undefined,
+    status_venda:    document.getElementById("vm-status").value,
+    quilometragem:   Number(document.getElementById("vm-km").value)||0,
+    motor:           document.getElementById("vm-motor").value.trim(),
+    cambio:          document.getElementById("vm-cambio").value,
+    combustivel:     document.getElementById("vm-comb").value,
+    portas:          Number(document.getElementById("vm-portas").value)||4,
+    opcionais:       [...opcionaisList],
+    fotos,
+    video_url:       document.getElementById("vm-video").value.trim(),
+  };
+
+  const url    = editingVeiculoId ? "/api/veiculos/"+editingVeiculoId : "/api/veiculos";
+  const method = editingVeiculoId ? "PATCH" : "POST";
+  const r = await fetch(url,{method,headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+  if(!r.ok){
+    const err = await r.json().catch(()=>({error:"Erro desconhecido"}));
+    showToast(err.error||"Erro ao salvar","error"); return;
+  }
+  showToast(editingVeiculoId ? "Veículo atualizado! ✅" : "Veículo cadastrado! 🚗");
+  closeVeiculoModal();
+  loadEstoque();
+}
+
+// ── CSV ───────────────────────────────────────────────────────────────────────
+function exportCSV(){
+  window.location.href="/api/veiculos/export";
+}
+
+async function importCSV(input){
+  const file = input.files[0];
+  if(!file) return;
+  const text = await file.text();
+  const r = await fetch("/api/veiculos/import",{
+    method:"POST",
+    headers:{"Content-Type":"text/csv"},
+    body: text
+  });
+  const d = await r.json();
+  showToast(`✅ Importados: ${d.imported} | Pulados (duplicados): ${d.skipped}`);
+  input.value="";
+  loadEstoque();
+}
+
+// ── VINCULAR VEÍCULO AO LEAD ──────────────────────────────────────────────────
+function populateVeiculoSelect(){
+  const sel = document.getElementById("sb-veiculo-select");
+  if(!sel) return;
+  sel.innerHTML = `<option value="">— Vincular veículo do estoque —</option>` +
+    veiculos.filter(v=>v.status_venda!=="Vendido").map(v=>
+      `<option value="${v.id}">${sanitize(v.marca)} ${sanitize(v.modelo)} ${sanitize(v.versao||"")} — ${sanitize(v.placa||"s/placa")} — R$${Number(v.preco_venda||0).toLocaleString("pt-BR")}</option>`
+    ).join("");
+}
+
+function renderLeadVeiculoLinked(lead){
+  const div = document.getElementById("sb-veiculo-linked");
+  if(!div) return;
+  if(lead.veiculo_interesse_id){
+    const v = veiculos.find(x=>x.id===lead.veiculo_interesse_id);
+    if(v){
+      div.innerHTML=`<div class="veiculo-linked">
+        🚗 ${sanitize(v.marca)} ${sanitize(v.modelo)} ${sanitize(v.versao||"")} · ${sanitize(v.placa||"")}
+        <button onclick="unlinkVeiculo()">Desvincular</button>
+      </div>`;
+      document.getElementById("sb-veiculo-select").value = v.id;
+      return;
+    }
+  }
+  div.innerHTML="";
+  document.getElementById("sb-veiculo-select").value="";
+}
+
+async function linkVeiculoToLead(){
+  if(!currentLeadId) return;
+  const vid = document.getElementById("sb-veiculo-select").value;
+  await fetch("/api/leads/"+currentLeadId,{
+    method:"PATCH",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({veiculo_interesse_id: vid||null})
+  });
+  const lead = leads.find(l=>l.id===currentLeadId);
+  if(lead){ lead.veiculo_interesse_id = vid||null; }
+  renderLeadVeiculoLinked(lead||{});
+  renderKanban();
+  showToast(vid ? "Veículo vinculado ao lead! 🚗" : "Vínculo removido.");
+}
+
+async function unlinkVeiculo(){
+  document.getElementById("sb-veiculo-select").value="";
+  await linkVeiculoToLead();
+}
+
+// ── PATCH openSidebar to include vehicle link section ────────────────────────
+const _origOpenSidebar = openSidebar;
+openSidebar = function(lead){
+  _origOpenSidebar(lead);
+  populateVeiculoSelect();
+  renderLeadVeiculoLinked(lead);
+};
+
+// ── TAB: load estoque when switching ─────────────────────────────────────────
+const _origShowTab = showTab;
+showTab = function(name){
+  _origShowTab(name);
+  if(name==="estoque") loadEstoque();
+};
+
+// Initial estoque load (background)
+loadEstoque();
 </script>
 </body>
 </html>

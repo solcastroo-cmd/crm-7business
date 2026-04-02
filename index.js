@@ -15,6 +15,8 @@ app.use(express.static(path.join(__dirname, "public")));
 
 // ─── Banco em memória ─────────────────────────────────────────────────────────
 let leads = [];
+let veiculos = [];
+
 const sellers = [
   { id: 1, name: "João" },
   { id: 2, name: "Maria" },
@@ -141,7 +143,13 @@ app.get("/api/metrics", (req, res) => res.json(getMetrics()));
 app.patch("/api/leads/:id", (req, res) => {
   const lead = leads.find((l) => l.id === req.params.id);
   if (!lead) return res.status(404).json({ error: "Lead não encontrado" });
+  const prevStage = lead.stage;
   Object.assign(lead, req.body);
+  // Auto-update vehicle status when lead is sold
+  if (prevStage !== "VENDIDO!" && lead.stage === "VENDIDO!" && lead.veiculo_interesse_id) {
+    const v = veiculos.find(v => v.id === lead.veiculo_interesse_id);
+    if (v) { v.status_venda = "Vendido"; v.data_venda = Date.now(); }
+  }
   res.json(lead);
 });
 
@@ -163,6 +171,99 @@ app.post("/api/test", async (req, res) => {
   const reply = await askGroq(lead, message);
   lead.history.push({ from: "7business", message: reply, ts: Date.now() });
   res.json({ lead, reply });
+});
+
+// ─── Veículos API ─────────────────────────────────────────────────────────────
+app.get("/api/veiculos", (req, res) => {
+  let list = [...veiculos];
+  const { status, tipo, q, precoMin, precoMax } = req.query;
+  if (status) list = list.filter(v => v.status_venda === status);
+  if (tipo)   list = list.filter(v => v.tipo === tipo);
+  if (q) {
+    const ql = q.toLowerCase();
+    list = list.filter(v =>
+      (v.marca||"").toLowerCase().includes(ql) ||
+      (v.modelo||"").toLowerCase().includes(ql) ||
+      (v.versao||"").toLowerCase().includes(ql) ||
+      (v.placa||"").toLowerCase().includes(ql)
+    );
+  }
+  if (precoMin) list = list.filter(v => (v.preco_venda||0) >= Number(precoMin));
+  if (precoMax) list = list.filter(v => (v.preco_venda||0) <= Number(precoMax));
+  res.json(list);
+});
+
+app.post("/api/veiculos", (req, res) => {
+  // Check unique placa
+  const { placa } = req.body;
+  if (placa && veiculos.find(v => v.placa === placa)) {
+    return res.status(409).json({ error: "Placa já cadastrada" });
+  }
+  const veiculo = {
+    id: nanoid(),
+    data_cadastro: Date.now(),
+    status_venda: "Disponível",
+    fotos: [],
+    opcionais: [],
+    ...req.body
+  };
+  veiculos.push(veiculo);
+  console.log(`[Estoque] Novo veículo: ${veiculo.marca} ${veiculo.modelo} ${veiculo.placa}`);
+  res.status(201).json(veiculo);
+});
+
+app.patch("/api/veiculos/:id", (req, res) => {
+  const v = veiculos.find(v => v.id === req.params.id);
+  if (!v) return res.status(404).json({ error: "Veículo não encontrado" });
+  // Check unique placa if changing
+  if (req.body.placa && req.body.placa !== v.placa && veiculos.find(x => x.placa === req.body.placa)) {
+    return res.status(409).json({ error: "Placa já cadastrada" });
+  }
+  Object.assign(v, req.body);
+  res.json(v);
+});
+
+app.delete("/api/veiculos/:id", (req, res) => {
+  const idx = veiculos.findIndex(v => v.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: "Veículo não encontrado" });
+  veiculos.splice(idx, 1);
+  res.json({ ok: true });
+});
+
+// CSV Export
+app.get("/api/veiculos/export", (req, res) => {
+  const headers = ["id","placa","marca","modelo","versao","ano_fabricacao","ano_modelo","cor","tipo","preco_venda","status_venda","quilometragem","motor","cambio","combustivel","portas"];
+  const rows = veiculos.map(v => headers.map(h => `"${String(v[h]||"").replace(/"/g,'""')}"`).join(","));
+  const csv = [headers.join(","), ...rows].join("\n");
+  res.setHeader("Content-Type","text/csv");
+  res.setHeader("Content-Disposition","attachment; filename=estoque.csv");
+  res.send(csv);
+});
+
+// CSV Import
+app.post("/api/veiculos/import", express.text({ type: "text/csv", limit: "2mb" }), (req, res) => {
+  try {
+    const lines = req.body.trim().split("\n");
+    const headers = lines[0].split(",").map(h => h.trim().replace(/^"|"$/g,""));
+    let imported = 0, skipped = 0;
+    for (let i = 1; i < lines.length; i++) {
+      const vals = lines[i].split(",").map(v => v.trim().replace(/^"|"$/g,""));
+      const obj = {};
+      headers.forEach((h, idx) => { obj[h] = vals[idx] || ""; });
+      if (obj.placa && veiculos.find(v => v.placa === obj.placa)) { skipped++; continue; }
+      veiculos.push({ id: nanoid(), data_cadastro: Date.now(), status_venda: obj.status_venda||"Disponível", fotos: [], opcionais: [], ...obj });
+      imported++;
+    }
+    res.json({ imported, skipped });
+  } catch(e) {
+    res.status(400).json({ error: "CSV inválido: " + e.message });
+  }
+});
+
+// Leads vinculados a um veículo
+app.get("/api/veiculos/:id/leads", (req, res) => {
+  const interested = leads.filter(l => l.veiculo_interesse_id === req.params.id);
+  res.json(interested);
 });
 
 // ─── Instagram Webhook ────────────────────────────────────────────────────────
