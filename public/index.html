@@ -3,293 +3,786 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>7Business Pro CRM</title>
+<title>Impacta CRM — Kanban</title>
 <style>
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; color: #222; }
-header { background: linear-gradient(135deg, #1a1a2e, #16213e); color: #fff; padding: 14px 24px; display: flex; align-items: center; justify-content: space-between; }
-header h1 { font-size: 1.2rem; letter-spacing: 1px; }
-header span { font-size: 0.78rem; opacity: 0.7; }
+/* ── RESET & BASE ─────────────────────────────────────────────────── */
+*{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --bg:#0f1117;--panel:#1a1d27;--border:#2d3148;--text:#e0e0e0;--muted:#8b8fa8;
+  --c-novo:#FFA500;--c-contato:#1E90FF;--c-visita:#9370DB;
+  --c-drive:#20B2AA;--c-negoc:#FFD700;--c-venda:#32CD32;--c-perdido:#DC143C;
+}
+body{font-family:'Segoe UI',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;}
 
-.tabs { display: flex; gap: 0; background: #fff; border-bottom: 2px solid #e0e0e0; padding: 0 24px; }
-.tab { padding: 12px 20px; cursor: pointer; font-size: 0.88rem; font-weight: 600; color: #888; border-bottom: 3px solid transparent; margin-bottom: -2px; }
-.tab.active { color: #2d89ef; border-bottom-color: #2d89ef; }
-.tab:hover { color: #2d89ef; }
+/* ── HEADER ──────────────────────────────────────────────────────── */
+header{
+  background:linear-gradient(135deg,#1a1d27,#252938);
+  border-bottom:1px solid var(--border);
+  padding:0 24px;height:56px;
+  display:flex;align-items:center;justify-content:space-between;
+  position:sticky;top:0;z-index:100;
+}
+.h-logo{display:flex;align-items:center;gap:10px;}
+.h-logo .icon{width:34px;height:34px;background:#2d89ef;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;}
+.h-logo strong{font-size:15px;color:#fff;letter-spacing:.5px;}
+.h-logo span{font-size:11px;color:var(--muted);}
+.h-tabs{display:flex;gap:2px;}
+.h-tab{padding:8px 16px;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;color:var(--muted);transition:.15s;}
+.h-tab.active,.h-tab:hover{background:#252938;color:#fff;}
+.h-tab.active{color:#60a5fa;}
+.h-right{display:flex;align-items:center;gap:12px;}
+.h-clock{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;}
+.h-add{background:#2d89ef;color:#fff;border:none;padding:7px 14px;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;}
+.h-add:hover{background:#1a6ec8;}
 
-.page { display: none; }
-.page.active { display: block; }
+/* ── PAGES ───────────────────────────────────────────────────────── */
+.page{display:none;}
+.page.active{display:block;}
 
-/* Métricas */
-.metrics { display: flex; gap: 12px; padding: 16px 24px; flex-wrap: wrap; }
-.metric-card { background: #fff; border-radius: 10px; padding: 14px 20px; flex: 1; min-width: 130px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); text-align: center; }
-.metric-card .val { font-size: 1.8rem; font-weight: 700; color: #2d89ef; }
-.metric-card .lbl { font-size: 0.72rem; color: #888; margin-top: 4px; }
+/* ── METRICS BAR ─────────────────────────────────────────────────── */
+.metrics{display:flex;gap:10px;padding:14px 20px;overflow-x:auto;}
+.metric-card{
+  background:var(--panel);border:1px solid var(--border);border-radius:10px;
+  padding:12px 18px;flex-shrink:0;min-width:120px;position:relative;overflow:hidden;
+}
+.metric-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--accent,#2d89ef);}
+.metric-card .val{font-size:22px;font-weight:700;color:#fff;}
+.metric-card .lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-top:3px;}
+.metric-card .delta{font-size:10px;margin-top:2px;}
+.delta.up{color:#4ade80;} .delta.down{color:#f87171;} .delta.n{color:var(--muted);}
 
-/* Kanban */
-.kanban { display: flex; gap: 12px; padding: 0 24px 24px; overflow-x: auto; }
-.column { background: #e4e8f0; border-radius: 10px; padding: 12px; min-width: 200px; width: 200px; flex-shrink: 0; }
-.column h3 { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: #555; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 2px solid #c8cfe0; display: flex; justify-content: space-between; }
-.column h3 .count { background: #2d89ef; color: #fff; border-radius: 10px; padding: 1px 7px; font-size: 0.68rem; }
-.card { background: #fff; border-radius: 8px; padding: 10px; margin-bottom: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); cursor: grab; font-size: 0.8rem; border-left: 3px solid #2d89ef; }
-.card:active { cursor: grabbing; opacity: 0.8; }
-.card .name { font-weight: 700; font-size: 0.88rem; margin-bottom: 4px; }
-.card .info { color: #666; margin-bottom: 2px; font-size: 0.78rem; }
-.card .badges { margin-top: 6px; display: flex; gap: 4px; flex-wrap: wrap; }
-.badge { display: inline-block; border-radius: 4px; padding: 1px 6px; font-size: 0.68rem; font-weight: 600; }
-.badge-wa  { background: #e8f9f0; color: #25d366; }
-.badge-ig  { background: #fce8f6; color: #c13584; }
-.badge-seller { background: #e8f4ff; color: #2d89ef; }
-.drag-over { background: #d0daf0; }
+/* ── KANBAN BOARD ────────────────────────────────────────────────── */
+.kanban-wrap{padding:0 16px 24px;overflow-x:auto;}
+.kanban{display:flex;gap:12px;min-width:max-content;align-items:flex-start;}
 
-/* Integrações */
-.integrations { padding: 20px 24px; display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
-.int-card { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
-.int-card h3 { font-size: 1rem; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
-.int-card .status { font-size: 0.75rem; margin-bottom: 14px; }
-.status-on  { color: #22c55e; font-weight: 700; }
-.status-off { color: #f59e0b; font-weight: 700; }
-.int-card label { display: block; font-size: 0.78rem; color: #666; margin-bottom: 3px; margin-top: 10px; }
-.int-card input { width: 100%; padding: 7px 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 0.82rem; font-family: monospace; }
-.int-card .webhook-url { background: #f5f5f5; border-radius: 6px; padding: 8px 10px; font-family: monospace; font-size: 0.78rem; color: #333; display: flex; justify-content: space-between; align-items: center; margin-top: 10px; }
-.int-card .webhook-url button { background: #2d89ef; color: #fff; border: none; border-radius: 4px; padding: 3px 10px; font-size: 0.72rem; cursor: pointer; }
-.int-steps { margin-top: 12px; font-size: 0.78rem; color: #555; padding-left: 16px; }
-.int-steps li { margin-bottom: 4px; }
-.btn-save { background: #2d89ef; color: #fff; border: none; padding: 8px 18px; border-radius: 6px; cursor: pointer; font-size: 0.82rem; margin-top: 12px; }
-.btn-save:hover { background: #1a6ec8; }
-.ig-icon { background: linear-gradient(45deg,#f09433,#e6683c,#dc2743,#cc2366,#bc1888); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+/* ── COLUMN ──────────────────────────────────────────────────────── */
+.col{
+  background:#151821;border:1px solid var(--border);border-radius:12px;
+  width:272px;flex-shrink:0;display:flex;flex-direction:column;
+  max-height:calc(100vh - 160px);
+}
+.col-head{
+  padding:12px 14px 10px;border-bottom:1px solid var(--border);
+  border-radius:12px 12px 0 0;position:relative;overflow:hidden;
+}
+.col-head::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:3px;
+  background:var(--col-color,#2d89ef);
+}
+.col-title{display:flex;align-items:center;gap:8px;margin-bottom:6px;}
+.col-title .icon{font-size:16px;}
+.col-title .name{font-size:13px;font-weight:700;color:#fff;}
+.col-title .cnt{
+  margin-left:auto;background:rgba(255,255,255,.08);color:var(--muted);
+  border-radius:12px;padding:2px 8px;font-size:11px;font-weight:700;
+}
+.col-summary{font-size:11px;color:var(--muted);line-height:1.5;}
 
-/* Teste */
-.test-panel { background: #fff; margin: 0 24px 24px; border-radius: 10px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
-.test-panel h2 { font-size: 0.95rem; margin-bottom: 12px; }
-.test-panel select, .test-panel input, .test-panel textarea { width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 6px; margin-bottom: 8px; font-size: 0.85rem; }
-.test-panel button { background: #2d89ef; color: #fff; border: none; padding: 9px 20px; border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
-#test-result { margin-top: 10px; background: #f0f7ff; border-radius: 6px; padding: 10px; font-size: 0.82rem; display: none; }
+.col-body{
+  padding:10px;overflow-y:auto;flex:1;
+  scrollbar-width:thin;scrollbar-color:var(--border) transparent;
+  min-height:80px;
+}
+.col-body.drag-over{background:rgba(45,137,239,.06);border-radius:8px;}
+
+/* ── LEAD CARD ───────────────────────────────────────────────────── */
+.card{
+  background:var(--panel);border:1px solid var(--border);border-radius:10px;
+  padding:12px;margin-bottom:8px;cursor:grab;position:relative;overflow:hidden;
+  transition:transform .12s,box-shadow .12s;
+  border-left:3px solid var(--card-color,#2d89ef);
+}
+.card::after{content:'';position:absolute;top:0;left:0;right:0;bottom:0;pointer-events:none;}
+.card:hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(0,0,0,.3);}
+.card:active{cursor:grabbing;transform:scale(.98);opacity:.85;}
+.card.urgent{background:#1c0d0d;border-color:#7c1a1a;}
+.card.urgent::after{background:rgba(220,20,60,.04);}
+.card.dragging{opacity:.4;}
+
+.card-header{margin-bottom:8px;}
+.card-vehicle{font-size:14px;font-weight:700;color:#fff;line-height:1.3;}
+.card-client{font-size:12px;color:#60a5fa;margin-top:2px;}
+
+.card-info{display:flex;flex-direction:column;gap:4px;margin-bottom:10px;}
+.card-row{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--muted);}
+.card-row .ci{font-size:13px;flex-shrink:0;}
+.card-row a{color:var(--muted);text-decoration:none;}
+.card-row a:hover{color:#4ade80;}
+
+.card-footer{display:flex;flex-wrap:wrap;gap:4px;align-items:center;}
+.tag{
+  display:inline-flex;align-items:center;gap:3px;
+  border-radius:5px;padding:2px 7px;font-size:10px;font-weight:700;
+}
+.tag-blue{background:#0d2b4b;color:#60a5fa;}
+.tag-green{background:#0d3b1e;color:#4ade80;}
+.tag-orange{background:#3b2400;color:#fb923c;}
+.tag-purple{background:#2d1b69;color:#a78bfa;}
+.tag-pink{background:#3b0d1e;color:#fb7185;}
+.card-seller{margin-left:auto;font-size:10px;color:var(--muted);}
+
+.card-urgency{
+  position:absolute;top:8px;right:8px;
+  font-size:10px;background:#7c1a1a;color:#f87171;
+  border-radius:4px;padding:2px 6px;font-weight:700;
+}
+.card-time{font-size:10px;color:var(--muted);}
+
+/* ── MODAL SIDEBAR ───────────────────────────────────────────────── */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:200;display:none;}
+.overlay.open{display:block;}
+.sidebar{
+  position:fixed;right:0;top:0;bottom:0;width:420px;
+  background:var(--panel);border-left:1px solid var(--border);
+  z-index:201;display:flex;flex-direction:column;
+  transform:translateX(100%);transition:transform .25s ease;
+}
+.sidebar.open{transform:translateX(0);}
+.sb-head{
+  padding:20px;border-bottom:1px solid var(--border);
+  display:flex;justify-content:space-between;align-items:flex-start;
+}
+.sb-head h2{font-size:16px;color:#fff;}
+.sb-head .sub{font-size:12px;color:var(--muted);margin-top:3px;}
+.sb-close{background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;padding:2px 8px;}
+.sb-close:hover{color:#fff;}
+.sb-body{flex:1;overflow-y:auto;padding:20px;}
+.sb-section{margin-bottom:20px;}
+.sb-section h4{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:10px;}
+.info-row{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid #1e2235;font-size:13px;}
+.info-row:last-child{border-bottom:none;}
+.info-row .k{color:var(--muted);}
+.info-row .v{color:#e0e0e0;font-weight:600;}
+.history{display:flex;flex-direction:column;gap:8px;}
+.msg{background:#151821;border-radius:8px;padding:10px 12px;font-size:12px;}
+.msg.from-client{border-left:2px solid #60a5fa;}
+.msg.from-bot{border-left:2px solid #4ade80;}
+.msg .msg-from{font-size:10px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:.04em;}
+.msg .msg-text{color:#e0e0e0;line-height:1.5;}
+.msg .msg-time{font-size:10px;color:var(--muted);margin-top:4px;}
+.sb-stage-select{width:100%;background:#151821;border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:#e0e0e0;font-size:13px;margin-top:8px;cursor:pointer;}
+.sb-note{width:100%;background:#151821;border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:#e0e0e0;font-size:13px;resize:vertical;min-height:80px;margin-top:8px;}
+.sb-btn{display:flex;gap:8px;margin-top:12px;}
+.btn-primary{background:#2d89ef;color:#fff;border:none;padding:9px 18px;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;flex:1;}
+.btn-primary:hover{background:#1a6ec8;}
+.btn-danger{background:#3b0d0d;color:#f87171;border:1px solid #7c1a1a;padding:9px 18px;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;}
+.btn-danger:hover{background:#7c1a1a;color:#fff;}
+
+/* ── ADD LEAD MODAL ──────────────────────────────────────────────── */
+.modal-wrap{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:300;display:none;align-items:center;justify-content:center;}
+.modal-wrap.open{display:flex;}
+.modal{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:24px;width:460px;max-width:95vw;}
+.modal h3{font-size:16px;color:#fff;margin-bottom:20px;}
+.form-row{margin-bottom:14px;}
+.form-row label{display:block;font-size:11px;text-transform:uppercase;color:var(--muted);letter-spacing:.05em;margin-bottom:5px;}
+.form-row input,.form-row select{
+  width:100%;background:#151821;border:1px solid var(--border);border-radius:8px;
+  padding:9px 12px;color:#e0e0e0;font-size:13px;
+}
+.form-row input:focus,.form-row select:focus{outline:none;border-color:#2d89ef;}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.modal-btns{display:flex;gap:10px;margin-top:20px;}
+.btn-cancel{background:none;border:1px solid var(--border);color:var(--muted);padding:9px 18px;border-radius:7px;font-size:13px;cursor:pointer;}
+.btn-cancel:hover{background:#252938;color:#fff;}
+
+/* ── SEARCH BAR ──────────────────────────────────────────────────── */
+.toolbar{display:flex;gap:10px;padding:12px 20px 0;align-items:center;flex-wrap:wrap;}
+.search{
+  background:var(--panel);border:1px solid var(--border);border-radius:8px;
+  padding:8px 12px;color:#e0e0e0;font-size:13px;width:220px;
+}
+.search::placeholder{color:var(--muted);}
+.search:focus{outline:none;border-color:#2d89ef;}
+.filter-btn{
+  background:var(--panel);border:1px solid var(--border);border-radius:8px;
+  padding:7px 12px;color:var(--muted);font-size:12px;cursor:pointer;
+  display:flex;align-items:center;gap:6px;
+}
+.filter-btn.active,.filter-btn:hover{border-color:#2d89ef;color:#60a5fa;}
+.live-dot{width:7px;height:7px;background:#4ade80;border-radius:50%;animation:pulse 2s infinite;}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.3;}}
+
+/* ── INTEGRATIONS ────────────────────────────────────────────────── */
+.integrations{padding:20px 24px;display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;}
+.int-card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:20px;}
+.int-card h3{font-size:1rem;margin-bottom:4px;display:flex;align-items:center;gap:8px;color:#fff;}
+.int-card .status{font-size:.75rem;margin-bottom:14px;}
+.status-on{color:#22c55e;font-weight:700;} .status-off{color:#f59e0b;font-weight:700;}
+.int-card label{display:block;font-size:.78rem;color:var(--muted);margin-bottom:3px;margin-top:10px;}
+.int-card input{width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:.82rem;font-family:monospace;background:#151821;color:#e0e0e0;}
+.webhook-url{background:#151821;border-radius:6px;padding:8px 10px;font-family:monospace;font-size:.78rem;color:#e0e0e0;display:flex;justify-content:space-between;align-items:center;margin-top:10px;}
+.webhook-url button{background:#2d89ef;color:#fff;border:none;border-radius:4px;padding:3px 10px;font-size:.72rem;cursor:pointer;}
+.int-steps{margin-top:12px;font-size:.78rem;color:var(--muted);padding-left:16px;}
+.int-steps li{margin-bottom:4px;}
+.btn-save{background:#2d89ef;color:#fff;border:none;padding:8px 18px;border-radius:6px;cursor:pointer;font-size:.82rem;margin-top:12px;}
+.ig-icon{background:linear-gradient(45deg,#f09433,#e6683c,#dc2743,#cc2366,#bc1888);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+
+/* ── TEST PANEL ──────────────────────────────────────────────────── */
+.test-panel{background:var(--panel);border:1px solid var(--border);margin:20px 24px;border-radius:10px;padding:20px;}
+.test-panel h2{font-size:.95rem;margin-bottom:12px;color:#fff;}
+.test-panel select,.test-panel input,.test-panel textarea{width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;margin-bottom:8px;font-size:.85rem;background:#151821;color:#e0e0e0;}
+.test-panel button{background:#2d89ef;color:#fff;border:none;padding:9px 20px;border-radius:6px;cursor:pointer;font-size:.85rem;}
+#test-result{margin-top:10px;background:#151821;border-radius:6px;padding:10px;font-size:.82rem;display:none;border:1px solid var(--border);}
+
+/* ── TOAST ───────────────────────────────────────────────────────── */
+.toast{
+  position:fixed;bottom:24px;right:24px;background:#252938;border:1px solid var(--border);
+  border-radius:10px;padding:12px 18px;font-size:13px;z-index:999;
+  transform:translateY(100px);opacity:0;transition:.25s;
+}
+.toast.show{transform:translateY(0);opacity:1;}
+.toast.success{border-color:#4ade80;color:#4ade80;}
+.toast.error{border-color:#f87171;color:#f87171;}
+
+/* ── SCROLLBAR ───────────────────────────────────────────────────── */
+::-webkit-scrollbar{width:5px;height:5px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
 </style>
 </head>
 <body>
 
+<!-- HEADER -->
 <header>
-  <h1>&#x1F3CE; 7Business Pro CRM</h1>
-  <span id="clock"></span>
+  <div class="h-logo">
+    <div class="icon">🏎️</div>
+    <div>
+      <strong>Impacta CRM</strong>
+      <div class="h-logo" style="gap:5px;margin-top:1px;"><div class="live-dot"></div><span>ao vivo</span></div>
+    </div>
+  </div>
+  <div class="h-tabs">
+    <div class="h-tab active" onclick="showTab('kanban')">📋 Kanban</div>
+    <div class="h-tab" onclick="showTab('integrations')">🔗 Integrações</div>
+    <div class="h-tab" onclick="showTab('test')">🤖 Testar IA</div>
+  </div>
+  <div class="h-right">
+    <span class="h-clock" id="clock"></span>
+    <button class="h-add" onclick="openAddModal()">+ Novo Lead</button>
+  </div>
 </header>
 
-<div class="tabs">
-  <div class="tab active" onclick="showTab('kanban')">&#x1F4CB; Kanban</div>
-  <div class="tab" onclick="showTab('integrations')">&#x1F517; Integrações</div>
-  <div class="tab" onclick="showTab('test')">&#x1F4AC; Testar IA</div>
-</div>
-
-<!-- KANBAN -->
+<!-- KANBAN PAGE -->
 <div id="tab-kanban" class="page active">
   <div class="metrics" id="metrics"></div>
-  <div class="kanban" id="kanban"></div>
-</div>
-
-<!-- INTEGRAÇÕES -->
-<div id="tab-integrations" class="page">
-  <div class="integrations" id="integrations-panel">
-
-    <!-- WhatsApp Twilio -->
-    <div class="int-card">
-      <h3>&#x1F4F1; WhatsApp <small style="font-size:0.7rem;color:#888">(Twilio)</small></h3>
-      <div class="status status-on" id="wa-twilio-status">&#x2705; Ativo — sandbox gratuito</div>
-      <label>Webhook URL (cole no Twilio):</label>
-      <div class="webhook-url">
-        <span id="wa-twilio-url">http://localhost:3001/webhook</span>
-        <button onclick="copy('wa-twilio-url')">Copiar</button>
-      </div>
-      <ol class="int-steps">
-        <li>Acesse <b>console.twilio.com</b></li>
-        <li>Messaging → Try it out → WhatsApp</li>
-        <li>Cole a URL acima em "When a message comes in"</li>
-        <li>Envie "join &lt;sandbox-code&gt;" no WhatsApp para o número Twilio</li>
-      </ol>
-    </div>
-
-    <!-- WhatsApp Meta -->
-    <div class="int-card">
-      <h3>&#x1F4F2; WhatsApp <small style="font-size:0.7rem;color:#888">(Meta API oficial)</small></h3>
-      <div class="status status-off" id="wa-meta-status">&#x23F3; Pendente configuração</div>
-      <label>Webhook URL:</label>
-      <div class="webhook-url">
-        <span id="wa-meta-url">http://SEU_DOMINIO/webhook/whatsapp</span>
-        <button onclick="copy('wa-meta-url')">Copiar</button>
-      </div>
-      <label>Verify Token:</label>
-      <div class="webhook-url">
-        <span id="wa-verify">7business_wa_token</span>
-        <button onclick="copy('wa-verify')">Copiar</button>
-      </div>
-      <label>Phone ID (Meta):</label>
-      <input id="wa-phone-id" placeholder="Ex: 123456789012345">
-      <label>Access Token (Meta):</label>
-      <input id="wa-token" placeholder="EAAxxxxx...">
-      <button class="btn-save" onclick="saveWaMeta()">Salvar</button>
-      <ol class="int-steps" style="margin-top:12px">
-        <li>Acesse <b>developers.facebook.com</b></li>
-        <li>Crie app → WhatsApp Business</li>
-        <li>Configure webhook com a URL e verify token acima</li>
-        <li>Copie o Phone ID e Access Token</li>
-      </ol>
-    </div>
-
-    <!-- Instagram -->
-    <div class="int-card">
-      <h3><span class="ig-icon">&#x1F4F7;</span> Instagram DM</h3>
-      <div class="status status-off" id="ig-status">&#x23F3; Pendente configuração</div>
-      <label>Webhook URL:</label>
-      <div class="webhook-url">
-        <span id="ig-url">http://SEU_DOMINIO/webhook/instagram</span>
-        <button onclick="copy('ig-url')">Copiar</button>
-      </div>
-      <label>Verify Token:</label>
-      <div class="webhook-url">
-        <span id="ig-verify">7business_ig_token</span>
-        <button onclick="copy('ig-verify')">Copiar</button>
-      </div>
-      <label>Page Access Token (Meta):</label>
-      <input id="ig-token" placeholder="EAAxxxxx...">
-      <button class="btn-save" onclick="saveIg()">Salvar</button>
-      <ol class="int-steps" style="margin-top:12px">
-        <li>Acesse <b>developers.facebook.com</b></li>
-        <li>Crie app → Instagram → Messenger API</li>
-        <li>Configure webhook com URL e verify token acima</li>
-        <li>Assine o evento <b>messages</b></li>
-        <li>Cole o Page Access Token</li>
-      </ol>
-    </div>
-
-    <!-- Groq IA -->
-    <div class="int-card">
-      <h3>&#x1F916; IA Groq (gratuito)</h3>
-      <div class="status status-on" id="groq-status">&#x2705; Ativo — llama-3.3-70b</div>
-      <label>Chave API:</label>
-      <div class="webhook-url">
-        <span>gsk_***...***</span>
-        <span style="font-size:0.72rem;color:#22c55e">Configurada</span>
-      </div>
-      <ol class="int-steps" style="margin-top:12px">
-        <li>Gratuito em <b>console.groq.com</b></li>
-        <li>~14.400 tokens/minuto grátis</li>
-        <li>Modelo: llama-3.3-70b-versatile</li>
-      </ol>
-    </div>
-
+  <div class="toolbar">
+    <input class="search" type="text" id="searchInput" placeholder="🔍 Buscar lead, veículo, telefone..." oninput="filterLeads()">
+    <div class="filter-btn" id="filter-urgent" onclick="toggleFilter('urgent')">🚨 Urgentes</div>
+    <div class="filter-btn" id="filter-wa" onclick="toggleFilter('wa')">💬 WhatsApp</div>
+    <div class="filter-btn" id="filter-ig" onclick="toggleFilter('ig')">📷 Instagram</div>
+  </div>
+  <div class="kanban-wrap" style="margin-top:12px;">
+    <div class="kanban" id="kanban"></div>
   </div>
 </div>
 
-<!-- TESTE IA -->
+<!-- INTEGRATIONS PAGE -->
+<div id="tab-integrations" class="page">
+  <div class="integrations">
+    <div class="int-card">
+      <h3>💬 WhatsApp <small style="font-size:.7rem;color:#888">(Meta API)</small></h3>
+      <div class="status status-off" id="wa-meta-status">⏳ Pendente</div>
+      <label>Webhook URL:</label>
+      <div class="webhook-url"><span id="wa-meta-url">…</span><button onclick="copy('wa-meta-url')">Copiar</button></div>
+      <label>Verify Token:</label>
+      <div class="webhook-url"><span id="wa-verify">7business_wa_token</span><button onclick="copy('wa-verify')">Copiar</button></div>
+      <label>Phone ID:</label>
+      <div class="webhook-url"><span id="wa-phoneid-display">…</span></div>
+      <ol class="int-steps"><li>developers.facebook.com → WhatsApp Business</li><li>Configure webhook com URL e verify token acima</li><li>Assine o evento <b>messages</b></li></ol>
+    </div>
+    <div class="int-card">
+      <h3><span class="ig-icon">📷</span> Instagram DM</h3>
+      <div class="status status-off" id="ig-status">⏳ Pendente</div>
+      <label>Webhook URL:</label>
+      <div class="webhook-url"><span id="ig-url">…</span><button onclick="copy('ig-url')">Copiar</button></div>
+      <label>Verify Token:</label>
+      <div class="webhook-url"><span id="ig-verify">7business_ig_token</span><button onclick="copy('ig-verify')">Copiar</button></div>
+      <ol class="int-steps"><li>App Meta → Instagram → Messenger API</li><li>Configure webhook com URL acima</li><li>Assine o evento <b>messages</b></li></ol>
+    </div>
+    <div class="int-card">
+      <h3>🤖 IA (Ollama / Groq)</h3>
+      <div class="status status-on" id="groq-status">✅ Ativo</div>
+      <ol class="int-steps" style="margin-top:12px">
+        <li>Ollama local: ollama.com → pull llama3.2</li>
+        <li>Groq fallback: console.groq.com (grátis)</li>
+        <li>Modelo: llama-3.3-70b-versatile</li>
+      </ol>
+    </div>
+  </div>
+</div>
+
+<!-- TEST PAGE -->
 <div id="tab-test" class="page">
   <div class="test-panel">
-    <h2>&#x1F4AC; Simular mensagem (WhatsApp / Instagram)</h2>
-    <select id="test-source">
-      <option value="whatsapp">WhatsApp</option>
-      <option value="instagram">Instagram</option>
-    </select>
+    <h2>🤖 Simular mensagem (WhatsApp / Instagram)</h2>
+    <select id="test-source"><option value="whatsapp">WhatsApp</option><option value="instagram">Instagram</option></select>
     <input type="text" id="test-phone" placeholder="Telefone/ID" value="whatsapp:+5585999999999">
-    <textarea id="test-msg" rows="2">Oi, quero um SUV ate 80 mil financiado</textarea>
-    <button onclick="sendTest()">Enviar para IA &#x1F916;</button>
+    <textarea id="test-msg" rows="3">Oi, quero um SUV ate 80 mil financiado</textarea>
+    <button onclick="sendTest()">Enviar para IA 🤖</button>
     <div id="test-result"></div>
   </div>
 </div>
 
-<script>
-const STAGES=["Novo Lead","Contato Inicial","Interesse","Proposta","Negociacao","Fechado"];
-const COLORS={"Novo Lead":"#6c63ff","Contato Inicial":"#2d89ef","Interesse":"#f59e0b","Proposta":"#10b981","Negociacao":"#ef4444","Fechado":"#22c55e"};
-let leads=[];
+<!-- OVERLAY + SIDEBAR -->
+<div class="overlay" id="overlay" onclick="closeSidebar()"></div>
+<div class="sidebar" id="sidebar">
+  <div class="sb-head">
+    <div>
+      <h2 id="sb-title">Lead</h2>
+      <div class="sub" id="sb-sub"></div>
+    </div>
+    <button class="sb-close" onclick="closeSidebar()">✕</button>
+  </div>
+  <div class="sb-body">
+    <div class="sb-section">
+      <h4>Informações do Lead</h4>
+      <div id="sb-info"></div>
+    </div>
+    <div class="sb-section">
+      <h4>Mover para Estágio</h4>
+      <select class="sb-stage-select" id="sb-stage" onchange="moveLeadStage()"></select>
+    </div>
+    <div class="sb-section">
+      <h4>Histórico de Conversas</h4>
+      <div class="history" id="sb-history"></div>
+    </div>
+  </div>
+</div>
 
-function showTab(name){
-  document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',['kanban','integrations','test'][i]===name));
-  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
-  document.getElementById('tab-'+name).classList.add('active');
-  if(name==='kanban') load();
-  if(name==='integrations') loadIntegrations();
+<!-- ADD LEAD MODAL -->
+<div class="modal-wrap" id="addModal">
+  <div class="modal">
+    <h3>+ Novo Lead Manual</h3>
+    <div class="form-grid">
+      <div class="form-row">
+        <label>Nome do Cliente</label>
+        <input id="f-name" placeholder="João Silva">
+      </div>
+      <div class="form-row">
+        <label>WhatsApp</label>
+        <input id="f-phone" placeholder="(85) 99999-1111">
+      </div>
+    </div>
+    <div class="form-row">
+      <label>Veículo de Interesse</label>
+      <input id="f-vehicle" placeholder="Onix 1.0 Turbo 2022">
+    </div>
+    <div class="form-grid">
+      <div class="form-row">
+        <label>Orçamento / Entrada</label>
+        <input id="f-budget" placeholder="R$ 5.000">
+      </div>
+      <div class="form-row">
+        <label>Pagamento</label>
+        <select id="f-payment">
+          <option value="">Não informado</option>
+          <option value="Financiado">Financiado</option>
+          <option value="À Vista">À Vista</option>
+          <option value="FGTS">FGTS</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeAddModal()">Cancelar</button>
+      <button class="btn-primary" onclick="createLead()">Criar Lead</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ── ESTÁGIOS ──────────────────────────────────────────────────────────────────
+const STAGES = [
+  { id:"Novo Lead",       name:"Novo Lead",       icon:"🔥", color:"#FFA500" },
+  { id:"Em Contato",      name:"Em Contato",       icon:"📞", color:"#1E90FF" },
+  { id:"Agendou Visita",  name:"Agendou Visita",   icon:"🗓️", color:"#9370DB" },
+  { id:"Test Drive",      name:"Test Drive",       icon:"🚗", color:"#20B2AA" },
+  { id:"Em Negociação",   name:"Em Negociação",    icon:"💰", color:"#FFD700" },
+  { id:"VENDIDO!",        name:"VENDIDO! 🎉",      icon:"✅", color:"#32CD32" },
+  { id:"Perdido",         name:"Perdido",          icon:"❌", color:"#DC143C" },
+];
+// Compatibilidade com estágios antigos
+const STAGE_MAP = {
+  "Contato Inicial":"Em Contato","Interesse":"Em Contato",
+  "Proposta":"Em Negociação","Negociacao":"Em Negociação","Fechado":"VENDIDO!"
+};
+
+let leads = [];
+let activeFilters = new Set();
+let currentLeadId = null;
+let dragLeadId = null;
+
+// ── UTIL ──────────────────────────────────────────────────────────────────────
+function timeAgo(ts){
+  const diff = Date.now() - ts;
+  if(diff < 60000) return "agora";
+  if(diff < 3600000) return Math.floor(diff/60000)+"min atrás";
+  if(diff < 86400000) return Math.floor(diff/3600000)+"h atrás";
+  return Math.floor(diff/86400000)+"d atrás";
+}
+function isUrgent(lead){
+  return lead.stage === "Novo Lead" && (Date.now() - lead.createdAt) > 86400000;
+}
+function sanitize(s){ return String(s||"").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function showToast(msg, type="success"){
+  const t = document.getElementById("toast");
+  t.textContent = msg; t.className = "toast show " + type;
+  setTimeout(()=>{ t.className="toast"; }, 3000);
+}
+function getTags(lead){
+  const tags = [];
+  if(lead.payment === "Financiado") tags.push({label:"Financiado",cls:"tag-blue"});
+  if(lead.payment === "À Vista")    tags.push({label:"À Vista",cls:"tag-green"});
+  if(lead.payment === "FGTS")       tags.push({label:"FGTS",cls:"tag-purple"});
+  if(lead.type === "SUV")           tags.push({label:"SUV",cls:"tag-orange"});
+  if(lead.type === "Pickup")        tags.push({label:"Pickup",cls:"tag-orange"});
+  if(lead.source === "instagram")   tags.push({label:"Instagram",cls:"tag-pink"});
+  else                              tags.push({label:"WhatsApp",cls:"tag-green"});
+  return tags;
+}
+function getVehicleLabel(lead){
+  if(lead.vehicleModel) return sanitize(lead.vehicleModel);
+  if(lead.type) return sanitize(lead.type);
+  return "Veículo não informado";
+}
+function fmtPhone(phone){
+  return String(phone||"").replace("wa:","").replace("whatsapp:","");
 }
 
+// ── LOAD & RENDER ─────────────────────────────────────────────────────────────
 async function load(){
   try{
-    const[lr,mr]=await Promise.all([fetch("/api/leads"),fetch("/api/metrics")]);
-    leads=await lr.json(); const m=await mr.json();
-    renderMetrics(m); renderKanban();
-  }catch(e){}
+    const [lr, mr] = await Promise.all([fetch("/api/leads"), fetch("/api/metrics")]);
+    const raw = await lr.json();
+    leads = raw.map(l => ({ ...l, stage: STAGE_MAP[l.stage] || l.stage }));
+    const m = await mr.json();
+    renderMetrics(m);
+    renderKanban();
+  }catch(e){ console.error("load error", e); }
 }
 
 function renderMetrics(m){
-  document.getElementById("metrics").innerHTML=
-    '<div class="metric-card"><div class="val">'+m.totalLeads+'</div><div class="lbl">Total Leads</div></div>'+
-    '<div class="metric-card"><div class="val">'+m.conversionRate+'</div><div class="lbl">Conversao</div></div>'+
-    STAGES.map(s=>'<div class="metric-card"><div class="val" style="font-size:1.3rem">'+(m.byStage[s]||0)+'</div><div class="lbl">'+s+'</div></div>').join("");
+  const byStage = {};
+  STAGES.forEach(s => byStage[s.id] = (leads.filter(l => l.stage === s.id)).length);
+  const sold = byStage["VENDIDO!"] || 0;
+  const total = leads.length || 1;
+  const conv = sold ? ((sold/total)*100).toFixed(1)+"%" : "0%";
+  const novo = byStage["Novo Lead"] || 0;
+  const neg  = byStage["Em Negociação"] || 0;
+  document.getElementById("metrics").innerHTML =
+    `<div class="metric-card" style="--accent:#2d89ef"><div class="val">${leads.length}</div><div class="lbl">Total Leads</div><div class="delta n">📋 todos</div></div>`+
+    `<div class="metric-card" style="--accent:#4ade80"><div class="val">${sold}</div><div class="lbl">Vendidos</div><div class="delta up">✅ este mês</div></div>`+
+    `<div class="metric-card" style="--accent:#a78bfa"><div class="val">${conv}</div><div class="lbl">Conversão</div><div class="delta n">meta: 10%</div></div>`+
+    `<div class="metric-card" style="--accent:#FFA500"><div class="val">${novo}</div><div class="lbl">Novos Leads</div><div class="delta ${novo>3?'up':'n'}">🔥 aguardando</div></div>`+
+    `<div class="metric-card" style="--accent:#FFD700"><div class="val">${neg}</div><div class="lbl">Em Negociação</div><div class="delta n">💰 propostas</div></div>`+
+    `<div class="metric-card" style="--accent:#f87171"><div class="val">${byStage["Perdido"]||0}</div><div class="lbl">Perdidos</div><div class="delta down">❌ mês</div></div>`;
+}
+
+function getFilteredLeads(){
+  let list = [...leads];
+  const q = (document.getElementById("searchInput")||{}).value?.toLowerCase()||"";
+  if(q) list = list.filter(l =>
+    (l.name||"").toLowerCase().includes(q) ||
+    (l.phone||"").toLowerCase().includes(q) ||
+    (l.type||"").toLowerCase().includes(q) ||
+    (l.vehicleModel||"").toLowerCase().includes(q)
+  );
+  if(activeFilters.has("urgent")) list = list.filter(isUrgent);
+  if(activeFilters.has("wa"))     list = list.filter(l => l.source !== "instagram");
+  if(activeFilters.has("ig"))     list = list.filter(l => l.source === "instagram");
+  return list;
 }
 
 function renderKanban(){
-  const c=document.getElementById("kanban"); c.innerHTML="";
-  STAGES.forEach(stage=>{
-    const col=document.createElement("div"); col.className="column";
-    const sl=leads.filter(l=>l.stage===stage);
-    col.innerHTML='<h3>'+stage+'<span class="count">'+sl.length+'</span></h3>';
-    col.style.borderTop='3px solid '+(COLORS[stage]||'#999');
-    sl.forEach(l=>{
-      const card=document.createElement("div"); card.className="card"; card.draggable=true;
-      card.style.borderLeftColor=COLORS[stage]||'#999';
-      const srcBadge = l.source==='instagram'
-        ? '<span class="badge badge-ig">&#x1F4F7; Instagram</span>'
-        : '<span class="badge badge-wa">&#x1F4F1; WhatsApp</span>';
-      card.innerHTML='<div class="name">'+(l.name||"Sem nome")+'</div>'+
-        '<div class="info">'+l.phone+'</div>'+
-        '<div class="info">R$'+(l.budget||"-")+' | '+(l.type||"-")+' | '+(l.payment||"-")+'</div>'+
-        '<div class="badges">'+srcBadge+'<span class="badge badge-seller">'+(l.seller&&l.seller.name||"-")+'</span></div>';
-      card.ondragstart=e=>e.dataTransfer.setData("leadId",l.id);
-      col.appendChild(card);
-    });
-    col.ondragover=e=>{e.preventDefault();col.classList.add("drag-over");};
-    col.ondragleave=()=>col.classList.remove("drag-over");
-    col.ondrop=async e=>{
-      e.preventDefault();col.classList.remove("drag-over");
-      const id=e.dataTransfer.getData("leadId");
-      await fetch("/api/leads/"+id,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({stage})});
+  const board = document.getElementById("kanban");
+  const filtered = getFilteredLeads();
+  board.innerHTML = "";
+  STAGES.forEach(stage => {
+    const sl = filtered.filter(l => l.stage === stage.id);
+    const col = document.createElement("div");
+    col.className = "col";
+    col.style.setProperty("--col-color", stage.color);
+    col.dataset.stage = stage.id;
+
+    // Summary
+    const summary = getStageSummary(stage.id, sl);
+
+    col.innerHTML = `
+      <div class="col-head">
+        <div class="col-title">
+          <span class="icon">${stage.icon}</span>
+          <span class="name">${stage.name}</span>
+          <span class="cnt">${sl.length}</span>
+        </div>
+        <div class="col-summary">${summary}</div>
+      </div>
+      <div class="col-body" id="col-${stage.id.replace(/[^a-z0-9]/gi,'_')}"></div>
+    `;
+
+    const body = col.querySelector(".col-body");
+
+    // Drag-and-drop on column
+    col.addEventListener("dragover", e => { e.preventDefault(); body.classList.add("drag-over"); });
+    col.addEventListener("dragleave", e => { if(!col.contains(e.relatedTarget)) body.classList.remove("drag-over"); });
+    col.addEventListener("drop", async e => {
+      e.preventDefault(); body.classList.remove("drag-over");
+      if(!dragLeadId) return;
+      await fetch("/api/leads/"+dragLeadId, {
+        method:"PATCH",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({stage: stage.id})
+      });
+      showToast(`Lead movido para ${stage.name}`);
+      dragLeadId = null;
       load();
-    };
-    c.appendChild(col);
+    });
+
+    // Render cards
+    sl.forEach(lead => {
+      const card = createCard(lead, stage.color);
+      body.appendChild(card);
+    });
+
+    board.appendChild(col);
   });
 }
 
+function getStageSummary(stageId, leads){
+  switch(stageId){
+    case "Novo Lead": {
+      const urgent = leads.filter(isUrgent).length;
+      return urgent > 0
+        ? `<span style="color:#f87171">${urgent} urgente${urgent>1?'s':''} · </span>${leads.length} total`
+        : `${leads.length} aguardando contato`;
+    }
+    case "Em Contato":
+      return leads.length ? `${leads.length} lead${leads.length>1?'s':''} em andamento` : "Nenhum";
+    case "Agendou Visita":
+      return leads.length ? `📅 ${leads.length} visita${leads.length>1?'s':''} marcada${leads.length>1?'s':''}` : "Nenhuma agendada";
+    case "Test Drive":
+      return leads.length ? `🚗 ${leads.length} na fila` : "Nenhum";
+    case "Em Negociação":
+      return leads.length ? `💰 ${leads.length} proposta${leads.length>1?'s':''} ativa${leads.length>1?'s':''}` : "Nenhuma proposta";
+    case "VENDIDO!":
+      return leads.length ? `🎉 ${leads.length} venda${leads.length>1?'s':''} este mês!` : "Vamos vender!";
+    case "Perdido":
+      return leads.length ? `${leads.length} lead${leads.length>1?'s':''} perdido${leads.length>1?'s':''}` : "Ótimo — nenhum perdido!";
+    default: return "";
+  }
+}
+
+function createCard(lead, stageColor){
+  const card = document.createElement("div");
+  card.className = "card" + (isUrgent(lead) ? " urgent" : "");
+  card.style.setProperty("--card-color", stageColor);
+  card.draggable = true;
+
+  const phone = fmtPhone(lead.phone);
+  const waLink = `https://wa.me/${phone.replace(/\D/g,"")}`;
+  const tags = getTags(lead);
+  const tagsHtml = tags.map(t => `<span class="tag ${t.cls}">${t.label}</span>`).join("");
+  const urgentBadge = isUrgent(lead)
+    ? `<div class="card-urgency">⏰ +24h</div>` : "";
+
+  card.innerHTML = `
+    ${urgentBadge}
+    <div class="card-header">
+      <div class="card-vehicle">${getVehicleLabel(lead)}</div>
+      <div class="card-client">${sanitize(lead.name || "Cliente sem nome")}</div>
+    </div>
+    <div class="card-info">
+      <div class="card-row">
+        <span class="ci">💬</span>
+        <a href="${waLink}" target="_blank" onclick="event.stopPropagation()">${sanitize(phone)}</a>
+      </div>
+      <div class="card-row">
+        <span class="ci">📍</span>
+        <span class="card-time">${timeAgo(lead.lastContact || lead.createdAt)}</span>
+      </div>
+      ${lead.budget ? `<div class="card-row"><span class="ci">💰</span><span>R$ ${sanitize(String(lead.budget))} ${lead.budget < 1000 ? '/mês' : 'de entrada'}</span></div>` : ""}
+    </div>
+    <div class="card-footer">
+      ${tagsHtml}
+      <span class="card-seller">${sanitize(lead.seller?.name || "–")}</span>
+    </div>
+  `;
+
+  card.addEventListener("dragstart", e => {
+    dragLeadId = lead.id;
+    card.classList.add("dragging");
+    e.dataTransfer.effectAllowed = "move";
+  });
+  card.addEventListener("dragend", () => card.classList.remove("dragging"));
+  card.addEventListener("click", () => openSidebar(lead));
+
+  return card;
+}
+
+// ── SIDEBAR ───────────────────────────────────────────────────────────────────
+function openSidebar(lead){
+  currentLeadId = lead.id;
+  const phone = fmtPhone(lead.phone);
+  document.getElementById("sb-title").textContent = lead.name || "Cliente sem nome";
+  document.getElementById("sb-sub").textContent = getVehicleLabel(lead) + " · " + lead.stage;
+
+  // Info rows
+  const infoData = [
+    ["Telefone", `<a href="https://wa.me/${phone.replace(/\D/g,'')}" target="_blank" style="color:#4ade80">${sanitize(phone)}</a>`],
+    ["Veículo", getVehicleLabel(lead)],
+    ["Orçamento", lead.budget ? "R$ " + sanitize(String(lead.budget)) : "Não informado"],
+    ["Pagamento", sanitize(lead.payment || "Não informado")],
+    ["Vendedor", sanitize(lead.seller?.name || "–")],
+    ["Fonte", lead.source === "instagram" ? "📷 Instagram" : "💬 WhatsApp"],
+    ["Criado em", new Date(lead.createdAt).toLocaleString("pt-BR")],
+    ["Último contato", timeAgo(lead.lastContact || lead.createdAt)],
+  ];
+  document.getElementById("sb-info").innerHTML = infoData.map(([k,v]) =>
+    `<div class="info-row"><span class="k">${k}</span><span class="v">${v}</span></div>`
+  ).join("");
+
+  // Stage select
+  const sel = document.getElementById("sb-stage");
+  sel.innerHTML = STAGES.map(s =>
+    `<option value="${s.id}" ${lead.stage === s.id ? "selected" : ""}>${s.icon} ${s.name}</option>`
+  ).join("");
+
+  // History
+  const hist = lead.history || [];
+  document.getElementById("sb-history").innerHTML = hist.length
+    ? hist.map(h => `
+        <div class="msg ${h.from === 'cliente' ? 'from-client' : 'from-bot'}">
+          <div class="msg-from">${h.from === 'cliente' ? '👤 Cliente' : '🤖 Bot'}</div>
+          <div class="msg-text">${sanitize(h.message)}</div>
+          <div class="msg-time">${h.ts ? new Date(h.ts).toLocaleString("pt-BR") : ""}</div>
+        </div>
+      `).join("")
+    : `<div style="color:var(--muted);font-size:13px">Nenhuma mensagem ainda.</div>`;
+
+  document.getElementById("overlay").classList.add("open");
+  document.getElementById("sidebar").classList.add("open");
+}
+
+async function moveLeadStage(){
+  if(!currentLeadId) return;
+  const stage = document.getElementById("sb-stage").value;
+  await fetch("/api/leads/"+currentLeadId, {
+    method:"PATCH",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({stage})
+  });
+  showToast("Lead atualizado!");
+  load();
+  // Update sub title
+  const lead = leads.find(l => l.id === currentLeadId);
+  if(lead){ lead.stage = stage; document.getElementById("sb-sub").textContent = getVehicleLabel(lead) + " · " + stage; }
+}
+
+function closeSidebar(){
+  document.getElementById("overlay").classList.remove("open");
+  document.getElementById("sidebar").classList.remove("open");
+  currentLeadId = null;
+}
+
+// ── ADD LEAD ──────────────────────────────────────────────────────────────────
+function openAddModal(){ document.getElementById("addModal").classList.add("open"); }
+function closeAddModal(){ document.getElementById("addModal").classList.remove("open"); }
+
+async function createLead(){
+  const name    = document.getElementById("f-name").value.trim();
+  const phone   = document.getElementById("f-phone").value.trim();
+  const vehicle = document.getElementById("f-vehicle").value.trim();
+  const budget  = document.getElementById("f-budget").value.trim();
+  const payment = document.getElementById("f-payment").value;
+  if(!phone){ showToast("Informe o telefone", "error"); return; }
+
+  // Use test endpoint to inject lead
+  await fetch("/api/test", {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({
+      phone: "wa:"+phone.replace(/\D/g,""),
+      message: `Olá! Me chamo ${name||"Cliente"}. Tenho interesse ${vehicle ? "no "+vehicle : "em um veículo"}. ${budget ? "Entrada de "+budget+"." : ""} ${payment ? "Pagamento "+payment+"." : ""}`,
+      source:"whatsapp"
+    })
+  });
+  showToast("Lead criado!");
+  closeAddModal();
+  load();
+}
+
+// ── FILTERS ───────────────────────────────────────────────────────────────────
+function toggleFilter(f){
+  const btn = document.getElementById("filter-"+f);
+  if(activeFilters.has(f)){ activeFilters.delete(f); btn.classList.remove("active"); }
+  else{ activeFilters.add(f); btn.classList.add("active"); }
+  renderKanban();
+}
+function filterLeads(){ renderKanban(); }
+
+// ── TABS ──────────────────────────────────────────────────────────────────────
+function showTab(name){
+  document.querySelectorAll(".h-tab").forEach((t,i) =>
+    t.classList.toggle("active", ["kanban","integrations","test"][i] === name));
+  document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
+  document.getElementById("tab-"+name).classList.add("active");
+  if(name === "kanban") load();
+  if(name === "integrations") loadIntegrations();
+}
+
+// ── INTEGRATIONS ──────────────────────────────────────────────────────────────
 async function loadIntegrations(){
   try{
-    const r=await fetch("/api/integrations"); const d=await r.json();
-    if(d.whatsapp_meta.active) document.getElementById("wa-meta-status").innerHTML='&#x2705; Ativo';
-    if(d.instagram.active) document.getElementById("ig-status").innerHTML='&#x2705; Ativo';
-    // Atualizar URLs com hostname real
-    const host=window.location.origin;
-    document.getElementById("wa-meta-url").textContent=host+"/webhook/whatsapp";
-    document.getElementById("ig-url").textContent=host+"/webhook/instagram";
+    const r = await fetch("/api/integrations");
+    const d = await r.json();
+    const host = window.location.origin;
+    document.getElementById("wa-meta-url").textContent = host+"/webhook/whatsapp";
+    document.getElementById("ig-url").textContent = host+"/webhook/instagram";
+    if(d.whatsapp_meta?.active){
+      document.getElementById("wa-meta-status").innerHTML = "✅ Ativo — "+d.whatsapp_meta.phone_id;
+      document.getElementById("wa-meta-status").className = "status status-on";
+      document.getElementById("wa-phoneid-display").textContent = d.whatsapp_meta.phone_id;
+    }
+    if(d.instagram?.active){
+      document.getElementById("ig-status").innerHTML = "✅ Ativo";
+      document.getElementById("ig-status").className = "status status-on";
+    }
   }catch(e){}
 }
 
-function copy(id){
-  const txt=document.getElementById(id).textContent;
-  navigator.clipboard.writeText(txt).then(()=>alert("Copiado!"));
-}
-
-function saveWaMeta(){alert("Configure WA_PHONE_ID e WA_TOKEN no arquivo .env e reinicie o servidor.");}
-function saveIg(){alert("Configure IG_PAGE_TOKEN no arquivo .env e reinicie o servidor.");}
-
+// ── TEST ──────────────────────────────────────────────────────────────────────
 async function sendTest(){
-  const source=document.getElementById("test-source").value;
-  const phone=document.getElementById("test-phone").value;
-  const message=document.getElementById("test-msg").value;
+  const source = document.getElementById("test-source").value;
+  const phone  = document.getElementById("test-phone").value;
+  const message= document.getElementById("test-msg").value;
   try{
-    const r=await fetch("/api/test",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({phone,message,source})});
-    const d=await r.json();
-    const div=document.getElementById("test-result"); div.style.display="block";
-    const icon=source==='instagram'?'&#x1F4F7;':'&#x1F4F1;';
-    div.innerHTML=icon+' <b>IA respondeu:</b><br>'+d.reply+'<br><br><b>Lead qualificado:</b> '+(d.lead.name||"?")+" | "+(d.lead.type||"?")+" | R$"+(d.lead.budget||"?")+" | "+(d.lead.payment||"?");
+    const r = await fetch("/api/test", {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({phone, message, source})
+    });
+    const d = await r.json();
+    const div = document.getElementById("test-result");
+    div.style.display = "block";
+    div.innerHTML = `<b>🤖 IA respondeu:</b><br>${sanitize(d.reply)}<br><br><b>Lead qualificado:</b> ${sanitize(d.lead?.name||"?")} | ${sanitize(d.lead?.type||"?")} | R$${sanitize(String(d.lead?.budget||"?"))} | ${sanitize(d.lead?.payment||"?")}`;
     load();
-  }catch(e){alert("Servidor offline. Rode: npm start");}
+  }catch(e){ showToast("Servidor offline. Rode: npm start", "error"); }
 }
 
-setInterval(()=>{document.getElementById("clock").textContent=new Date().toLocaleString("pt-BR");},1000);
+// ── COPY ──────────────────────────────────────────────────────────────────────
+function copy(id){
+  const txt = document.getElementById(id)?.textContent||"";
+  navigator.clipboard.writeText(txt).then(() => showToast("Copiado!"));
+}
+
+// ── CLOCK & INIT ──────────────────────────────────────────────────────────────
+setInterval(() => {
+  document.getElementById("clock").textContent = new Date().toLocaleString("pt-BR");
+}, 1000);
+
 load();
-setInterval(load,5000);
+setInterval(load, 6000);
 </script>
 </body>
 </html>
