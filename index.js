@@ -379,13 +379,69 @@ app.post("/webhook/whatsapp", async (req, res) => {
   }
 });
 
+// ─── Evolution API Webhook ────────────────────────────────────────────────────
+const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || "";
+const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || "";
+const EVOLUTION_INSTANCE = process.env.EVOLUTION_INSTANCE || "PH_AUTOSCAR";
+
+app.post("/webhook/evolution", async (req, res) => {
+  res.sendStatus(200);
+  try {
+    const { event, data } = req.body;
+    if (event !== "MESSAGES_UPSERT") return;
+    if (!data || data.key?.fromMe) return; // ignora mensagens enviadas pelo bot
+
+    const remoteJid = data.key?.remoteJid || "";
+    if (!remoteJid.includes("@s.whatsapp.net")) return; // ignora grupos
+
+    const phone = remoteJid.replace("@s.whatsapp.net", "");
+    const name  = data.pushName || null;
+    const text  = data.message?.conversation
+               || data.message?.extendedTextMessage?.text
+               || data.message?.imageMessage?.caption
+               || "";
+
+    if (!text) return;
+
+    let lead = leads.find((l) => l.phone === phone);
+    if (!lead) {
+      lead = {
+        id: nanoid(), phone, name, type: null, budget: null, payment: null,
+        stage: "Novo Lead", seller: nextSeller(), source: "whatsapp_evolution",
+        lastContact: Date.now(), createdAt: Date.now(), history: []
+      };
+      leads.push(lead);
+    }
+    if (name && !lead.name) lead.name = name;
+    extractData(lead, text);
+    lead.history.push({ from: "cliente", message: text, source: "evolution", ts: Date.now() });
+    lead.lastContact = Date.now();
+
+    const reply = await askGroq(lead, text);
+    lead.history.push({ from: "7business", message: reply, ts: Date.now() });
+
+    // Enviar resposta via Evolution API
+    if (EVOLUTION_API_URL && EVOLUTION_API_KEY) {
+      await axios.post(
+        `${EVOLUTION_API_URL}/message/sendText/${EVOLUTION_INSTANCE}`,
+        { number: phone, text: reply },
+        { headers: { apikey: EVOLUTION_API_KEY } }
+      ).catch(e => console.error("[Evolution] Erro envio:", e.message));
+    }
+    console.log(`[Evolution] ${phone} (${name}): ${text} → ${reply}`);
+  } catch (e) {
+    console.error("[Evolution] Erro:", e.message);
+  }
+});
+
 // ─── Status integrações ───────────────────────────────────────────────────────
 app.get("/api/integrations", (req, res) => {
   res.json({
-    whatsapp_twilio: { active: true, webhook: "/webhook", desc: "Twilio WhatsApp Sandbox" },
-    whatsapp_meta:  { active: !!process.env.WHATSAPP_TOKEN, webhook: "/webhook/whatsapp", verify_token: WA_VERIFY_TOKEN, phone_id: process.env.WHATSAPP_PHONE_NUMBER_ID || "pendente" },
-    instagram:      { active: !!process.env.IG_PAGE_TOKEN, webhook: "/webhook/instagram", verify_token: IG_VERIFY_TOKEN },
-    groq_ai:        { active: !!GROQ_API_KEY, model: "llama-3.3-70b-versatile" },
+    whatsapp_twilio:    { active: true, webhook: "/webhook", desc: "Twilio WhatsApp Sandbox" },
+    whatsapp_meta:      { active: !!process.env.WHATSAPP_TOKEN, webhook: "/webhook/whatsapp", verify_token: WA_VERIFY_TOKEN, phone_id: process.env.WHATSAPP_PHONE_NUMBER_ID || "pendente" },
+    whatsapp_evolution: { active: !!EVOLUTION_API_URL, webhook: "/webhook/evolution", instance: EVOLUTION_INSTANCE, url: EVOLUTION_API_URL || "pendente" },
+    instagram:          { active: !!process.env.IG_PAGE_TOKEN, webhook: "/webhook/instagram", verify_token: IG_VERIFY_TOKEN },
+    groq_ai:            { active: !!GROQ_API_KEY, model: "llama-3.3-70b-versatile" },
   });
 });
 
