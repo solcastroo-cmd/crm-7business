@@ -384,10 +384,33 @@ const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || "";
 const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || "";
 const EVOLUTION_INSTANCE = process.env.EVOLUTION_INSTANCE || "PH_AUTOSCAR";
 
+// Armazena último QR code recebido via webhook
+let evolutionQR = null;
+
+// Endpoint para visualizar o QR code
+app.get("/api/evolution-qr", (req, res) => {
+  if (!evolutionQR) return res.status(404).json({ error: "QR não disponível ainda. Aguarde alguns segundos." });
+  if (req.query.img) {
+    const b64 = evolutionQR.replace(/^data:image\/[^;]+;base64,/, "");
+    const buf = Buffer.from(b64, "base64");
+    res.setHeader("Content-Type", "image/png");
+    return res.send(buf);
+  }
+  res.json({ qr: evolutionQR, ts: new Date().toISOString() });
+});
+
 app.post("/webhook/evolution", async (req, res) => {
   res.sendStatus(200);
   try {
     const { event, data } = req.body;
+
+    // Capturar QR code
+    if (event === "QRCODE_UPDATED" && data?.qrcode?.base64) {
+      evolutionQR = data.qrcode.base64;
+      console.log("[Evolution] QR code recebido via webhook");
+      return;
+    }
+
     if (event !== "MESSAGES_UPSERT") return;
     if (!data || data.key?.fromMe) return; // ignora mensagens enviadas pelo bot
 
