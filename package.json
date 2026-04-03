@@ -2,6 +2,9 @@
   "name": "crm-7business",
   "version": "2.0.0",
   "description": "CRM 7Business — Micro-SaaS para lojas de veículos",
+  "engines": {
+    "node": ">=20.9.0"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
