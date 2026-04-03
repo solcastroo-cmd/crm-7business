@@ -49,13 +49,40 @@ Seja breve, natural e persuasivo. Máximo 2 frases. Responda em português.`;
   }
 }
 
+/** Normaliza valor monetário para número string */
+function parseBudget(raw: string): string {
+  // Remove R$, espaços, pontos de milhar, vírgulas
+  let n = raw.replace(/r\$\s*/i, "").replace(/\./g, "").replace(",", ".");
+  // "90 mil" ou "90mil" → 90000
+  const milMatch = n.match(/^(\d+[\d.]*)\s*mil/i);
+  if (milMatch) return String(Math.round(parseFloat(milMatch[1]) * 1000));
+  // "90k" → 90000
+  const kMatch = n.match(/^(\d+[\d.]*)\s*k/i);
+  if (kMatch) return String(Math.round(parseFloat(kMatch[1]) * 1000));
+  return n.replace(/\D/g, "");
+}
+
 /** Extrai dados do lead a partir da mensagem */
 export function extractLeadData(message: string): Partial<LeadContext> {
   const m = message.toLowerCase();
   const updates: Partial<LeadContext> = {};
 
-  const budget = m.match(/\b\d{4,7}\b/);
-  if (budget) updates.budget = budget[0];
+  // Padrões de budget: "90 mil", "90k", "R$ 90.000", "90000", "noventa mil"
+  const budgetPatterns = [
+    /r\$\s*[\d.,]+\s*(?:mil|k)?/i,   // R$ 90.000 / R$ 90 mil
+    /[\d]+[.,]?[\d]*\s*mil/i,         // 90 mil / 90.5 mil
+    /[\d]+\s*k\b/i,                   // 90k
+    /até\s+[\d.,]+/i,                 // até 80000
+    /\b\d{4,7}\b/,                    // número puro 4-7 dígitos
+  ];
+
+  for (const pattern of budgetPatterns) {
+    const match = m.match(pattern);
+    if (match) {
+      const parsed = parseBudget(match[0]);
+      if (parsed && parsed.length >= 4) { updates.budget = parsed; break; }
+    }
+  }
 
   if (m.includes("hatch"))  updates.type = "Hatch";
   if (m.includes("sedan"))  updates.type = "Sedan";
