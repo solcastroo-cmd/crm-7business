@@ -63,6 +63,7 @@ export default function Home() {
           <p className="text-xs text-gray-500">{leads.length} leads no funil</p>
         </div>
         <div className="flex gap-3 text-xs text-gray-400">
+          <a href="/integrations" className="text-blue-400 hover:underline">⚡ Integrações</a>
           <span>Vendidos: <strong className="text-green-400">{leadsByStage("VENDIDO!").length}</strong></span>
           <span>Taxa: <strong className="text-blue-400">
             {leads.length ? ((leadsByStage("VENDIDO!").length / leads.length) * 100).toFixed(1) : 0}%
