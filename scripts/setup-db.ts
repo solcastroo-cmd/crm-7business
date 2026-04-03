@@ -4,11 +4,28 @@
  * Cria todas as tabelas no Supabase automaticamente.
  */
 
-import { readFileSync } from "fs";
+import { readFileSync, existsSync } from "fs";
 import { join } from "path";
 
+// Carrega .env.local manualmente
+function loadEnv() {
+  const path = join(process.cwd(), ".env.local");
+  if (!existsSync(path)) return;
+  readFileSync(path, "utf-8").split("\n").forEach((line) => {
+    const clean = line.trim();
+    if (!clean || clean.startsWith("#")) return;
+    const idx = clean.indexOf("=");
+    if (idx === -1) return;
+    const key = clean.slice(0, idx).trim();
+    const val = clean.slice(idx + 1).trim().replace(/^["']|["']$/g, "");
+    if (key && !process.env[key]) process.env[key] = val;
+  });
+}
+loadEnv();
+
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY; // service_role key (não anon)
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+const SUPABASE_PAT = process.env.SUPABASE_PAT; // Personal Access Token para Management API
 
 async function run() {
   console.log("\n🗄️  CRM 7Business — Setup do Banco de Dados\n");
@@ -53,8 +70,8 @@ async function run() {
 }
 
 async function runViaMigration(sql: string) {
-  // Usa Supabase Management API para executar SQL direto
   const projectRef = SUPABASE_URL!.replace("https://", "").split(".")[0];
+  const authToken  = SUPABASE_PAT || SUPABASE_SERVICE_KEY;
 
   console.log(`🔧 Usando Management API (projeto: ${projectRef})...`);
 
@@ -64,7 +81,7 @@ async function runViaMigration(sql: string) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${SUPABASE_SERVICE_KEY}`,
+        "Authorization": `Bearer ${authToken}`,
       },
       body: JSON.stringify({ query: sql }),
     }

@@ -7,6 +7,22 @@
 import { readFileSync, existsSync } from "fs";
 import { join } from "path";
 
+// Carrega .env.local manualmente
+function loadEnv() {
+  const path = join(process.cwd(), ".env.local");
+  if (!existsSync(path)) return;
+  readFileSync(path, "utf-8").split("\n").forEach((line) => {
+    const clean = line.trim();
+    if (!clean || clean.startsWith("#")) return;
+    const idx = clean.indexOf("=");
+    if (idx === -1) return;
+    const key = clean.slice(0, idx).trim();
+    const val = clean.slice(idx + 1).trim().replace(/^["']|["']$/g, "");
+    if (key && !process.env[key]) process.env[key] = val;
+  });
+}
+loadEnv();
+
 const RAILWAY_TOKEN   = process.env.RAILWAY_TOKEN;
 const RAILWAY_PROJECT = "5095dcb4-81a6-4fa9-8684-2fc82e8e0fb9";
 
@@ -83,24 +99,49 @@ async function run() {
 
   // Buscar serviceId do projeto
   const projectData = await railwayGraphQL(
-    `query { project(id: $id) { services { edges { node { id name } } } } }`,
+    `query GetProject($id: String!) {
+      project(id: $id) {
+        services { edges { node { id name } } }
+        environments { edges { node { id name } } }
+      }
+    }`,
     { id: RAILWAY_PROJECT }
-  ) as { project: { services: { edges: Array<{ node: { id: string; name: string } }> } } };
+  ) as {
+    project: {
+      services:     { edges: Array<{ node: { id: string; name: string } }> };
+      environments: { edges: Array<{ node: { id: string; name: string } }> };
+    }
+  };
 
-  const services = projectData.project.services.edges;
+  const services     = projectData.project.services.edges;
+  const environments = projectData.project.environments.edges;
+
   if (services.length === 0) {
     console.error("❌ Nenhum serviço encontrado no projeto Railway");
     process.exit(1);
   }
 
-  const service = services[0].node;
-  console.log(`   Serviço: ${service.name} (${service.id})\n`);
+  // Usar o serviço do CRM (não evolution-api)
+  const service = services.find(s => s.node.name.toLowerCase().includes("crm") || s.node.name.toLowerCase().includes("web"))?.node
+    ?? services[0].node;
+
+  // Usar environment "production" ou o primeiro disponível
+  const environment = environments.find(e => e.node.name.toLowerCase() === "production")?.node
+    ?? environments[0]?.node;
+
+  if (!environment) {
+    console.error("❌ Nenhum environment encontrado");
+    process.exit(1);
+  }
+
+  console.log(`   Serviço:     ${service.name} (${service.id})`);
+  console.log(`   Environment: ${environment.name} (${environment.id})\n`);
 
   // Enviar variáveis
   for (const { key, value } of toSend) {
     await railwayGraphQL(
-      `mutation($input: VariableUpsertInput!) { variableUpsert(input: $input) }`,
-      { input: { projectId: RAILWAY_PROJECT, serviceId: service.id, environmentId: "production", name: key, value } }
+      `mutation UpsertVar($input: VariableUpsertInput!) { variableUpsert(input: $input) }`,
+      { input: { projectId: RAILWAY_PROJECT, serviceId: service.id, environmentId: environment.id, name: key, value } }
     );
     console.log(`   ✅ ${key}`);
   }

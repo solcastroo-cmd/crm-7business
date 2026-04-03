@@ -10,7 +10,8 @@
     "check": "tsx scripts/check.ts",
     "setup:env": "tsx scripts/setup-env.ts",
     "setup:db": "tsx scripts/setup-db.ts",
-    "setup:railway": "tsx scripts/setup-railway.ts"
+    "setup:railway": "tsx scripts/setup-railway.ts",
+    "fetch:keys": "tsx scripts/fetch-supabase-keys.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.101.1",
