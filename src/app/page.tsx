@@ -27,10 +27,16 @@ export default function Home() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const [erro, setErro] = useState<string | null>(null);
+
   useEffect(() => {
     fetch("/api/leads")
-      .then((r) => r.json())
-      .then((data) => { setLeads(data); setLoading(false); });
+      .then((r) => {
+        if (!r.ok) throw new Error(`Erro ${r.status}`);
+        return r.json();
+      })
+      .then((data) => { setLeads(Array.isArray(data) ? data : []); setLoading(false); })
+      .catch((e) => { setErro(e.message); setLoading(false); });
   }, []);
 
   const leadsByStage = (stage: string) => leads.filter((l) => l.stage === stage);
@@ -38,6 +44,13 @@ export default function Home() {
   if (loading) return (
     <div className="flex items-center justify-center h-screen">
       <span className="text-gray-400 text-sm animate-pulse">Carregando CRM...</span>
+    </div>
+  );
+
+  if (erro) return (
+    <div className="flex items-center justify-center h-screen flex-col gap-2">
+      <span className="text-red-400 text-sm">⚠️ Erro ao carregar leads: {erro}</span>
+      <span className="text-gray-600 text-xs">Verifique as variáveis de ambiente do Supabase.</span>
     </div>
   );
 
