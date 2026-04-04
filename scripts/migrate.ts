@@ -46,13 +46,25 @@ CREATE TABLE IF NOT EXISTS public.leads (
   type        text,
   payment     text,
   seller      text,
+  store_id    uuid,
   veiculo_interesse_id uuid,
   created_at  timestamptz NOT NULL DEFAULT now(),
   updated_at  timestamptz NOT NULL DEFAULT now()
 );
 
+-- Adiciona store_id em tabelas existentes (idempotente)
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='leads' AND column_name='store_id'
+  ) THEN
+    ALTER TABLE public.leads ADD COLUMN store_id uuid;
+  END IF;
+END $$;
+
 CREATE INDEX IF NOT EXISTS leads_stage_idx      ON public.leads(stage);
 CREATE INDEX IF NOT EXISTS leads_phone_idx      ON public.leads(phone);
+CREATE INDEX IF NOT EXISTS leads_store_id_idx   ON public.leads(store_id);
 CREATE INDEX IF NOT EXISTS leads_created_at_idx ON public.leads(created_at DESC);
 
 ALTER TABLE public.leads ENABLE ROW LEVEL SECURITY;

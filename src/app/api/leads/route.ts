@@ -5,13 +5,21 @@ export const dynamic = "force-dynamic";
 
 const ALLOWED_PATCH_FIELDS = ["name", "stage", "source", "budget", "type", "payment", "seller", "veiculo_interesse_id"];
 
-// GET /api/leads
-export async function GET() {
+// GET /api/leads?storeId=xxx
+export async function GET(req: NextRequest) {
   try {
-    const { data, error } = await supabaseAdmin
+    const { searchParams } = new URL(req.url);
+    const storeId = searchParams.get("storeId");
+
+    let query = supabaseAdmin
       .from("leads")
       .select("*")
       .order("created_at", { ascending: false });
+
+    // Filtra por loja quando informado (multi-tenant)
+    if (storeId) query = query.eq("store_id", storeId);
+
+    const { data, error } = await query;
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     return NextResponse.json(data ?? []);
@@ -25,7 +33,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { phone, name, stage = "Novo Lead", source = "manual" } = body;
+    const { phone, name, stage = "Novo Lead", source = "manual", store_id } = body;
 
     if (!phone || typeof phone !== "string" || phone.trim() === "") {
       return NextResponse.json({ error: "phone é obrigatório" }, { status: 400 });
@@ -33,7 +41,7 @@ export async function POST(req: NextRequest) {
 
     const { data, error } = await supabaseAdmin
       .from("leads")
-      .insert([{ phone: phone.trim(), name, stage, source }])
+      .insert([{ phone: phone.trim(), name, stage, source, store_id: store_id ?? null }])
       .select()
       .single();
 
