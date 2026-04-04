@@ -326,6 +326,175 @@ function WhatsAppCard() {
   );
 }
 
+// ─── Card WhatsApp QR Code (Evolution API) ────────────────────────────────────
+function WhatsAppQRCard() {
+  type QRState = "idle" | "loading" | "qrcode" | "connected" | "error";
+  const [qrState,    setQRState]    = useState<QRState>("idle");
+  const [qrBase64,   setQRBase64]   = useState<string | null>(null);
+  const [phone,      setPhone]      = useState<string | null>(null);
+  const [profile,    setProfile]    = useState<string | null>(null);
+  const [errMsg,     setErrMsg]     = useState<string | null>(null);
+  const [countdown,  setCountdown]  = useState(0);
+
+  const POLL_INTERVAL = 4000; // 4 segundos
+  const QR_TIMEOUT    = 60;   // QR expira em ~60s
+
+  const fetchQR = useCallback(async () => {
+    try {
+      const res  = await fetch("/api/evolution/qrcode");
+      const data = await res.json() as {
+        status?: string; base64?: string; count?: number;
+        phone?: string; profileName?: string; error?: string;
+      };
+
+      if (data.error) { setErrMsg(data.error); setQRState("error"); return; }
+
+      if (data.status === "connected") {
+        setQRState("connected");
+        setPhone(data.phone ?? null);
+        setProfile(data.profileName ?? null);
+        setQRBase64(null);
+        return;
+      }
+
+      if (data.status === "qrcode" && data.base64) {
+        setQRBase64(data.base64);
+        setQRState("qrcode");
+        setCountdown(QR_TIMEOUT);
+        return;
+      }
+
+      // Ainda conectando — tenta novamente
+      setQRState("loading");
+    } catch {
+      setErrMsg("Sem conexão com o servidor.");
+      setQRState("error");
+    }
+  }, []);
+
+  // Inicia polling automático quando card é aberto
+  useEffect(() => {
+    if (qrState !== "idle" && qrState !== "qrcode" && qrState !== "connected") return;
+    if (qrState === "idle") { fetchQR(); setQRState("loading"); return; }
+    if (qrState === "connected") return;
+
+    const id = setInterval(fetchQR, POLL_INTERVAL);
+    return () => clearInterval(id);
+  }, [qrState, fetchQR]);
+
+  // Countdown do QR
+  useEffect(() => {
+    if (qrState !== "qrcode" || countdown <= 0) return;
+    const id = setInterval(() => setCountdown(c => {
+      if (c <= 1) { fetchQR(); return QR_TIMEOUT; }
+      return c - 1;
+    }), 1000);
+    return () => clearInterval(id);
+  }, [qrState, countdown, fetchQR]);
+
+  async function handleDisconnect() {
+    await fetch("/api/evolution/qrcode", { method: "DELETE" });
+    setQRState("loading");
+    setPhone(null);
+    setProfile(null);
+    setQRBase64(null);
+    fetchQR();
+  }
+
+  const isConnected = qrState === "connected";
+
+  return (
+    <div className={`rounded-2xl p-6 flex flex-col gap-4 border ${
+      isConnected ? "bg-green-50 border-green-300" : "bg-emerald-50 border-emerald-300"
+    }`}>
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <span className="text-2xl">📱</span>
+          <div>
+            <h2 className={`text-sm font-bold ${isConnected ? "text-green-800" : "text-emerald-800"}`}>
+              WhatsApp QR Code
+            </h2>
+            <p className={`text-xs ${isConnected ? "text-green-600" : "text-emerald-500"}`}>
+              {isConnected ? "Conectado via QR Code" : "Escaneie para conectar"}
+            </p>
+          </div>
+        </div>
+        <span className={`text-xs px-3 py-1 rounded-full font-semibold border ${
+          isConnected
+            ? "bg-green-100 text-green-700 border-green-300"
+            : "bg-emerald-100 text-emerald-700 border-emerald-300"
+        }`}>
+          {isConnected ? "✅ ONLINE" : qrState === "loading" ? "⏳ AGUARDANDO" : "QR CODE"}
+        </span>
+      </div>
+
+      {/* Conectado */}
+      {isConnected && (
+        <>
+          <div className="bg-white border border-green-200 rounded-xl p-4 space-y-2">
+            {phone   && <p className="text-xs text-gray-700"><span className="font-semibold">Número:</span> +{phone}</p>}
+            {profile && <p className="text-xs text-gray-700"><span className="font-semibold">Perfil:</span> {profile}</p>}
+            <p className="text-xs text-green-700 font-semibold">Recebendo mensagens automaticamente</p>
+          </div>
+          <button
+            onClick={handleDisconnect}
+            className="text-xs px-4 py-2 rounded-lg bg-white border border-red-300 text-red-500 hover:bg-red-50 transition-colors"
+          >
+            Desconectar
+          </button>
+        </>
+      )}
+
+      {/* QR Code */}
+      {qrState === "qrcode" && qrBase64 && (
+        <div className="flex flex-col items-center gap-3">
+          <div className="bg-white p-3 rounded-2xl border border-emerald-200 shadow-sm">
+            <img
+              src={qrBase64}
+              alt="QR Code WhatsApp"
+              className="w-48 h-48 object-contain"
+            />
+          </div>
+          <div className="text-center">
+            <p className="text-xs font-semibold text-emerald-700">Abra o WhatsApp → aparelhos conectados → escanear</p>
+            <p className="text-xs text-emerald-500 mt-1">Expira em {countdown}s</p>
+          </div>
+          <button
+            onClick={fetchQR}
+            className="text-xs text-emerald-600 hover:text-emerald-800 underline"
+          >
+            Atualizar QR
+          </button>
+        </div>
+      )}
+
+      {/* Carregando */}
+      {(qrState === "loading" || qrState === "idle") && (
+        <div className="flex flex-col items-center gap-3 py-4">
+          <div className="w-8 h-8 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
+          <p className="text-xs text-emerald-600">Gerando QR Code...</p>
+        </div>
+      )}
+
+      {/* Erro */}
+      {qrState === "error" && (
+        <div className="space-y-3">
+          <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+            ⚠️ {errMsg ?? "Erro ao conectar"}
+          </p>
+          <button
+            onClick={() => { setQRState("loading"); setErrMsg(null); fetchQR(); }}
+            className="w-full py-2 rounded-xl bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 transition-colors"
+          >
+            Tentar novamente
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Card Instagram ───────────────────────────────────────────────────────────
 function InstagramCard() {
   return (
@@ -373,6 +542,7 @@ export default function IntegrationsPage() {
         className="max-w-4xl mx-auto"
         style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}
       >
+        <WhatsAppQRCard />
         <WhatsAppCard />
         <InstagramCard />
       </div>
