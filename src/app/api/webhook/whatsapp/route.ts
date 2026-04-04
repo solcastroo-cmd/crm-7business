@@ -94,30 +94,13 @@ async function findStore(phoneNumberId: string): Promise<StoreConfig | null> {
     return { userId: "env", token: envToken, phoneNumberId };
   }
 
-  // 3. Fallback final: último usuário ativo no banco
-  const { data: lastUser, error: lastErr } = await supabaseAdmin
-    .from("users")
-    .select("id, whatsapp_token, phone_number_id")
-    .not("whatsapp_token", "is", null)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (lastErr) waError("Supabase erro ao buscar usuário fallback", { message: lastErr.message });
-
-  if (lastUser?.whatsapp_token) {
-    waWarn("findStore() usando fallback (último usuário ativo) — phone_number_id pode estar desatualizado", {
-      savedPhoneId:    lastUser.phone_number_id,
-      receivedPhoneId: phoneNumberId,
-    });
-    return {
-      userId:        lastUser.id,
-      token:         lastUser.whatsapp_token,
-      phoneNumberId: lastUser.phone_number_id ?? phoneNumberId,
-    };
-  }
-
-  waError("findStore() falhou — nenhuma loja encontrada para este número", { phoneNumberId });
+  // BUG #5: fallback "último usuário ativo" REMOVIDO — risco de vazamento multi-tenant.
+  // Se o phone_number_id não bater com nenhum registro no banco nem nas env vars,
+  // rejeitamos silenciosamente em vez de usar dados de outra loja.
+  waError("findStore() falhou — phone_number_id não mapeado para nenhuma loja", {
+    phoneNumberId,
+    dica: "Verifique se o phone_number_id está salvo corretamente na tabela users",
+  });
   return null;
 }
 

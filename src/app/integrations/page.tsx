@@ -26,6 +26,7 @@ function WhatsAppCard() {
   const [bizName,       setBizName]       = useState<string | null>(null);
   const [daysLeft,      setDaysLeft]      = useState<number | null>(null);
   const [oauthError,    setOauthError]    = useState<string | null>(null);
+  const [loadError,     setLoadError]     = useState<string | null>(null);  // BUG #1
   const [disconnecting, setDisconnecting] = useState(false);
   const [showManual,    setShowManual]    = useState(false);
 
@@ -36,18 +37,28 @@ function WhatsAppCard() {
 
   // ── carrega status do Supabase ─────────────────────────────────────────────
   const loadStatus = useCallback(async (uid: string) => {
+    setLoadError(null);
     try {
       const res  = await fetch(`/api/integrations?userId=${uid}`);
+      // BUG #1: trata falha de rede/API em vez de engolir silenciosamente
+      if (!res.ok) {
+        setLoadError("Não foi possível verificar o status. Tente recarregar a página.");
+        return;
+      }
       const data = await res.json().catch(() => null);
       const wa   = data?.whatsapp;
       if (wa?.active) {
         setConnected(true);
-        setPhone(wa.phone       ?? null);
-        setDaysLeft(wa.days_left ?? null);
+        setPhone(wa.phone              ?? null);
+        setDaysLeft(wa.days_left       ?? null);
+        setBizName(wa.business_name    ?? null); // BUG #3: carrega bizName no reload
       } else {
         setConnected(false);
       }
-    } catch { /* silencioso */ }
+    } catch {
+      // BUG #1: erro de rede (offline, CORS, etc.) — mostra mensagem ao usuário
+      setLoadError("Erro de rede ao verificar status. Verifique sua conexão.");
+    }
   }, []);
 
   // ── ao montar: lê userId do localStorage ──────────────────────────────────
@@ -100,11 +111,19 @@ function WhatsAppCard() {
     if (!uid) return;
     setDisconnecting(true);
     try {
-      await fetch(`/api/integrations/whatsapp?userId=${uid}`, { method: "DELETE" });
+      const res = await fetch(`/api/integrations/whatsapp?userId=${uid}`, { method: "DELETE" });
+      // BUG #2: só atualiza UI se o DELETE teve sucesso no servidor
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        setTokenErr(data?.error ?? "Erro ao desconectar. Tente novamente.");
+        return;
+      }
       setConnected(false);
       setPhone(null);
       setBizName(null);
       setDaysLeft(null);
+    } catch {
+      setTokenErr("Erro de rede ao desconectar.");
     } finally {
       setDisconnecting(false);
     }
@@ -199,6 +218,13 @@ function WhatsAppCard() {
               </a>
             )}
           </>
+        )}
+
+        {/* ── ERRO DE CARREGAMENTO (BUG #1) ───────────────────────────────── */}
+        {loadError && (
+          <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 flex items-start gap-2">
+            ⚠️ {loadError}
+          </p>
         )}
 
         {/* ── ESTADO DESCONECTADO ──────────────────────────────────────────── */}

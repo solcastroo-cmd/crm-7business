@@ -37,11 +37,12 @@ export async function sendWhatsAppMessage(
   // ── 1. Busca credenciais do usuário ────────────────────────────────────────
   waDebug("sendWhatsAppMessage() iniciando", { userId, to: to.substring(0, 8) + "***" });
 
+  // BUG #4: .single() lançava exceção se userId não existisse — .maybeSingle() retorna null
   const { data: user, error: fetchErr } = await db
     .from("users")
     .select("whatsapp_token, phone_number_id, token_expires_at")
     .eq("id", userId)
-    .single<UserRow>();
+    .maybeSingle<UserRow>();
 
   if (fetchErr || !user) {
     waError("Usuário não encontrado no banco", { userId, supabaseError: fetchErr?.message });

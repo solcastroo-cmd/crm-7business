@@ -32,20 +32,23 @@ export async function GET(req: NextRequest) {
   let waStatus      = "❌ Não conectado";
   let waPhone       = process.env.WHATSAPP_PHONE_NUMBER_ID ?? "—";
   let waActive      = false;
-  let waDaysLeft: number | null = null;
+  let waDaysLeft:  number | null = null;
+  let waBizName:   string | null = null; // BUG #3: campo separado para o frontend
 
   if (userId) {
     const db = supabaseAdmin;
+    // FIX BUG #3 + integrations/.single() → .maybeSingle() (não lança erro se userId não existir)
     const { data: user } = await db
       .from("users")
       .select("whatsapp_token, phone_number_id, display_phone, business_name, token_expires_at")
       .eq("id", userId)
-      .single<UserRow>();
+      .maybeSingle<UserRow>();
 
     if (user?.whatsapp_token) {
-      waDaysLeft = daysUntil(user.token_expires_at);
-      waActive   = (waDaysLeft ?? 1) > 0;
-      waPhone    = user.display_phone ?? user.phone_number_id ?? waPhone;
+      waDaysLeft   = daysUntil(user.token_expires_at);
+      waActive     = (waDaysLeft ?? 1) > 0;
+      waPhone      = user.display_phone ?? user.phone_number_id ?? waPhone;
+      waBizName    = user.business_name ?? null; // BUG #3: expõe campo separado
 
       if (!waActive) {
         waStatus = "⚠️ Token expirado — reconecte";
@@ -90,11 +93,12 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     whatsapp: {
-      active:     waActive,
-      status:     waStatus,
-      phone:      waPhone,
-      days_left:  waDaysLeft,
-      webhook:    "/api/webhook/whatsapp",
+      active:        waActive,
+      status:        waStatus,
+      phone:         waPhone,
+      days_left:     waDaysLeft,
+      business_name: waBizName,   // BUG #3: exposto para o frontend
+      webhook:       "/api/webhook/whatsapp",
       verify_token: process.env.WA_VERIFY_TOKEN ?? "7business_wa_token",
       connect_url:  "/api/meta/auth",
     },
