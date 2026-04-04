@@ -120,6 +120,12 @@ export async function POST(req: NextRequest) {
   }
 
   // ── 4. Salva ou atualiza no Supabase ────────────────────────────────────────
+  const svcKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SERVICE_KEY;
+  if (!svcKey) {
+    console.error("[WhatsApp] ❌ SUPABASE_SERVICE_ROLE_KEY não configurada no ambiente");
+    return NextResponse.json({ error: "Configuração do servidor incompleta (SUPABASE_SERVICE_ROLE_KEY ausente)" }, { status: 500 });
+  }
+
   const db = supabaseAdmin;
   const expiresAt  = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString(); // +60 dias estimado
 
@@ -140,7 +146,8 @@ export async function POST(req: NextRequest) {
       .eq("id", userId);
 
     if (error) {
-      return NextResponse.json({ error: "Erro ao salvar token" }, { status: 500 });
+      console.error("[WhatsApp] ❌ Erro ao atualizar registro:", error.message, "| code:", error.code);
+      return NextResponse.json({ error: `Erro ao salvar token: ${error.message}` }, { status: 500 });
     }
   } else {
     // Cria novo registro
@@ -158,7 +165,9 @@ export async function POST(req: NextRequest) {
       .single();
 
     if (error || !data) {
-      return NextResponse.json({ error: "Erro ao criar registro" }, { status: 500 });
+      const detail = error?.message ?? "data null";
+      console.error("[WhatsApp] ❌ Erro ao criar registro:", detail, "| code:", error?.code);
+      return NextResponse.json({ error: `Erro ao criar registro: ${detail}` }, { status: 500 });
     }
     savedUserId = data.id;
   }
