@@ -38,11 +38,15 @@ async function run() {
     process.exit(1);
   }
 
-  const sqlPath = join(process.cwd(), "supabase", "leads.sql");
-  const sql = readFileSync(sqlPath, "utf-8");
+  // Executa todos os arquivos SQL em ordem (BUG-08 corrigido)
+  const sqlFiles = ["leads.sql", "users.sql"];
+  const sql = sqlFiles
+    .map(f => readFileSync(join(process.cwd(), "supabase", f), "utf-8"))
+    .join("\n");
 
   console.log("📡 Conectando ao Supabase...");
-  console.log(`   URL: ${SUPABASE_URL}\n`);
+  console.log(`   URL: ${SUPABASE_URL}`);
+  console.log(`   Arquivos: ${sqlFiles.join(", ")}\n`);
 
   const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/exec_sql`, {
     method: "POST",
