@@ -145,6 +145,21 @@ export async function GET(req: NextRequest) {
 
     if (saveErr) throw new Error(saveErr.message);
 
+    // ── 6. Registra webhook na Meta automaticamente ───────────────────────────
+    if (waAccountId) {
+      try {
+        await axios.post(
+          `${GRAPH}/${waAccountId}/subscribed_apps`,
+          null,
+          { params: { access_token: permanentToken } }
+        );
+        console.log(`[OAuth] 📡 Webhook registrado na WABA ${waAccountId}`);
+      } catch {
+        // Não bloqueia o fluxo — usuário pode registrar manualmente no painel Meta
+        console.warn("[OAuth] ⚠️ Não foi possível registrar webhook automaticamente");
+      }
+    }
+
     console.log(`[OAuth] ✅ userId ${userId} conectou WhatsApp (${displayPhone ?? "número pendente"})`);
     return redirect(`/integrations?success=whatsapp&userId=${userId}`);
 
