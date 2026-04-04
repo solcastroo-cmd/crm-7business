@@ -10,7 +10,7 @@
 
 import { NextResponse } from "next/server";
 import { randomUUID }   from "crypto";
-import { getSupabase }  from "@/lib/supabaseClient";
+import { getSupabaseAdmin as getSupabase }  from "@/lib/supabaseClient";
 
 export const dynamic = "force-dynamic";
 

@@ -1,0 +1,12 @@
+{
+  "/_global-error/page": "/_global-error",
+  "/_not-found/page": "/_not-found",
+  "/api/integrations/route": "/api/integrations",
+  "/api/leads/route": "/api/leads",
+  "/api/meta/auth/route": "/api/meta/auth",
+  "/api/meta/callback/route": "/api/meta/callback",
+  "/api/webhook/evolution/route": "/api/webhook/evolution",
+  "/api/webhook/whatsapp/route": "/api/webhook/whatsapp",
+  "/integrations/page": "/integrations",
+  "/page": "/"
+}
