@@ -10,6 +10,7 @@
     "build": "next build",
     "migrate": "tsx scripts/migrate.ts",
     "start": "npm run migrate && next start",
+    "postinstall": "node setup-env.js",
     "lint": "next lint",
     "check": "tsx scripts/check.ts",
     "setup:env": "tsx scripts/setup-env.ts",

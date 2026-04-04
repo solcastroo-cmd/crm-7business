@@ -1,11 +1,12 @@
 /**
  * 📱 whatsapp.ts
- * Função principal para envio de mensagens WhatsApp.
- * Busca token e phone_number_id do userId no Supabase.
+ * Envio de mensagens via WhatsApp Business API.
+ * Logging via logWA() — filtre no Railway: [WA:SEND] [WA:WARN] [WA:ERROR]
  */
 
 import axios, { AxiosError } from "axios";
 import { supabaseAdmin as db } from "./supabaseAdmin";
+import { waInfo, waWarn, waError, waDebug, waSend } from "./logger";
 
 const GRAPH_URL = "https://graph.facebook.com/v19.0";
 
@@ -21,18 +22,12 @@ type GraphMessageResponse = {
 };
 
 type UserRow = {
-  whatsapp_token:  string | null;
-  phone_number_id: string | null;
+  whatsapp_token:   string | null;
+  phone_number_id:  string | null;
   token_expires_at: string | null;
 };
 
 // ─── sendWhatsAppMessage ──────────────────────────────────────────────────────
-/**
- * Envia uma mensagem de texto via WhatsApp Business API.
- * @param userId  - ID do usuário/loja no Supabase
- * @param to      - Número do destinatário (ex: "5585999998888")
- * @param message - Texto da mensagem
- */
 export async function sendWhatsAppMessage(
   userId:  string,
   to:      string,
@@ -40,6 +35,8 @@ export async function sendWhatsAppMessage(
 ): Promise<SendResult> {
 
   // ── 1. Busca credenciais do usuário ────────────────────────────────────────
+  waDebug("sendWhatsAppMessage() iniciando", { userId, to: to.substring(0, 8) + "***" });
+
   const { data: user, error: fetchErr } = await db
     .from("users")
     .select("whatsapp_token, phone_number_id, token_expires_at")
@@ -47,91 +44,107 @@ export async function sendWhatsAppMessage(
     .single<UserRow>();
 
   if (fetchErr || !user) {
+    waError("Usuário não encontrado no banco", { userId, supabaseError: fetchErr?.message });
     return { success: false, error: "Usuário não encontrado" };
   }
 
   if (!user.whatsapp_token) {
-    return { success: false, error: "WhatsApp não conectado. Acesse /api/meta/auth para autorizar." };
+    waWarn("WhatsApp não conectado para este userId", { userId });
+    return { success: false, error: "WhatsApp não conectado. Acesse /integrations para autorizar." };
   }
 
   if (!user.phone_number_id) {
+    waWarn("phone_number_id não configurado", { userId });
     return { success: false, error: "phone_number_id não configurado" };
   }
 
   // ── 2. Verifica se token expirou ───────────────────────────────────────────
   if (user.token_expires_at) {
-    const expiresAt = new Date(user.token_expires_at);
-    const now       = new Date();
-    if (expiresAt <= now) {
-      return { success: false, error: "Token expirado. Reconecte o WhatsApp em /api/meta/auth" };
+    const expiresAt    = new Date(user.token_expires_at);
+    const now          = new Date();
+    const msRemaining  = expiresAt.getTime() - now.getTime();
+    const daysLeft     = Math.floor(msRemaining / (1000 * 60 * 60 * 24));
+
+    if (msRemaining <= 0) {
+      waError("Token expirado — envio bloqueado", { userId, expiresAt: user.token_expires_at });
+      return { success: false, error: "Token expirado. Reconecte o WhatsApp em /integrations" };
     }
-    // Aviso se expira em menos de 7 dias
-    const daysLeft = Math.floor((expiresAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+
     if (daysLeft < 7) {
-      console.warn(`[WhatsApp] ⚠️ Token do usuário ${userId} expira em ${daysLeft} dia(s)`);
+      waWarn(`Token expira em breve`, { userId, daysLeft, expiresAt: user.token_expires_at });
     }
   }
 
-  // ── 3. Normaliza número (remove +, espaços, traços) ────────────────────────
+  // ── 3. Normaliza número ────────────────────────────────────────────────────
   const toClean = to.replace(/[\s+\-()]/g, "");
 
   // ── 4. Envia mensagem via Meta Graph API ───────────────────────────────────
+  const url     = `${GRAPH_URL}/${user.phone_number_id}/messages`;
+  const payload = {
+    messaging_product: "whatsapp",
+    recipient_type:    "individual",
+    to:                toClean,
+    type:              "text",
+    text:              { preview_url: false, body: message },
+  };
+
+  waSend("Enviando mensagem via sendWhatsAppMessage()", {
+    userId,
+    to:      toClean,
+    preview: message.substring(0, 80),
+  });
+
   try {
-    const res = await axios.post<GraphMessageResponse>(
-      `${GRAPH_URL}/${user.phone_number_id}/messages`,
-      {
-        messaging_product: "whatsapp",
-        recipient_type:    "individual",
-        to:                toClean,
-        type:              "text",
-        text:              { preview_url: false, body: message },
+    const res = await axios.post<GraphMessageResponse>(url, payload, {
+      headers: {
+        "Authorization": `Bearer ${user.whatsapp_token}`,
+        "Content-Type":  "application/json",
       },
-      {
-        headers: {
-          "Authorization": `Bearer ${user.whatsapp_token}`,
-          "Content-Type":  "application/json",
-        },
-        timeout: 10000,
-      }
-    );
+      timeout: 10000,
+    });
 
     const messageId = res.data.messages?.[0]?.id;
-    console.log(`[WhatsApp] ✅ Mensagem enviada para ${toClean} — ID: ${messageId}`);
+    waSend("Mensagem enviada com sucesso ✅", { userId, to: toClean, messageId });
+    waInfo("sendWhatsAppMessage() OK", { userId, messageId });
     return { success: true, messageId };
 
   } catch (err) {
-    const axErr = err as AxiosError<{ error: { message: string; code: number } }>;
+    const axErr  = err as AxiosError<{ error: { message: string; code: number } }>;
     const apiMsg = axErr.response?.data?.error?.message ?? axErr.message;
     const code   = axErr.response?.data?.error?.code;
 
-    // Token inválido/expirado detectado pela Meta
+    // Log completo do erro da Meta
+    waError("Falha ao enviar mensagem via Meta API", {
+      userId,
+      to:       toClean,
+      code,
+      message:  apiMsg,
+      status:   axErr.response?.status,
+      response: axErr.response?.data,
+    });
+
+    // Token inválido/revogado — limpa do banco
     if (code === 190) {
       await db
         .from("users")
         .update({ whatsapp_token: null, token_expires_at: null })
         .eq("id", userId);
+      waWarn("Token revogado (code 190) — removido do banco", { userId });
       return { success: false, error: "Token inválido. Reconecte o WhatsApp em /integrations" };
     }
 
-    console.error(`[WhatsApp] ❌ Erro ao enviar para ${toClean}:`, apiMsg);
     return { success: false, error: apiMsg };
   }
 }
 
 // ─── sendTemplateMessage ──────────────────────────────────────────────────────
-/**
- * Envia mensagem usando template aprovado pela Meta.
- * @param userId       - ID do usuário/loja
- * @param to           - Número do destinatário
- * @param templateName - Nome do template (ex: "hello_world")
- * @param langCode     - Código do idioma (ex: "pt_BR")
- */
 export async function sendTemplateMessage(
   userId:       string,
   to:           string,
   templateName: string,
   langCode      = "pt_BR"
 ): Promise<SendResult> {
+
   const { data: user } = await db
     .from("users")
     .select("whatsapp_token, phone_number_id")
@@ -139,15 +152,20 @@ export async function sendTemplateMessage(
     .single<UserRow>();
 
   if (!user?.whatsapp_token || !user?.phone_number_id) {
+    waWarn("sendTemplateMessage() — WhatsApp não conectado", { userId });
     return { success: false, error: "WhatsApp não conectado" };
   }
+
+  const toClean = to.replace(/[\s+\-()]/g, "");
+
+  waSend("Enviando template message", { userId, to: toClean, templateName, langCode });
 
   try {
     const res = await axios.post<GraphMessageResponse>(
       `${GRAPH_URL}/${user.phone_number_id}/messages`,
       {
         messaging_product: "whatsapp",
-        to:                to.replace(/[\s+\-()]/g, ""),
+        to:                toClean,
         type:              "template",
         template: {
           name:     templateName,
@@ -164,9 +182,19 @@ export async function sendTemplateMessage(
     );
 
     const messageId = res.data.messages?.[0]?.id;
+    waSend("Template enviado com sucesso ✅", { userId, to: toClean, templateName, messageId });
     return { success: true, messageId };
+
   } catch (err) {
-    const axErr = err as AxiosError<{ error: { message: string } }>;
-    return { success: false, error: axErr.response?.data?.error?.message ?? axErr.message };
+    const axErr = err as AxiosError<{ error: { message: string; code: number } }>;
+    const code  = axErr.response?.data?.error?.code;
+    const msg   = axErr.response?.data?.error?.message ?? axErr.message;
+
+    waError("Falha ao enviar template", {
+      userId, templateName, code, message: msg,
+      response: axErr.response?.data,
+    });
+
+    return { success: false, error: msg };
   }
 }

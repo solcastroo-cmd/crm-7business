@@ -25,6 +25,10 @@ function loadEnv() {
 }
 loadEnv();
 
+// ── Garante WA_DEBUG ativo por padrão ─────────────────────────────────────────
+// Logs verbosos do WhatsApp ficam sempre ligados — sem precisar configurar manualmente.
+if (!process.env.WA_DEBUG) process.env.WA_DEBUG = "true";
+
 const DATABASE_URL = process.env.DATABASE_URL;
 
 if (!DATABASE_URL) {
