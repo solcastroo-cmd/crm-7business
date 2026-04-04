@@ -11,7 +11,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseAdmin as getSupabase }               from "@/lib/supabaseClient";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const dynamic = "force-dynamic";
 
@@ -120,7 +120,7 @@ export async function POST(req: NextRequest) {
   }
 
   // ── 4. Salva ou atualiza no Supabase ────────────────────────────────────────
-  const db         = getSupabase();
+  const db = supabaseAdmin;
   const expiresAt  = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString(); // +60 dias estimado
 
   let savedUserId = userId;
@@ -183,7 +183,7 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: "userId obrigatório" }, { status: 400 });
   }
 
-  const db = getSupabase();
+  const db = supabaseAdmin;
   const { error } = await db
     .from("users")
     .update({

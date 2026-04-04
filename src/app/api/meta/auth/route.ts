@@ -10,7 +10,7 @@
 
 import { NextResponse } from "next/server";
 import { randomUUID }   from "crypto";
-import { getSupabaseAdmin as getSupabase }  from "@/lib/supabaseClient";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const dynamic = "force-dynamic";
 
@@ -36,7 +36,7 @@ export async function GET() {
     );
   }
 
-  const db    = getSupabase();
+  const db = supabaseAdmin;
   const state = randomUUID();
   const stateExpiresAt = new Date(Date.now() + STATE_TTL_MINUTES * 60 * 1000).toISOString();
 

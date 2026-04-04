@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseAdmin as getSupabase } from "@/lib/supabaseClient";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const dynamic = "force-dynamic";
 
@@ -8,7 +8,7 @@ const ALLOWED_PATCH_FIELDS = ["name", "stage", "source", "budget", "type", "paym
 // GET /api/leads
 export async function GET() {
   try {
-    const { data, error } = await getSupabase()
+    const { data, error } = await supabaseAdmin
       .from("leads")
       .select("*")
       .order("created_at", { ascending: false });
@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "phone é obrigatório" }, { status: 400 });
     }
 
-    const { data, error } = await getSupabase()
+    const { data, error } = await supabaseAdmin
       .from("leads")
       .insert([{ phone: phone.trim(), name, stage, source }])
       .select()
@@ -60,7 +60,7 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: "Nenhum campo válido para atualizar" }, { status: 400 });
     }
 
-    const { data, error } = await getSupabase()
+    const { data, error } = await supabaseAdmin
       .from("leads")
       .update(updates)
       .eq("id", id)
@@ -82,7 +82,7 @@ export async function DELETE(req: NextRequest) {
 
     if (!id) return NextResponse.json({ error: "id é obrigatório" }, { status: 400 });
 
-    const { error } = await getSupabase().from("leads").delete().eq("id", id);
+    const { error } = await supabaseAdmin.from("leads").delete().eq("id", id);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     return NextResponse.json({ ok: true });
   } catch {

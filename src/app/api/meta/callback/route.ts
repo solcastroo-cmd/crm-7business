@@ -10,7 +10,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import axios                         from "axios";
-import { getSupabaseAdmin as getSupabase }               from "@/lib/supabaseClient";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const dynamic = "force-dynamic";
 
@@ -46,7 +46,7 @@ export async function GET(req: NextRequest) {
     return redirect("/integrations?error=Parâmetros+inválidos");
   }
 
-  const db = getSupabase();
+  const db = supabaseAdmin;
 
   // ── Valida state CSRF + TTL ───────────────────────────────────────────────
   const { data: userRow, error: stateErr } = await db

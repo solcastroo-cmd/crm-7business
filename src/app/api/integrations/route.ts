@@ -7,7 +7,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseAdmin as getSupabase }               from "@/lib/supabaseClient";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const dynamic = "force-dynamic";
 
@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
   let waDaysLeft: number | null = null;
 
   if (userId) {
-    const db = getSupabase();
+    const db = supabaseAdmin;
     const { data: user } = await db
       .from("users")
       .select("whatsapp_token, phone_number_id, display_phone, business_name, token_expires_at")

@@ -9,7 +9,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseAdmin as getSupabase }               from "@/lib/supabaseClient";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const dynamic = "force-dynamic";
 
@@ -34,7 +34,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   }
 
-  const db      = getSupabase();
+  const db = supabaseAdmin;
   const results: RenewResult[] = [];
 
   // ── Busca usuários com token prestes a vencer (ou já vencido) ───────────────
