@@ -18,6 +18,27 @@ export const dynamic = "force-dynamic";
 const WA_VERIFY_TOKEN = process.env.WA_VERIFY_TOKEN ?? "7business_wa_token";
 const GRAPH           = "https://graph.facebook.com/v19.0";
 
+// ─── Deduplicação de mensagens ────────────────────────────────────────────────
+// Meta reenvia o mesmo webhook quando não recebe 200 a tempo (retry).
+// Guardamos os wamids processados em memória com TTL de 1h.
+// Seguro para instância única no Railway — se necessário escalar,
+// trocar por Upstash Redis (1 linha de mudança).
+const processedWamids = new Map<string, number>(); // wamid → timestamp ms
+const DEDUP_TTL_MS    = 60 * 60 * 1000; // 1 hora
+
+function isDuplicate(wamid: string): boolean {
+  const now = Date.now();
+
+  // Limpa entradas expiradas a cada verificação
+  for (const [id, ts] of processedWamids) {
+    if (now - ts > DEDUP_TTL_MS) processedWamids.delete(id);
+  }
+
+  if (processedWamids.has(wamid)) return true;
+  processedWamids.set(wamid, now);
+  return false;
+}
+
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 type StoreConfig = {
   userId:        string;
@@ -188,6 +209,13 @@ async function processMessage(body: unknown) {
     for (const msg of messages) {
       if (msg.type !== "text") {
         waDebug("Tipo de mensagem ignorado", { type: msg.type });
+        continue;
+      }
+
+      // ── Deduplicação: ignora se wamid já foi processado (Meta retry) ──────
+      const wamid = msg.id as string | undefined;
+      if (wamid && isDuplicate(wamid)) {
+        waWarn("Mensagem duplicada ignorada (Meta retry)", { wamid });
         continue;
       }
 

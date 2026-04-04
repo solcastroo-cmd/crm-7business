@@ -109,6 +109,40 @@ DO $$ BEGIN
     CREATE POLICY users_acesso_publico ON public.users FOR ALL USING (true) WITH CHECK (true);
   END IF;
 END $$;
+
+-- ── Trigger updated_at ────────────────────────────────────────────────────────
+-- Atualiza updated_at automaticamente em qualquer UPDATE nas tabelas.
+-- Sem isso, a coluna existe mas nunca muda — dado inconsistente.
+
+CREATE OR REPLACE FUNCTION set_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_trigger
+    WHERE tgname = 'leads_set_updated_at'
+  ) THEN
+    CREATE TRIGGER leads_set_updated_at
+      BEFORE UPDATE ON public.leads
+      FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_trigger
+    WHERE tgname = 'users_set_updated_at'
+  ) THEN
+    CREATE TRIGGER users_set_updated_at
+      BEFORE UPDATE ON public.users
+      FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+  END IF;
+END $$;
 `;
 
 async function migrate() {
