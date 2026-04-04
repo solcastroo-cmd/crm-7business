@@ -5,7 +5,7 @@
  */
 
 import axios, { AxiosError } from "axios";
-import { getSupabase } from "./supabaseClient";
+import { supabaseAdmin as db } from "./supabaseAdmin";
 
 const GRAPH_URL = "https://graph.facebook.com/v19.0";
 
@@ -38,7 +38,6 @@ export async function sendWhatsAppMessage(
   to:      string,
   message: string
 ): Promise<SendResult> {
-  const db = getSupabase();
 
   // ── 1. Busca credenciais do usuário ────────────────────────────────────────
   const { data: user, error: fetchErr } = await db
@@ -133,8 +132,6 @@ export async function sendTemplateMessage(
   templateName: string,
   langCode      = "pt_BR"
 ): Promise<SendResult> {
-  const db = getSupabase();
-
   const { data: user } = await db
     .from("users")
     .select("whatsapp_token, phone_number_id")
