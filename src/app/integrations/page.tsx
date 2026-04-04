@@ -16,7 +16,7 @@ function WhatsAppCard() {
   const loadStatus = useCallback(async (uid: string) => {
     try {
       const res  = await fetch(`/api/integrations?userId=${uid}`);
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
       const wa   = data?.whatsapp;
       if (wa?.active) {
         setConnected(true);
@@ -45,14 +45,14 @@ function WhatsAppCard() {
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify(body),
       });
-      const data = await res.json();
+      const data: Record<string, string> | null = await res.json().catch(() => null);
 
-      if (!res.ok) { setError(data.error ?? "Erro ao salvar."); return; }
+      if (!res.ok) { setError(data?.error ?? "Erro ao salvar."); return; }
 
-      if (data.userId) localStorage.setItem("crm_userId", data.userId);
+      if (data?.userId) localStorage.setItem("crm_userId", data.userId);
       setConnected(true);
-      setPhone(data.displayPhone  ?? null);
-      setBizName(data.businessName ?? null);
+      setPhone(data?.displayPhone  ?? null);
+      setBizName(data?.businessName ?? null);
       setToken("");
     } catch {
       setError("Erro de rede. Verifique sua conexão.");
