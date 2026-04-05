@@ -43,6 +43,12 @@ if (missing.length === 0) {
   process.exit(0);
 }
 
+// No Railway/CI, não tenta escrever .env.local — usa variáveis de ambiente direto
+if (process.env.RAILWAY_ENVIRONMENT || process.env.CI) {
+  console.log("[setup-env] ✅ Railway/CI detectado — pulando escrita de .env.local");
+  process.exit(0);
+}
+
 // Adiciona ao final do arquivo com cabeçalho
 const addition = [
   "",
@@ -50,6 +56,9 @@ const addition = [
   ...missing,
 ].join("\n");
 
-fs.appendFileSync(ENV_FILE, addition, "utf-8");
-
-console.log("[setup-env] ✅ Variáveis adicionadas ao .env.local:", missing.join(", "));
+try {
+  fs.appendFileSync(ENV_FILE, addition, "utf-8");
+  console.log("[setup-env] ✅ Variáveis adicionadas ao .env.local:", missing.join(", "));
+} catch (e) {
+  console.log("[setup-env] ⚠️ Não foi possível escrever .env.local (somente leitura) — OK em produção");
+}
