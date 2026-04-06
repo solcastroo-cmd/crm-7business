@@ -119,6 +119,7 @@ export async function DELETE(req: NextRequest) {
     const id = searchParams.get("id");
 
     if (!id) return NextResponse.json({ error: "id é obrigatório" }, { status: 400 });
+    if (!UUID_REGEX.test(id)) return NextResponse.json({ error: "id deve ser um UUID válido" }, { status: 400 });
 
     const { error } = await supabaseAdmin.from("leads").delete().eq("id", id);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });

@@ -3,6 +3,10 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const dynamic = "force-dynamic";
 
+// ── Cache em memória 30s — evita 6 queries a cada polling do dashboard ───────
+let _cache: { data: unknown; ts: number } | null = null;
+const CACHE_TTL_MS = 30_000;
+
 // ── /api/metrics — Métricas do dashboard hero (FEAT-01) ──────────────────────
 // Retorna 4 KPIs calculados no banco:
 //   1. leads_ativos      — total de leads NÃO em "Perdido" ou "VENDIDO!"
@@ -14,6 +18,10 @@ export const dynamic = "force-dynamic";
 // Todas as queries rodam via supabaseAdmin (service role) — sem RLS block.
 
 export async function GET() {
+  if (_cache && Date.now() - _cache.ts < CACHE_TTL_MS) {
+    return NextResponse.json(_cache.data);
+  }
+
   try {
     // ── 1. Total de leads ativos (excluindo finalizados) ────────────────────
     const { count: ativos, error: e1 } = await supabaseAdmin
@@ -100,7 +108,7 @@ export async function GET() {
     }
 
     // ── Resposta final ───────────────────────────────────────────────────────
-    return NextResponse.json({
+    const payload = {
       leads_ativos:   ativos   ?? 0,
       leads_hoje:     hoje     ?? 0,
       leads_ontem:    ontem    ?? 0,
@@ -109,7 +117,9 @@ export async function GET() {
       total_leads:    total    ?? 0,
       total_vendidos: vendidos ?? 0,
       computed_at:    new Date().toISOString(),
-    });
+    };
+    _cache = { data: payload, ts: Date.now() };
+    return NextResponse.json(payload);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Erro interno";
     return NextResponse.json({ error: msg }, { status: 500 });

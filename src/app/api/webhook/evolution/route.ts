@@ -14,7 +14,6 @@ const EVOLUTION_API_KEY  = process.env.EVOLUTION_API_KEY ?? "";
 const EVOLUTION_INSTANCE = process.env.EVOLUTION_INSTANCE ?? "PH_AUTOSCAR";
 
 export async function POST(req: NextRequest) {
-  NextResponse.json({ ok: true }); // responde rápido
   const body = await req.json().catch(() => null);
   processEvolution(body).catch(console.error);
   return new Response("OK", { status: 200 });

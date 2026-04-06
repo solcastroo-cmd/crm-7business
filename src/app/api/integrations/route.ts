@@ -99,7 +99,6 @@ export async function GET(req: NextRequest) {
       days_left:     waDaysLeft,
       business_name: waBizName,   // BUG #3: exposto para o frontend
       webhook:       "/api/webhook/whatsapp",
-      verify_token: process.env.WA_VERIFY_TOKEN ?? "7business_wa_token",
       connect_url:  "/api/meta/auth",
     },
     whatsapp_evolution: {

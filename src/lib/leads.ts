@@ -24,10 +24,8 @@ export type Lead = {
 };
 
 const SELLERS = ["João", "Maria", "Carlos"];
-let sellerIdx = -1;
 function nextSeller() {
-  sellerIdx = (sellerIdx + 1) % SELLERS.length;
-  return SELLERS[sellerIdx];
+  return SELLERS[Math.floor(Math.random() * SELLERS.length)];
 }
 
 /** Busca lead pelo telefone (+ loja) ou cria novo */
