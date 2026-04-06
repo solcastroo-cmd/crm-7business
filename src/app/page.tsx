@@ -7,19 +7,11 @@
 // PRIORIDADE MÉDIA : manter posição após reload (position ordenado pelo GET)
 // PRIORIDADE BAIXA : feedback visual durante drag (highlight coluna + card)
 // FEAT-01          : hero dashboard com 4 KPIs, auto-refresh 60s
+// FEAT-02          : modal/drawer de perfil completo ao clicar no card
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useEffect, useRef, useState, useCallback } from "react";
-
-type Lead = {
-  id: string;
-  phone: string;
-  name: string | null;
-  stage: string;
-  source: string;
-  position: number;   // PRIORIDADE MÉDIA: persiste ordem dentro da coluna
-  created_at: string;
-};
+import { LeadModal, type Lead } from "@/components/LeadModal";
 
 // ── FEAT-01: tipos e helpers do hero dashboard ───────────────────────────────
 
@@ -207,6 +199,9 @@ export default function Home() {
   const [leads, setLeads]         = useState<Lead[]>([]);
   const [loading, setLoading]     = useState(true);
   const [erro, setErro]           = useState<string | null>(null);
+
+  // FEAT-02: lead selecionado para o modal (null = fechado)
+  const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
 
   // Estado visual do drag-and-drop (PRIORIDADE BAIXA — feedback)
   const [dragOverStage, setDragOverStage]   = useState<string | null>(null);
@@ -449,6 +444,8 @@ export default function Home() {
                           e.stopPropagation();
                           handleDrop(e, stage, lead.id);
                         }}
+                        // FEAT-02: clique abre o drawer de perfil
+                        onClick={() => setSelectedLead(lead)}
                         className={[
                           "bg-[#252938] rounded-lg p-3 border",
                           "cursor-grab active:cursor-grabbing",
@@ -491,6 +488,19 @@ export default function Home() {
           );
         })}
       </div>
+
+      {/* ── FEAT-02: Modal/Drawer de perfil do lead ── */}
+      <LeadModal
+        lead={selectedLead}
+        onClose={() => setSelectedLead(null)}
+        onUpdate={(updated) => {
+          // Atualiza o lead no estado local sem refetch
+          setLeads((prev) =>
+            prev.map((l) => (l.id === updated.id ? updated : l))
+          );
+          setSelectedLead(updated);
+        }}
+      />
     </main>
   );
 }

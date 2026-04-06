@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 // Colunas válidas do Kanban — BUG #3: stage deve ser validado contra esta lista
 const VALID_STAGES = ["Novo Lead", "Contato Inicial", "Interesse", "Proposta", "Negociação", "VENDIDO!", "Perdido"];
 
-const ALLOWED_PATCH_FIELDS = ["name", "stage", "source", "budget", "type", "payment", "seller", "veiculo_interesse_id", "position"];
+const ALLOWED_PATCH_FIELDS = ["name", "stage", "source", "budget", "type", "payment", "seller", "veiculo_interesse_id", "position", "notes"];
 
 // BUG #1: valida se storeId é um UUID antes de enviar ao banco
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
