@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, Suspense } from "react";
+import { useEffect, useRef, useState, useCallback, Suspense } from "react";
 import { useSearchParams }                             from "next/navigation";
 
 // ─── Lê userId do callback OAuth (?success=whatsapp&userId=xxx) ────────────────
@@ -329,12 +329,16 @@ function WhatsAppCard() {
 // ─── Card WhatsApp QR Code (Evolution API) ────────────────────────────────────
 function WhatsAppQRCard() {
   type QRState = "idle" | "loading" | "qrcode" | "connected" | "error";
-  const [qrState,    setQRState]    = useState<QRState>("idle");
-  const [qrBase64,   setQRBase64]   = useState<string | null>(null);
-  const [phone,      setPhone]      = useState<string | null>(null);
-  const [profile,    setProfile]    = useState<string | null>(null);
-  const [errMsg,     setErrMsg]     = useState<string | null>(null);
-  const [countdown,  setCountdown]  = useState(0);
+  const [qrState,       setQRState]       = useState<QRState>("idle");
+  const [qrBase64,      setQRBase64]      = useState<string | null>(null);
+  const [phone,         setPhone]         = useState<string | null>(null);
+  const [profile,       setProfile]       = useState<string | null>(null);
+  const [errMsg,        setErrMsg]        = useState<string | null>(null);
+  const [countdown,     setCountdown]     = useState(0);
+  const [disconnecting, setDisconnecting] = useState(false);
+
+  // Ref evita que o countdown entre nas deps dos effects (previne recriação de interval a cada tick)
+  const countdownRef = useRef(0);
 
   const POLL_INTERVAL = 4000; // 4 segundos
   const QR_TIMEOUT    = 60;   // QR expira em ~60s
@@ -360,11 +364,10 @@ function WhatsAppQRCard() {
       if (data.status === "qrcode" && data.base64) {
         setQRBase64(data.base64);
         setQRState("qrcode");
-        setCountdown(QR_TIMEOUT);
         return;
       }
 
-      // Ainda conectando — tenta novamente
+      // Ainda conectando — mantém loading
       setQRState("loading");
     } catch {
       setErrMsg("Sem conexão com o servidor.");
@@ -372,33 +375,63 @@ function WhatsAppQRCard() {
     }
   }, []);
 
-  // Inicia polling automático quando card é aberto
+  // Polling: dispara fetchQR ao entrar em "idle" e mantém intervalo em "qrcode"
   useEffect(() => {
-    if (qrState !== "idle" && qrState !== "qrcode" && qrState !== "connected") return;
-    if (qrState === "idle") { fetchQR(); setQRState("loading"); return; }
-    if (qrState === "connected") return;
+    if (qrState === "idle") {
+      setQRState("loading");
+      fetchQR();
+      return;
+    }
+    if (qrState !== "qrcode") return;
 
     const id = setInterval(fetchQR, POLL_INTERVAL);
     return () => clearInterval(id);
   }, [qrState, fetchQR]);
 
-  // Countdown do QR
+  // Countdown do QR — interval criado UMA vez por entrada em "qrcode", sem countdown nas deps
   useEffect(() => {
-    if (qrState !== "qrcode" || countdown <= 0) return;
-    const id = setInterval(() => setCountdown(c => {
-      if (c <= 1) { fetchQR(); return QR_TIMEOUT; }
-      return c - 1;
-    }), 1000);
+    if (qrState !== "qrcode") return;
+
+    countdownRef.current = QR_TIMEOUT;
+    setCountdown(QR_TIMEOUT);
+
+    const id = setInterval(() => {
+      countdownRef.current -= 1;
+      setCountdown(countdownRef.current);
+      if (countdownRef.current <= 0) {
+        // Força novo QR; o polling useEffect continua rodando
+        fetchQR();
+        countdownRef.current = QR_TIMEOUT;
+        setCountdown(QR_TIMEOUT);
+      }
+    }, 1000);
     return () => clearInterval(id);
-  }, [qrState, countdown, fetchQR]);
+  // fetchQR é estável (useCallback sem deps), QR_TIMEOUT é constante — sem countdown nas deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [qrState]);
 
   async function handleDisconnect() {
-    await fetch("/api/evolution/qrcode", { method: "DELETE" });
-    setQRState("loading");
-    setPhone(null);
-    setProfile(null);
-    setQRBase64(null);
-    fetchQR();
+    if (disconnecting) return;
+    setDisconnecting(true);
+    try {
+      const res = await fetch("/api/evolution/qrcode", { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null) as { error?: string } | null;
+        setErrMsg(data?.error ?? "Erro ao desconectar. Tente novamente.");
+        setQRState("error");
+        return;
+      }
+      setPhone(null);
+      setProfile(null);
+      setQRBase64(null);
+      // Reinicia o state machine via "idle" — o polling useEffect cuida do resto
+      setQRState("idle");
+    } catch {
+      setErrMsg("Erro de rede ao desconectar.");
+      setQRState("error");
+    } finally {
+      setDisconnecting(false);
+    }
   }
 
   const isConnected = qrState === "connected";
@@ -439,9 +472,10 @@ function WhatsAppQRCard() {
           </div>
           <button
             onClick={handleDisconnect}
-            className="text-xs px-4 py-2 rounded-lg bg-white border border-red-300 text-red-500 hover:bg-red-50 transition-colors"
+            disabled={disconnecting}
+            className="text-xs px-4 py-2 rounded-lg bg-white border border-red-300 text-red-500 hover:bg-red-50 transition-colors disabled:opacity-50"
           >
-            Desconectar
+            {disconnecting ? "Desconectando..." : "Desconectar"}
           </button>
         </>
       )}
