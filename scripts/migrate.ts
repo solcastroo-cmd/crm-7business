@@ -89,6 +89,16 @@ DO $$ BEGIN
   END IF;
 END $$;
 
+-- ── FEAT-02: coluna notes para anotações livres do vendedor ──────────────────
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='leads' AND column_name='notes'
+  ) THEN
+    ALTER TABLE public.leads ADD COLUMN notes TEXT;
+  END IF;
+END $$;
+
 CREATE INDEX IF NOT EXISTS leads_stage_idx      ON public.leads(stage);
 CREATE INDEX IF NOT EXISTS leads_phone_idx      ON public.leads(phone);
 CREATE INDEX IF NOT EXISTS leads_store_id_idx   ON public.leads(store_id);
