@@ -66,10 +66,35 @@ DO $$ BEGIN
   END IF;
 END $$;
 
+-- ── PRIORIDADE ALTA: coluna position para ordenação do Kanban ─────────────────
+-- Usamos FLOAT para inserção fracionária entre leads (midpoint), evitando
+-- reindexar toda a coluna a cada drag-and-drop.
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='leads' AND column_name='position'
+  ) THEN
+    ALTER TABLE public.leads ADD COLUMN position FLOAT NOT NULL DEFAULT 0;
+
+    -- Inicializa posições existentes em ordem de criação, por stage
+    -- (garante posições únicas e crescentes dentro de cada coluna)
+    UPDATE public.leads l
+    SET position = sub.rn * 1000
+    FROM (
+      SELECT id,
+             ROW_NUMBER() OVER (PARTITION BY stage ORDER BY created_at ASC) AS rn
+      FROM public.leads
+    ) sub
+    WHERE l.id = sub.id;
+  END IF;
+END $$;
+
 CREATE INDEX IF NOT EXISTS leads_stage_idx      ON public.leads(stage);
 CREATE INDEX IF NOT EXISTS leads_phone_idx      ON public.leads(phone);
 CREATE INDEX IF NOT EXISTS leads_store_id_idx   ON public.leads(store_id);
 CREATE INDEX IF NOT EXISTS leads_created_at_idx ON public.leads(created_at DESC);
+-- Índice composto para busca rápida de leads ordenados por coluna
+CREATE INDEX IF NOT EXISTS leads_stage_position_idx ON public.leads(stage, position ASC);
 
 ALTER TABLE public.leads ENABLE ROW LEVEL SECURITY;
 

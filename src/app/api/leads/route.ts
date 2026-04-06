@@ -3,7 +3,8 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const dynamic = "force-dynamic";
 
-const ALLOWED_PATCH_FIELDS = ["name", "stage", "source", "budget", "type", "payment", "seller", "veiculo_interesse_id"];
+// PRIORIDADE ALTA: "position" incluído para persistir ordem do Kanban após drag-and-drop
+const ALLOWED_PATCH_FIELDS = ["name", "stage", "source", "budget", "type", "payment", "seller", "veiculo_interesse_id", "position"];
 
 // GET /api/leads?storeId=xxx
 export async function GET(req: NextRequest) {
@@ -14,7 +15,10 @@ export async function GET(req: NextRequest) {
     let query = supabaseAdmin
       .from("leads")
       .select("*")
-      .order("created_at", { ascending: false });
+      // PRIORIDADE MÉDIA: ordena por position ASC para manter posição após reload.
+      // Leads sem position definido (legados) ficam em ordem de criação como fallback.
+      .order("position", { ascending: true })
+      .order("created_at", { ascending: true });
 
     // Filtra por loja quando informado (multi-tenant)
     if (storeId) query = query.eq("store_id", storeId);
