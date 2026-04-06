@@ -3,8 +3,13 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const dynamic = "force-dynamic";
 
-// PRIORIDADE ALTA: "position" incluído para persistir ordem do Kanban após drag-and-drop
+// Colunas válidas do Kanban — BUG #3: stage deve ser validado contra esta lista
+const VALID_STAGES = ["Novo Lead", "Contato Inicial", "Interesse", "Proposta", "Negociação", "VENDIDO!", "Perdido"];
+
 const ALLOWED_PATCH_FIELDS = ["name", "stage", "source", "budget", "type", "payment", "seller", "veiculo_interesse_id", "position"];
+
+// BUG #1: valida se storeId é um UUID antes de enviar ao banco
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // GET /api/leads?storeId=xxx
 export async function GET(req: NextRequest) {
@@ -12,15 +17,17 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const storeId = searchParams.get("storeId");
 
+    // BUG #1 FIX: rejeita storeId malformado antes de chegar no Supabase (evita 500)
+    if (storeId && !UUID_REGEX.test(storeId)) {
+      return NextResponse.json({ error: "storeId deve ser um UUID válido" }, { status: 400 });
+    }
+
     let query = supabaseAdmin
       .from("leads")
       .select("*")
-      // PRIORIDADE MÉDIA: ordena por position ASC para manter posição após reload.
-      // Leads sem position definido (legados) ficam em ordem de criação como fallback.
       .order("position", { ascending: true })
       .order("created_at", { ascending: true });
 
-    // Filtra por loja quando informado (multi-tenant)
     if (storeId) query = query.eq("store_id", storeId);
 
     const { data, error } = await query;
@@ -41,6 +48,11 @@ export async function POST(req: NextRequest) {
 
     if (!phone || typeof phone !== "string" || phone.trim() === "") {
       return NextResponse.json({ error: "phone é obrigatório" }, { status: 400 });
+    }
+
+    // BUG #3 FIX: valida stage também no POST
+    if (!VALID_STAGES.includes(stage)) {
+      return NextResponse.json({ error: `stage inválido. Use: ${VALID_STAGES.join(", ")}` }, { status: 400 });
     }
 
     const { data, error } = await supabaseAdmin
@@ -70,6 +82,20 @@ export async function PATCH(req: NextRequest) {
 
     if (Object.keys(updates).length === 0) {
       return NextResponse.json({ error: "Nenhum campo válido para atualizar" }, { status: 400 });
+    }
+
+    // BUG #3 FIX: valida stage contra lista de valores permitidos
+    if (updates.stage !== undefined && !VALID_STAGES.includes(updates.stage as string)) {
+      return NextResponse.json({ error: `stage inválido. Use: ${VALID_STAGES.join(", ")}` }, { status: 400 });
+    }
+
+    // BUG #2 FIX: position deve ser número >= 0
+    if (updates.position !== undefined) {
+      const pos = Number(updates.position);
+      if (isNaN(pos) || pos < 0) {
+        return NextResponse.json({ error: "position deve ser um número >= 0" }, { status: 400 });
+      }
+      updates.position = pos;
     }
 
     const { data, error } = await supabaseAdmin
