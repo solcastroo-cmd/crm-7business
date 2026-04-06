@@ -6,9 +6,10 @@
 // PRIORIDADE ALTA  : atualizar stage + position no banco via PATCH /api/leads
 // PRIORIDADE MÉDIA : manter posição após reload (position ordenado pelo GET)
 // PRIORIDADE BAIXA : feedback visual durante drag (highlight coluna + card)
+// FEAT-01          : hero dashboard com 4 KPIs, auto-refresh 60s
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 
 type Lead = {
   id: string;
@@ -19,6 +20,165 @@ type Lead = {
   position: number;   // PRIORIDADE MÉDIA: persiste ordem dentro da coluna
   created_at: string;
 };
+
+// ── FEAT-01: tipos e helpers do hero dashboard ───────────────────────────────
+
+type Metrics = {
+  leads_ativos:   number;
+  leads_hoje:     number;
+  leads_ontem:    number;
+  taxa_conversao: number;   // %
+  tempo_medio_h:  number;   // horas
+  total_leads:    number;
+  total_vendidos: number;
+  computed_at:    string;
+};
+
+/** Formata horas em "Xh Ym" ou "< 1h" */
+function formatHoras(h: number): string {
+  if (h < 1) return "< 1h";
+  const hrs  = Math.floor(h);
+  const mins = Math.round((h - hrs) * 60);
+  return mins > 0 ? `${hrs}h ${mins}m` : `${hrs}h`;
+}
+
+/** Variação percentual hoje vs ontem com sinal */
+function calcDelta(hoje: number, ontem: number): string {
+  if (ontem === 0) return hoje > 0 ? "+100%" : "—";
+  const pct = ((hoje - ontem) / ontem) * 100;
+  return (pct >= 0 ? "+" : "") + pct.toFixed(0) + "%";
+}
+
+// ── FEAT-01: Componente hero dashboard ───────────────────────────────────────
+// Puxa /api/metrics a cada 60s e exibe 4 cards de KPI com as cores da marca.
+// Paleta: azul #0A1F44, laranja #FF7A00, branco, cinza.
+
+function HeroDashboard() {
+  const [metrics, setMetrics] = useState<Metrics | null>(null);
+  const [loadingM, setLoadingM] = useState(true);
+  const [erroM, setErroM]       = useState<string | null>(null);
+
+  // Busca as métricas e atualiza estado
+  const fetchMetrics = useCallback(() => {
+    fetch("/api/metrics")
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then((data: Metrics) => {
+        setMetrics(data);
+        setLoadingM(false);
+        setErroM(null);
+      })
+      .catch((e: Error) => {
+        setErroM(e.message);
+        setLoadingM(false);
+      });
+  }, []);
+
+  useEffect(() => {
+    fetchMetrics();
+    // Auto-refresh a cada 60 segundos — sem reload de página
+    const interval = setInterval(fetchMetrics, 60_000);
+    return () => clearInterval(interval);
+  }, [fetchMetrics]);
+
+  // ── Loading skeleton ────────────────────────────────────────────────────
+  if (loadingM) {
+    return (
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        {[...Array(4)].map((_, i) => (
+          <div key={i} className="rounded-xl p-4 animate-pulse"
+            style={{ background: "#0A1F44" }}>
+            <div className="h-3 w-24 bg-white/10 rounded mb-3" />
+            <div className="h-8 w-16 bg-white/20 rounded" />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  // ── Erro ────────────────────────────────────────────────────────────────
+  if (erroM || !metrics) {
+    return (
+      <div className="mb-6 text-xs text-red-400 bg-red-900/20 rounded-lg p-3">
+        ⚠️ Métricas indisponíveis: {erroM}
+      </div>
+    );
+  }
+
+  const delta = calcDelta(metrics.leads_hoje, metrics.leads_ontem);
+  const deltaPositivo = metrics.leads_hoje >= metrics.leads_ontem;
+
+  // ── Cards ───────────────────────────────────────────────────────────────
+  const cards = [
+    {
+      label: "Leads Ativos",
+      value: metrics.leads_ativos.toString(),
+      sub: `${metrics.total_leads} no total`,
+      icon: "◉",
+      highlight: false,
+    },
+    {
+      label: "Leads Hoje",
+      value: metrics.leads_hoje.toString(),
+      sub: `${delta} vs ontem (${metrics.leads_ontem})`,
+      icon: "↑",
+      highlight: deltaPositivo,
+      subColor: deltaPositivo ? "#4ade80" : "#f87171",
+    },
+    {
+      label: "Taxa de Conversão",
+      value: `${metrics.taxa_conversao}%`,
+      sub: `${metrics.total_vendidos} vendidos`,
+      icon: "✓",
+      highlight: metrics.taxa_conversao > 0,
+    },
+    {
+      label: "Tempo Médio Resposta",
+      value: formatHoras(metrics.tempo_medio_h),
+      sub: "1ª interação após chegada",
+      icon: "⏱",
+      highlight: false,
+    },
+  ];
+
+  return (
+    <div className="mb-6">
+      {/* Grid responsivo: 2 colunas em mobile, 4 em desktop */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {cards.map((card) => (
+          <div
+            key={card.label}
+            className="rounded-xl p-4 flex flex-col gap-1 transition-all"
+            style={{
+              background: "#0A1F44",
+              border: card.highlight ? "1px solid #FF7A00" : "1px solid rgba(255,255,255,0.06)",
+            }}
+          >
+            {/* Ícone + label */}
+            <div className="flex items-center gap-1.5">
+              <span style={{ color: "#FF7A00", fontSize: "0.75rem" }}>{card.icon}</span>
+              <span className="text-xs text-gray-400 uppercase tracking-wider">{card.label}</span>
+            </div>
+            {/* Valor principal */}
+            <span className="text-2xl font-bold text-white leading-none mt-1">
+              {card.value}
+            </span>
+            {/* Subtítulo */}
+            <span className="text-xs mt-0.5" style={{ color: card.subColor ?? "#6b7280" }}>
+              {card.sub}
+            </span>
+          </div>
+        ))}
+      </div>
+      {/* Timestamp do último refresh */}
+      <p className="text-right text-[10px] text-gray-700 mt-1">
+        Atualizado em {new Date(metrics.computed_at).toLocaleTimeString("pt-BR")} · refresh 60s
+      </p>
+    </div>
+  );
+}
 
 // Colunas do funil — mesma ordem do Followize
 const STAGES = [
@@ -230,6 +390,9 @@ export default function Home() {
           </span>
         </div>
       </header>
+
+      {/* ── FEAT-01: Hero Dashboard ── */}
+      <HeroDashboard />
 
       {/* ── Kanban Board ── */}
       <div className="flex gap-4 overflow-x-auto pb-4">
