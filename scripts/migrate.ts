@@ -116,6 +116,37 @@ DO $$ BEGIN
   END IF;
 END $$;
 
+-- ── FEAT-07: coluna qualification nos leads ────────────────────────────────────
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='leads' AND column_name='qualification'
+  ) THEN
+    ALTER TABLE public.leads ADD COLUMN qualification text CHECK (qualification IN ('quente','morno','frio'));
+  END IF;
+END $$;
+
+-- ── FEAT-09: tabela messages (histórico WhatsApp) ─────────────────────────────
+CREATE TABLE IF NOT EXISTS public.messages (
+  id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  lead_id    uuid NOT NULL REFERENCES public.leads(id) ON DELETE CASCADE,
+  text       text NOT NULL,
+  from_me    boolean NOT NULL DEFAULT false,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_messages_lead_id ON public.messages(lead_id, created_at DESC);
+
+ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
+
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE tablename='messages' AND policyname='messages_acesso_publico'
+  ) THEN
+    CREATE POLICY messages_acesso_publico ON public.messages FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+END $$;
+
 -- ── Tabela users ──────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS public.users (
   id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -128,9 +159,30 @@ CREATE TABLE IF NOT EXISTS public.users (
   state_expires_at timestamptz,
   display_phone    text,
   business_name    text,
+  notify_phone     text,
+  sellers          jsonb,
   created_at       timestamptz NOT NULL DEFAULT now(),
   updated_at       timestamptz NOT NULL DEFAULT now()
 );
+
+-- Colunas adicionadas em versões anteriores (idempotente)
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='users' AND column_name='notify_phone'
+  ) THEN
+    ALTER TABLE public.users ADD COLUMN notify_phone text;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='users' AND column_name='sellers'
+  ) THEN
+    ALTER TABLE public.users ADD COLUMN sellers jsonb;
+  END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS users_business_id_idx ON public.users(business_id);
 CREATE INDEX IF NOT EXISTS users_oauth_state_idx ON public.users(oauth_state);
@@ -190,12 +242,12 @@ async function migrate() {
     console.log("✅ Conectado ao banco de dados");
 
     await client.query(SQL);
-    console.log("✅ Tabelas criadas/verificadas: leads, users");
+    console.log("✅ Tabelas criadas/verificadas: leads, users, messages");
 
     // Verifica tabelas
     const res = await client.query(`
       SELECT tablename FROM pg_tables
-      WHERE schemaname = 'public' AND tablename IN ('leads','users')
+      WHERE schemaname = 'public' AND tablename IN ('leads','users','messages')
       ORDER BY tablename;
     `);
     console.log("📋 Tabelas no banco:", res.rows.map((r: {tablename: string}) => r.tablename).join(", "));

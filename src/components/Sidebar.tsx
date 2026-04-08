@@ -21,6 +21,8 @@ const supabase = createClient(
 
 const NAV = [
   { href: "/",             icon: "🏠", label: "Kanban"        },
+  { href: "/dashboard",    icon: "📊", label: "Dashboard"     },
+  { href: "/inventory",    icon: "🚗", label: "Estoque"       },
   { href: "/integrations", icon: "⚡", label: "Integrações"   },
   { href: "/settings",     icon: "⚙️", label: "Configurações" },
 ];
