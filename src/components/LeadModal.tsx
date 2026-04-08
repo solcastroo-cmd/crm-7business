@@ -12,7 +12,7 @@
 //   • Fecha ao clicar no backdrop ou no botão ✕
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 
 // ── Tipo Lead com todos os campos opcionais do perfil ────────────────────────
 export type Lead = {
@@ -73,17 +73,48 @@ function Field({ label, value }: { label: string; value?: string | null }) {
   );
 }
 
+// ── Tipo mensagem ─────────────────────────────────────────────────────────────
+type Message = {
+  id:         string;
+  text:       string;
+  from_me:    boolean;
+  created_at: string;
+};
+
 // ── Componente principal ─────────────────────────────────────────────────────
 export function LeadModal({ lead, onClose, onUpdate }: Props) {
-  const [notes, setNotes]     = useState(lead?.notes ?? "");
-  const [saving, setSaving]   = useState(false);
-  // Ref para o timeout do debounce — cancelado a cada keystroke
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [notes, setNotes]       = useState(lead?.notes ?? "");
+  const [saving, setSaving]     = useState(false);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [loadingMsgs, setLoadingMsgs] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement | null>(null);
+  const saveTimer  = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Sincroniza anotações quando outro lead é aberto
+  // Sincroniza anotações e carrega mensagens quando troca de lead
   useEffect(() => {
     setNotes(lead?.notes ?? "");
   }, [lead?.id]);
+
+  const fetchMessages = useCallback(async (leadId: string) => {
+    setLoadingMsgs(true);
+    try {
+      const res = await fetch(`/api/messages?leadId=${leadId}`);
+      if (res.ok) setMessages(await res.json());
+    } catch { /* silencia */ }
+    finally { setLoadingMsgs(false); }
+  }, []);
+
+  useEffect(() => {
+    if (lead?.id) {
+      setMessages([]);
+      fetchMessages(lead.id);
+    }
+  }, [lead?.id, fetchMessages]);
+
+  // Scroll automático para última mensagem
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
   // Fecha o modal com tecla Escape
   useEffect(() => {
@@ -254,20 +285,72 @@ export function LeadModal({ lead, onClose, onUpdate }: Props) {
             />
           </section>
 
-          {/* ── Seção: Histórico ──────────────────────────────────────── */}
+          {/* ── Seção: Histórico de Conversa WhatsApp ────────────── */}
           <section>
-            <h3 className="section-title mb-3">Histórico</h3>
-            <ol className="space-y-0">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-[10px] font-semibold tracking-widest uppercase text-gray-500">
+                💬 Conversa WhatsApp
+              </h3>
+              <button onClick={() => fetchMessages(lead.id)}
+                className="text-[10px] text-gray-600 hover:text-gray-400 transition-colors">
+                ↻ Atualizar
+              </button>
+            </div>
 
-              {/* Evento: lead criado */}
+            <div
+              className="rounded-xl p-3 space-y-2 overflow-y-auto"
+              style={{ background: "#111", border: "1px solid rgba(255,255,255,0.06)", maxHeight: "320px" }}
+            >
+              {loadingMsgs ? (
+                <p className="text-xs text-gray-600 text-center py-6 animate-pulse">
+                  Carregando conversa...
+                </p>
+              ) : messages.length === 0 ? (
+                <p className="text-xs text-gray-600 text-center py-6">
+                  Nenhuma conversa registrada ainda.
+                </p>
+              ) : (
+                <>
+                  {messages.map((msg) => (
+                    <div key={msg.id}
+                      className={`flex ${msg.from_me ? "justify-end" : "justify-start"}`}>
+                      <div
+                        className="max-w-[80%] rounded-xl px-3 py-2"
+                        style={{
+                          background: msg.from_me ? "#e63946" : "#2a2a2a",
+                          borderBottomRightRadius: msg.from_me ? "4px" : undefined,
+                          borderBottomLeftRadius:  msg.from_me ? undefined : "4px",
+                        }}
+                      >
+                        <p className="text-xs text-white leading-relaxed break-words">
+                          {msg.text}
+                        </p>
+                        <p className={`text-[10px] mt-1 ${msg.from_me ? "text-red-200" : "text-gray-500"}`}>
+                          {new Date(msg.created_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                          {" · "}
+                          {new Date(msg.created_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                  <div ref={chatEndRef} />
+                </>
+              )}
+            </div>
+          </section>
+
+          {/* ── Seção: Linha do Tempo ─────────────────────────────── */}
+          <section>
+            <h3 className="text-[10px] font-semibold tracking-widest uppercase text-gray-500 mb-3">
+              Linha do Tempo
+            </h3>
+            <ol className="space-y-0">
               <TimelineEvent
-                color="#FF7A00"
+                color="#e63946"
                 label="Lead criado"
                 date={fmtDate(lead.created_at)}
                 isLast={!lead.updated_at || lead.updated_at === lead.created_at}
               />
-
-              {/* Evento: última atualização (se diferente da criação) */}
               {lead.updated_at && lead.updated_at !== lead.created_at && (
                 <TimelineEvent
                   color="#60a5fa"
