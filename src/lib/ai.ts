@@ -1,11 +1,14 @@
 /**
- * 🤖 ai.ts — Agente PAULO via Claude API (Anthropic)
+ * 🤖 ai.ts — Agente PAULO via Groq (primário) ou Anthropic (fallback)
  *
  * PAULO — Maior especialista mundial em IA aplicada a CRM, Automação e Marketing.
  * Missão: Transformar qualquer CRM em uma máquina automática de vendas com IA.
+ *
+ * Providers (em ordem de preferência):
+ *  1. Groq  (GROQ_API_KEY)  → llama-3.3-70b-versatile — gratuito, rápido
+ *  2. Anthropic (ANTHROPIC_API_KEY) → claude-opus-4-6
+ *  3. Fallback estático
  */
-
-import Anthropic from "@anthropic-ai/sdk";
 
 export type LeadContext = {
   name:    string | null;
@@ -33,41 +36,66 @@ Regras de resposta:
 - Responda sempre em português do Brasil.
 - Tom consultivo, direto e persuasivo.`;
 
-export async function getAIReply(message: string, lead: LeadContext): Promise<string> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-
-  if (!apiKey) {
-    return "Olá! Sou o PAULO da 7Business Pro. Como posso ajudar você a encontrar o veículo ideal?";
-  }
-
-  const client = new Anthropic({ apiKey });
-
-  const context = [
+/** Monta contexto do lead para o prompt */
+function buildUserContent(message: string, lead: LeadContext): string {
+  const ctx = [
     lead.name    ? `Cliente: ${lead.name}` : null,
     lead.budget  ? `Orçamento: R$${lead.budget}` : null,
     lead.type    ? `Tipo de veículo: ${lead.type}` : null,
     lead.payment ? `Pagamento: ${lead.payment}` : null,
   ].filter(Boolean).join(" | ");
+  return ctx ? `${ctx}\n\nCliente disse: "${message}"` : `Cliente disse: "${message}"`;
+}
 
-  const userContent = context
-    ? `${context}\n\nCliente disse: "${message}"`
-    : `Cliente disse: "${message}"`;
+/** Chama Groq (OpenAI-compat) */
+async function replyViaGroq(userContent: string): Promise<string> {
+  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${process.env.GROQ_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: "llama-3.3-70b-versatile",
+      max_tokens: 200,
+      messages: [
+        { role: "system",  content: PAULO_SYSTEM },
+        { role: "user",    content: userContent  },
+      ],
+    }),
+  });
+  if (!res.ok) throw new Error(`Groq ${res.status}`);
+  const data = await res.json() as { choices: { message: { content: string } }[] };
+  return data.choices[0]?.message?.content?.trim() ?? "";
+}
+
+/** Chama Anthropic (Claude) */
+async function replyViaAnthropic(userContent: string): Promise<string> {
+  // Dynamic import so the SDK is tree-shaken when not used
+  const { default: Anthropic } = await import("@anthropic-ai/sdk");
+  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  const response = await client.messages.create({
+    model: "claude-opus-4-6",
+    max_tokens: 200,
+    system: PAULO_SYSTEM,
+    messages: [{ role: "user", content: userContent }],
+  });
+  const block = response.content.find((b) => b.type === "text");
+  return block?.type === "text" ? block.text.trim() : "";
+}
+
+export async function getAIReply(message: string, lead: LeadContext): Promise<string> {
+  const userContent = buildUserContent(message, lead);
+  const fallback    = "Olá! Sou o PAULO da 7Business Pro. Como posso ajudar você a encontrar o veículo ideal?";
 
   try {
-    const response = await client.messages.create({
-      model: "claude-opus-4-6",
-      max_tokens: 200,
-      system: PAULO_SYSTEM,
-      messages: [{ role: "user", content: userContent }],
-    });
-
-    const block = response.content.find((b) => b.type === "text");
-    return block?.type === "text"
-      ? block.text.trim()
-      : "Como posso ajudar você a encontrar o veículo ideal?";
-  } catch {
-    return "Olá! Sou o PAULO da 7Business Pro. Como posso ajudar você a encontrar o veículo ideal?";
+    if (process.env.GROQ_API_KEY)        return await replyViaGroq(userContent)      || fallback;
+    if (process.env.ANTHROPIC_API_KEY)   return await replyViaAnthropic(userContent) || fallback;
+  } catch (e) {
+    console.error("[AI] Erro:", e);
   }
+
+  return fallback;
 }
 
 /**
