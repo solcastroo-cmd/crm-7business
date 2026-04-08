@@ -7,10 +7,13 @@
 // FEAT-02 : modal/drawer de perfil completo ao clicar no card
 // FEAT-03 : badge Quente/Morno/Frio nos cards do Kanban
 // FEAT-04 : botão "Novo Lead" + modal de cadastro manual
+// FEAT-05 : busca + filtros no Kanban
+// FEAT-06 : dashboard analytics com gráficos (recharts)
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { LeadModal, type Lead } from "@/components/LeadModal";
+import { DashboardCharts } from "@/components/DashboardCharts";
 
 // ── FEAT-01: tipos e helpers do hero dashboard ───────────────────────────────
 
@@ -406,8 +409,11 @@ export default function Home() {
         </div>
       </header>
 
-      {/* ── FEAT-01: Hero Dashboard ── */}
+      {/* ── FEAT-01: Hero Dashboard (KPIs) ── */}
       <HeroDashboard />
+
+      {/* ── FEAT-06: Dashboard Analytics (gráficos) ── */}
+      <DashboardCharts leads={leads} />
 
       {/* ── FEAT-05: Barra de Busca + Filtros ── */}
       <div className="mb-4 rounded-xl p-4" style={{ background: "#1e1e1e", border: "1px solid #2e2e2e" }}>
