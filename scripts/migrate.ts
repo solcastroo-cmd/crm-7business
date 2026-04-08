@@ -168,6 +168,16 @@ DO $$ BEGIN
   END IF;
 END $$;
 
+-- ── FEAT-11: coluna tags nos leads ────────────────────────────────────────────
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='leads' AND column_name='tags'
+  ) THEN
+    ALTER TABLE public.leads ADD COLUMN tags jsonb DEFAULT '[]'::jsonb;
+  END IF;
+END $$;
+
 -- ── FEAT-09: tabela messages (histórico WhatsApp) ─────────────────────────────
 CREATE TABLE IF NOT EXISTS public.messages (
   id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),

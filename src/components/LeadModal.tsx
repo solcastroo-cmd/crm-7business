@@ -30,6 +30,7 @@ export type Lead = {
   seller?: string | null;  // vendedor responsável
   notes?: string | null;   // anotações livres, salvas via PATCH
   qualification?: "quente" | "morno" | "frio" | null; // qualificação IA
+  tags?: string[] | null;  // tags personalizadas
 };
 
 type Props = {
@@ -83,17 +84,43 @@ type Message = {
 
 // ── Componente principal ─────────────────────────────────────────────────────
 export function LeadModal({ lead, onClose, onUpdate }: Props) {
-  const [notes, setNotes]       = useState(lead?.notes ?? "");
-  const [saving, setSaving]     = useState(false);
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [notes, setNotes]             = useState(lead?.notes ?? "");
+  const [saving, setSaving]           = useState(false);
+  const [messages, setMessages]       = useState<Message[]>([]);
   const [loadingMsgs, setLoadingMsgs] = useState(false);
+  const [tags, setTags]               = useState<string[]>(lead?.tags ?? []);
+  const [tagInput, setTagInput]       = useState("");
   const chatEndRef = useRef<HTMLDivElement | null>(null);
   const saveTimer  = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Sincroniza anotações e carrega mensagens quando troca de lead
+  // Sincroniza anotações, tags e carrega mensagens quando troca de lead
   useEffect(() => {
     setNotes(lead?.notes ?? "");
+    setTags(lead?.tags ?? []);
   }, [lead?.id]);
+
+  async function saveTags(newTags: string[]) {
+    if (!lead) return;
+    setTags(newTags);
+    const res = await fetch("/api/leads", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: lead.id, tags: newTags }),
+    });
+    if (res.ok) onUpdate(await res.json());
+  }
+
+  function addTag() {
+    const t = tagInput.trim().toLowerCase().replace(/\s+/g, "-");
+    if (!t || tags.includes(t) || tags.length >= 8) return;
+    const newTags = [...tags, t];
+    setTagInput("");
+    saveTags(newTags);
+  }
+
+  function removeTag(t: string) {
+    saveTags(tags.filter((x) => x !== t));
+  }
 
   const fetchMessages = useCallback(async (leadId: string) => {
     setLoadingMsgs(true);
@@ -283,6 +310,41 @@ export function LeadModal({ lead, onClose, onUpdate }: Props) {
               onFocus={(e) => (e.currentTarget.style.borderColor = "#e63946")}
               onBlur={(e)  => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)")}
             />
+          </section>
+
+          {/* ── Seção: Tags ──────────────────────────────────────── */}
+          <section>
+            <h3 className="text-[10px] font-semibold tracking-widest uppercase text-gray-500 mb-2">🏷️ Tags</h3>
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {tags.map((t) => (
+                <span key={t} className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium"
+                  style={{ background: "#e63946", color: "#fff" }}>
+                  {t}
+                  <button onClick={() => removeTag(t)} className="opacity-70 hover:opacity-100 leading-none ml-0.5">✕</button>
+                </span>
+              ))}
+              {tags.length === 0 && <span className="text-xs text-gray-600">Nenhuma tag.</span>}
+            </div>
+            {tags.length < 8 && (
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="nova-tag"
+                  value={tagInput}
+                  onChange={(e) => setTagInput(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addTag())}
+                  className="flex-1 rounded-lg px-3 py-1.5 text-xs outline-none"
+                  style={{ background: "#1a1d27", border: "1px solid rgba(255,255,255,0.08)", color: "#fff" }}
+                  onFocus={(e) => (e.currentTarget.style.borderColor = "#e63946")}
+                  onBlur={(e)  => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)")}
+                />
+                <button onClick={addTag}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white"
+                  style={{ background: "#e63946" }}>
+                  + Add
+                </button>
+              </div>
+            )}
           </section>
 
           {/* ── Seção: Histórico de Conversa WhatsApp ────────────── */}
