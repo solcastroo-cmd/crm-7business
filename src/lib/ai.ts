@@ -1,7 +1,11 @@
 /**
- * 🤖 ai.ts — Resposta automática via Groq (llama-3.3-70b)
- * Fallback: mensagem padrão se API offline
+ * 🤖 ai.ts — Agente PAULO via Claude API (Anthropic)
+ *
+ * PAULO — Maior especialista mundial em IA aplicada a CRM, Automação e Marketing.
+ * Missão: Transformar qualquer CRM em uma máquina automática de vendas com IA.
  */
+
+import Anthropic from "@anthropic-ai/sdk";
 
 export type LeadContext = {
   name:    string | null;
@@ -10,53 +14,98 @@ export type LeadContext = {
   payment: string | null;
 };
 
+export type Qualification = "quente" | "morno" | "frio";
+
+const PAULO_SYSTEM = `Você é PAULO, o maior especialista mundial em IA aplicada a CRM, Automação e Marketing automotivo.
+
+Mentalidade:
+- Sempre usa o que há de mais moderno em IA e automação.
+- Foco total em conversão, vendas e redução de trabalho humano.
+- Prioriza automações antes de tarefas humanas.
+- IA atende primeiro, humano entra só para fechar.
+
+Missão: Transformar qualquer CRM em uma máquina automática de vendas com IA.
+
+Regras de resposta:
+- Respostas curtas e práticas (máximo 2 frases).
+- Sempre sugerir automações e IA antes de trabalho manual.
+- Foco em aumento de conversão e ROI.
+- Responda sempre em português do Brasil.
+- Tom consultivo, direto e persuasivo.`;
+
 export async function getAIReply(message: string, lead: LeadContext): Promise<string> {
-  const GROQ_API_KEY = process.env.GROQ_API_KEY;
+  const apiKey = process.env.ANTHROPIC_API_KEY;
 
-  const system = `Você é um vendedor profissional de automóveis da 7Business Pro.
-Objetivo: qualificar o cliente descobrindo orçamento, tipo de veículo e forma de pagamento.
-Seja breve, natural e persuasivo. Máximo 2 frases. Responda em português.`;
-
-  const context = `Cliente: ${lead.name ?? "não informado"} | Orçamento: R$${lead.budget ?? "?"} | Tipo: ${lead.type ?? "?"} | Pagamento: ${lead.payment ?? "?"}`;
-
-  if (!GROQ_API_KEY) {
-    return "Olá! Sou da 7Business Pro. Como posso ajudar você a encontrar o veículo ideal?";
+  if (!apiKey) {
+    return "Olá! Sou o PAULO da 7Business Pro. Como posso ajudar você a encontrar o veículo ideal?";
   }
+
+  const client = new Anthropic({ apiKey });
+
+  const context = [
+    lead.name    ? `Cliente: ${lead.name}` : null,
+    lead.budget  ? `Orçamento: R$${lead.budget}` : null,
+    lead.type    ? `Tipo de veículo: ${lead.type}` : null,
+    lead.payment ? `Pagamento: ${lead.payment}` : null,
+  ].filter(Boolean).join(" | ");
+
+  const userContent = context
+    ? `${context}\n\nCliente disse: "${message}"`
+    : `Cliente disse: "${message}"`;
 
   try {
-    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type":  "application/json",
-        "Authorization": `Bearer ${GROQ_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: "llama-3.3-70b-versatile",
-        max_tokens: 150,
-        messages: [
-          { role: "system",  content: system },
-          { role: "user",    content: `${context}\n\nCliente disse: "${message}"` },
-        ],
-      }),
-      signal: AbortSignal.timeout(8000),
+    const response = await client.messages.create({
+      model: "claude-opus-4-6",
+      max_tokens: 200,
+      system: PAULO_SYSTEM,
+      messages: [{ role: "user", content: userContent }],
     });
 
-    if (!res.ok) throw new Error(`Groq ${res.status}`);
-    const data = await res.json() as { choices: Array<{ message: { content: string } }> };
-    return data.choices[0]?.message?.content ?? "Como posso ajudar você a encontrar o carro ideal?";
+    const block = response.content.find((b) => b.type === "text");
+    return block?.type === "text"
+      ? block.text.trim()
+      : "Como posso ajudar você a encontrar o veículo ideal?";
   } catch {
-    return "Olá! Sou da 7Business Pro. Como posso ajudar você a encontrar o veículo ideal?";
+    return "Olá! Sou o PAULO da 7Business Pro. Como posso ajudar você a encontrar o veículo ideal?";
   }
+}
+
+/**
+ * 🔥 qualifyLead — classifica lead em Quente / Morno / Frio
+ *
+ * Quente  = sinais fortes de compra imediata → notifica vendedor
+ * Morno   = interesse demonstrado, sem urgência
+ * Frio    = curiosidade inicial ou sem sinal claro
+ */
+export function qualifyLead(message: string): Qualification {
+  const m = message.toLowerCase();
+
+  const sinaisQuente = [
+    "comprar agora", "comprar hoje", "quero fechar", "quero comprar",
+    "vou levar", "quanto custa", "tem parcela", "tem financiamento",
+    "posso parcelar", "qual o menor preço", "posso ir buscar",
+    "quando posso ver", "quero agendar", "pode me ligar", "faz negócio",
+    "me passa o pix", "valor à vista", "tá bom o preço", "aceita troca",
+    "quero esse", "reserva pra mim",
+  ];
+
+  const sinaisMorno = [
+    "gostei", "interessante", "me fala mais", "tem outro", "como funciona",
+    "me envia foto", "tem km", "qual ano", "que cor", "qual motor",
+    "tem ipva", "quantas portas", "tem ar condicionado", "manual ou automático",
+    "tem revisão", "qual a procedência", "tem garantia",
+  ];
+
+  if (sinaisQuente.some((kw) => m.includes(kw))) return "quente";
+  if (sinaisMorno.some((kw) => m.includes(kw))) return "morno";
+  return "frio";
 }
 
 /** Normaliza valor monetário para número string */
 function parseBudget(raw: string): string {
-  // Remove R$, espaços, pontos de milhar, vírgulas
   let n = raw.replace(/r\$\s*/i, "").replace(/\./g, "").replace(",", ".");
-  // "90 mil" ou "90mil" → 90000
   const milMatch = n.match(/^(\d+[\d.]*)\s*mil/i);
   if (milMatch) return String(Math.round(parseFloat(milMatch[1]) * 1000));
-  // "90k" → 90000
   const kMatch = n.match(/^(\d+[\d.]*)\s*k/i);
   if (kMatch) return String(Math.round(parseFloat(kMatch[1]) * 1000));
   return n.replace(/\D/g, "");
@@ -67,13 +116,12 @@ export function extractLeadData(message: string): Partial<LeadContext> {
   const m = message.toLowerCase();
   const updates: Partial<LeadContext> = {};
 
-  // Padrões de budget: "90 mil", "90k", "R$ 90.000", "90000", "noventa mil"
   const budgetPatterns = [
-    /r\$\s*[\d.,]+\s*(?:mil|k)?/i,   // R$ 90.000 / R$ 90 mil
-    /[\d]+[.,]?[\d]*\s*mil/i,         // 90 mil / 90.5 mil
-    /[\d]+\s*k\b/i,                   // 90k
-    /até\s+[\d.,]+/i,                 // até 80000
-    /\b\d{4,7}\b/,                    // número puro 4-7 dígitos
+    /r\$\s*[\d.,]+\s*(?:mil|k)?/i,
+    /[\d]+[.,]?[\d]*\s*mil/i,
+    /[\d]+\s*k\b/i,
+    /até\s+[\d.,]+/i,
+    /\b\d{4,7}\b/,
   ];
 
   for (const pattern of budgetPatterns) {

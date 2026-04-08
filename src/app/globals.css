@@ -3,13 +3,15 @@
 @tailwind utilities;
 
 :root {
-  --bg: #0f1117;
-  --panel: #1a1d27;
-  --border: #2d3148;
+  --bg:      #1a1a1a;
+  --panel:   #232323;
+  --border:  #333333;
+  --primary: #e63946;
+  --text:    #ffffff;
 }
 
 body {
   background-color: var(--bg);
-  color: #e0e0e0;
+  color: var(--text);
   font-family: 'Segoe UI', sans-serif;
 }

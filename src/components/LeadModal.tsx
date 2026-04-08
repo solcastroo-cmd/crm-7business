@@ -29,6 +29,7 @@ export type Lead = {
   payment?: string | null; // forma de pagamento (ex: "Financiamento", "À vista")
   seller?: string | null;  // vendedor responsável
   notes?: string | null;   // anotações livres, salvas via PATCH
+  qualification?: "quente" | "morno" | "frio" | null; // qualificação IA
 };
 
 type Props = {
@@ -155,13 +156,28 @@ export function LeadModal({ lead, onClose, onUpdate }: Props) {
               {lead.name || "Sem nome"}
             </h2>
             <p className="text-sm text-gray-400 truncate mt-0.5">{lead.phone}</p>
-            {/* Badge de estágio */}
-            <span
-              className={`mt-2 inline-block text-xs px-2.5 py-0.5 rounded-full
-                          font-medium border ${STAGE_BADGE[lead.stage] ?? "bg-gray-500/20 text-gray-300 border-gray-500/30"}`}
-            >
-              {lead.stage}
-            </span>
+            {/* Badges: estágio + qualification */}
+            <div className="flex items-center gap-2 mt-2 flex-wrap">
+              <span
+                className={`inline-block text-xs px-2.5 py-0.5 rounded-full
+                            font-medium border ${STAGE_BADGE[lead.stage] ?? "bg-gray-500/20 text-gray-300 border-gray-500/30"}`}
+              >
+                {lead.stage}
+              </span>
+              {lead.qualification && (
+                <span className={`inline-block text-xs px-2.5 py-0.5 rounded-full font-bold ${
+                  lead.qualification === "quente"
+                    ? "bg-red-500/20 text-red-400 border border-red-500/40"
+                    : lead.qualification === "morno"
+                    ? "bg-yellow-500/20 text-yellow-400 border border-yellow-500/40"
+                    : "bg-blue-500/20 text-blue-400 border border-blue-500/40"
+                }`}>
+                  {lead.qualification === "quente" ? "🔥 Quente"
+                    : lead.qualification === "morno" ? "⚡ Morno"
+                    : "❄️ Frio"}
+                </span>
+              )}
+            </div>
           </div>
           {/* Botão fechar */}
           <button
@@ -233,7 +249,7 @@ export function LeadModal({ lead, onClose, onUpdate }: Props) {
                 border:       "1px solid rgba(255,255,255,0.08)",
                 lineHeight:   "1.65",
               }}
-              onFocus={(e) => (e.currentTarget.style.borderColor = "#FF7A00")}
+              onFocus={(e) => (e.currentTarget.style.borderColor = "#e63946")}
               onBlur={(e)  => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)")}
             />
           </section>

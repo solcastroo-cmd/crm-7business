@@ -9,9 +9,10 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        bg: "#0f1117",
-        panel: "#1a1d27",
-        border: "#2d3148",
+        bg:      "#1a1a1a",
+        panel:   "#232323",
+        border:  "#333333",
+        primary: "#e63946",
       },
     },
   },

@@ -19,6 +19,7 @@ export type Lead = {
   seller:               string | null;
   store_id:             string | null;
   veiculo_interesse_id: string | null;
+  qualification:        "quente" | "morno" | "frio" | null;
   created_at:           string;
   updated_at:           string;
 };
