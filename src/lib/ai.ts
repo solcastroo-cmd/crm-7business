@@ -36,15 +36,52 @@ Regras de resposta:
 - Responda sempre em português do Brasil.
 - Tom consultivo, direto e persuasivo.`;
 
+/** Busca estoque disponível no banco (top 20 mais recentes) */
+export async function getInventoryContext(): Promise<string> {
+  try {
+    const { supabaseAdmin } = await import("@/lib/supabaseAdmin");
+    const { data } = await supabaseAdmin
+      .from("vehicles")
+      .select("brand,model,year,plate,price,color,km,fuel,transmission,description,status")
+      .eq("status", "disponivel")
+      .order("created_at", { ascending: false })
+      .limit(20);
+
+    if (!data || data.length === 0) return "";
+
+    const lines = data.map((v) => {
+      const parts = [
+        `${v.brand} ${v.model}`,
+        v.year  ? `Ano ${v.year}` : null,
+        v.color ? v.color : null,
+        v.km    ? `${Number(v.km).toLocaleString("pt-BR")} km` : null,
+        v.fuel  ? v.fuel : null,
+        v.transmission ? v.transmission : null,
+        v.plate ? `Placa ${v.plate}` : null,
+        v.price ? `R$ ${Number(v.price).toLocaleString("pt-BR")}` : null,
+        v.description ? `(${v.description})` : null,
+      ].filter(Boolean);
+      return `- ${parts.join(" | ")}`;
+    }).join("\n");
+
+    return `\n\nESTOQUE DISPONÍVEL NA LOJA (use para responder perguntas sobre veículos):\n${lines}`;
+  } catch {
+    return "";
+  }
+}
+
 /** Monta contexto do lead para o prompt */
-function buildUserContent(message: string, lead: LeadContext): string {
+async function buildUserContent(message: string, lead: LeadContext): Promise<string> {
   const ctx = [
     lead.name    ? `Cliente: ${lead.name}` : null,
     lead.budget  ? `Orçamento: R$${lead.budget}` : null,
     lead.type    ? `Tipo de veículo: ${lead.type}` : null,
     lead.payment ? `Pagamento: ${lead.payment}` : null,
   ].filter(Boolean).join(" | ");
-  return ctx ? `${ctx}\n\nCliente disse: "${message}"` : `Cliente disse: "${message}"`;
+
+  const inventory = await getInventoryContext();
+  const base = ctx ? `${ctx}\n\nCliente disse: "${message}"` : `Cliente disse: "${message}"`;
+  return base + inventory;
 }
 
 /** Chama Groq (OpenAI-compat) */
@@ -85,7 +122,7 @@ async function replyViaAnthropic(userContent: string): Promise<string> {
 }
 
 export async function getAIReply(message: string, lead: LeadContext): Promise<string> {
-  const userContent = buildUserContent(message, lead);
+  const userContent = await buildUserContent(message, lead);
   const fallback    = "Olá! Sou o PAULO da 7Business Pro. Como posso ajudar você a encontrar o veículo ideal?";
 
   try {

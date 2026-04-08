@@ -116,6 +116,48 @@ DO $$ BEGIN
   END IF;
 END $$;
 
+-- ── FEAT-10: tabela vehicles (estoque) ──────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.vehicles (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  store_id    uuid,
+  brand       text NOT NULL,
+  model       text NOT NULL,
+  year        text,
+  plate       text,
+  price       numeric,
+  color       text,
+  km          integer,
+  fuel        text,
+  transmission text,
+  description text,
+  status      text NOT NULL DEFAULT 'disponivel' CHECK (status IN ('disponivel','vendido','reservado')),
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  updated_at  timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS vehicles_store_id_idx ON public.vehicles(store_id);
+CREATE INDEX IF NOT EXISTS vehicles_status_idx   ON public.vehicles(status);
+
+ALTER TABLE public.vehicles ENABLE ROW LEVEL SECURITY;
+
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE tablename='vehicles' AND policyname='vehicles_acesso_publico'
+  ) THEN
+    CREATE POLICY vehicles_acesso_publico ON public.vehicles FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_trigger WHERE tgname = 'vehicles_set_updated_at'
+  ) THEN
+    CREATE TRIGGER vehicles_set_updated_at
+      BEFORE UPDATE ON public.vehicles
+      FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+  END IF;
+END $$;
+
 -- ── FEAT-07: coluna qualification nos leads ────────────────────────────────────
 DO $$ BEGIN
   IF NOT EXISTS (
@@ -242,12 +284,12 @@ async function migrate() {
     console.log("✅ Conectado ao banco de dados");
 
     await client.query(SQL);
-    console.log("✅ Tabelas criadas/verificadas: leads, users, messages");
+    console.log("✅ Tabelas criadas/verificadas: leads, users, messages, vehicles");
 
     // Verifica tabelas
     const res = await client.query(`
       SELECT tablename FROM pg_tables
-      WHERE schemaname = 'public' AND tablename IN ('leads','users','messages')
+      WHERE schemaname = 'public' AND tablename IN ('leads','users','messages','vehicles')
       ORDER BY tablename;
     `);
     console.log("📋 Tabelas no banco:", res.rows.map((r: {tablename: string}) => r.tablename).join(", "));

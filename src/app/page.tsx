@@ -532,17 +532,31 @@ export default function Home() {
                         onDrop={(e) => { e.stopPropagation(); handleDrop(e, stage, lead.id); }}
                         onClick={() => setSelectedLead(lead)}
                         className={[
-                          "rounded-lg p-3 border cursor-grab active:cursor-grabbing",
-                          "transition-all duration-100 select-none",
-                          isInsertTarget ? "border-red-500 border-t-2 mt-1" : "border-[#333] hover:border-red-500/40",
+                          "rounded-lg p-3 cursor-grab active:cursor-grabbing",
+                          "transition-all duration-100 select-none shadow-sm",
+                          isInsertTarget ? "mt-1 ring-2 ring-red-500" : "hover:shadow-md",
                         ].join(" ")}
-                        style={{ background: "#2a2a2a" }}
+                        style={{
+                          background: "#ffffff",
+                          borderLeft: `4px solid ${
+                            lead.qualification === "quente" ? "#e53935" :
+                            lead.qualification === "morno"  ? "#ffb300" :
+                            lead.qualification === "frio"   ? "#1e88e5" : "#e0e0e0"
+                          }`,
+                          border: isInsertTarget ? undefined : "1px solid #e8e8e8",
+                          borderLeftWidth: "4px",
+                          borderLeftColor:
+                            lead.qualification === "quente" ? "#e53935" :
+                            lead.qualification === "morno"  ? "#ffb300" :
+                            lead.qualification === "frio"   ? "#1e88e5" : "#e0e0e0",
+                          borderLeftStyle: "solid",
+                        }}
                       >
-                        <p className="text-sm font-medium text-white truncate">{lead.name || "Sem nome"}</p>
-                        <p className="text-xs text-gray-500 truncate mt-0.5">{lead.phone}</p>
-                        {/* FEAT-03: source + badge qualificação */}
+                        <p className="text-sm font-semibold truncate" style={{ color: "#1a1a1a" }}>{lead.name || "Sem nome"}</p>
+                        <p className="text-xs truncate mt-0.5" style={{ color: "#888" }}>{lead.phone}</p>
+                        {/* source + badge qualificação */}
                         <div className="flex items-center justify-between mt-1.5">
-                          <span className="text-xs text-gray-600">{lead.source}</span>
+                          <span className="text-[11px]" style={{ color: "#aaa" }}>{lead.source}</span>
                           <QualBadge q={lead.qualification} />
                         </div>
                       </div>
