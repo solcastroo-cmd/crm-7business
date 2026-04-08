@@ -16,9 +16,13 @@
     "setup:env": "tsx scripts/setup-env.ts",
     "setup:db": "tsx scripts/setup-db.ts",
     "setup:railway": "tsx scripts/setup-railway.ts",
-    "fetch:keys": "tsx scripts/fetch-supabase-keys.ts"
+    "fetch:keys": "tsx scripts/fetch-supabase-keys.ts",
+    "whatsapp:install": "npm install --no-save @whiskeysockets/baileys qrcode-terminal qrcode pino",
+    "whatsapp:connect": "node scripts/whatsapp/connect-local.js",
+    "whatsapp:verify": "bash scripts/whatsapp/verify-session.sh"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.85.0",
     "@supabase/supabase-js": "^2.101.1",
     "@types/pg": "^8.20.0",
     "axios": "^1.14.0",
