@@ -134,7 +134,7 @@ export default function InventoryPage() {
   }) => (
     <div>
       <label className="block text-[11px] text-gray-500 mb-1 uppercase tracking-wider">{label}</label>
-      <input type={type} placeholder={placeholder} value={form[field]}
+      <input type={type} placeholder={placeholder} value={form[field] ?? ""}
         onChange={(e) => setForm({ ...form, [field]: e.target.value })}
         style={inp}
         onFocus={(e) => (e.currentTarget.style.borderColor = "#e63946")}
@@ -280,7 +280,7 @@ export default function InventoryPage() {
               <Field label="KM"         field="km"       placeholder="45000" type="number" />
               <div>
                 <label className="block text-[11px] text-gray-500 mb-1 uppercase tracking-wider">Combustível</label>
-                <select value={form.fuel}
+                <select value={form.fuel ?? ""}
                   onChange={(e) => setForm({ ...form, fuel: e.target.value })}
                   style={{ ...inp, appearance: "none" }}
                   onFocus={(e) => (e.currentTarget.style.borderColor = "#e63946")}
@@ -293,7 +293,7 @@ export default function InventoryPage() {
               </div>
               <div>
                 <label className="block text-[11px] text-gray-500 mb-1 uppercase tracking-wider">Câmbio</label>
-                <select value={form.transmission}
+                <select value={form.transmission ?? ""}
                   onChange={(e) => setForm({ ...form, transmission: e.target.value })}
                   style={{ ...inp, appearance: "none" }}
                   onFocus={(e) => (e.currentTarget.style.borderColor = "#e63946")}
@@ -318,7 +318,7 @@ export default function InventoryPage() {
               </div>
               <div className="col-span-2">
                 <label className="block text-[11px] text-gray-500 mb-1 uppercase tracking-wider">Descrição / Obs.</label>
-                <textarea placeholder="Único dono, revisado, IPVA 2025 pago..." value={form.description}
+                <textarea placeholder="Único dono, revisado, IPVA 2025 pago..." value={form.description ?? ""}
                   onChange={(e) => setForm({ ...form, description: e.target.value })}
                   rows={2}
                   style={{ ...inp, resize: "vertical" }}

@@ -175,7 +175,7 @@ export function DashboardCharts({ leads }: { leads: Lead[] }) {
                   <XAxis type="number" tick={{ fill: "#555", fontSize: 10 }} tickLine={false} axisLine={false} allowDecimals={false} />
                   <YAxis type="category" dataKey="stage" tick={{ fill: "#999", fontSize: 10 }} tickLine={false} axisLine={false} width={90} />
                   <Tooltip
-                    formatter={(v: number) => [`${v} leads`, "Total"]}
+                    formatter={(v) => [`${v} leads`, "Total"]}
                     contentStyle={{ background: "#1e1e1e", border: "1px solid #333", borderRadius: 8, fontSize: 12 }}
                     labelStyle={{ color: "#fff" }}
                   />
@@ -205,8 +205,8 @@ export function DashboardCharts({ leads }: { leads: Lead[] }) {
                     innerRadius={45} outerRadius={75}
                     dataKey="value"
                     labelLine={false}
-                    label={({ name, percent }) =>
-                      percent > 0.05 ? `${(percent * 100).toFixed(0)}%` : ""
+                    label={({ name, percent }: { name?: string; percent?: number }) =>
+                      (percent ?? 0) > 0.05 ? `${((percent ?? 0) * 100).toFixed(0)}%` : ""
                     }
                   >
                     {dataBySource.map((_, i) => (
@@ -214,7 +214,7 @@ export function DashboardCharts({ leads }: { leads: Lead[] }) {
                     ))}
                   </Pie>
                   <Tooltip
-                    formatter={(v: number, name: string) => [`${v} leads`, name]}
+                    formatter={(v, name) => [`${v} leads`, name as string]}
                     contentStyle={{ background: "#1e1e1e", border: "1px solid #333", borderRadius: 8, fontSize: 12 }}
                   />
                   <Legend
