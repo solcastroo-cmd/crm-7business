@@ -2,31 +2,93 @@
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Kanban CRM 7Business — Plano Pro
-// Tema: preto (#1a1a1a) + vermelho (#e63946) + branco
+// Tema: light (#f0f2f5 bg) + branco cards + vermelho accent
 // FEAT-01 : hero dashboard com 4 KPIs, auto-refresh 60s
 // FEAT-02 : modal/drawer de perfil completo ao clicar no card
 // FEAT-03 : badge Quente/Morno/Frio nos cards do Kanban
 // FEAT-04 : botão "Novo Lead" + modal de cadastro manual
 // FEAT-05 : busca + filtros no Kanban
 // FEAT-06 : dashboard analytics com gráficos (recharts)
+// BUG-02  : multi-tenant via supabase.auth.getUser() → storeId
+// REDESIGN: visual light profissional matching screenshots
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import { createClient } from "@supabase/supabase-js";
 import { LeadModal, type Lead } from "@/components/LeadModal";
 import { DashboardCharts } from "@/components/DashboardCharts";
 
-// ── FEAT-01: tipos e helpers do hero dashboard ───────────────────────────────
+// ── Supabase client (browser) ────────────────────────────────────────────────
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
-type Metrics = {
-  leads_ativos:   number;
-  leads_hoje:     number;
-  leads_ontem:    number;
-  taxa_conversao: number;
-  tempo_medio_h:  number;
-  total_leads:    number;
-  total_vendidos: number;
-  computed_at:    string;
+// ── Stage config ─────────────────────────────────────────────────────────────
+const STAGES = [
+  "Novo Lead", "Contato Inicial", "Interesse", "Proposta",
+  "Negociação", "VENDIDO!", "Perdido",
+];
+
+const STAGE_COLOR: Record<string, string> = {
+  "Novo Lead":       "#ef4444",
+  "Contato Inicial": "#3b82f6",
+  "Interesse":       "#8b5cf6",
+  "Proposta":        "#14b8a6",
+  "Negociação":      "#f59e0b",
+  "VENDIDO!":        "#22c55e",
+  "Perdido":         "#6b7280",
 };
+
+const SOURCES = ["manual", "whatsapp", "instagram", "facebook", "indicação", "site", "portal"];
+
+// ── Source icon map ───────────────────────────────────────────────────────────
+const SOURCE_ICON: Record<string, { icon: string; color: string }> = {
+  "whatsapp_evolution": { icon: "W", color: "#25D366" },
+  "whatsapp":           { icon: "W", color: "#25D366" },
+  "instagram":          { icon: "I", color: "#e1306c" },
+  "facebook":           { icon: "F", color: "#1877f2" },
+  "manual":             { icon: "M", color: "#6b7280" },
+  "site":               { icon: "S", color: "#8b5cf6" },
+  "portal":             { icon: "P", color: "#f59e0b" },
+  "indicação":          { icon: "R", color: "#14b8a6" },
+};
+
+// ── Avatar palette ────────────────────────────────────────────────────────────
+const AVATAR_COLORS = [
+  "#e63946", "#3b82f6", "#8b5cf6", "#f59e0b",
+  "#14b8a6", "#22c55e", "#f97316", "#ec4899",
+];
+
+function avatarColor(name: string | null): string {
+  if (!name) return "#6b7280";
+  return AVATAR_COLORS[name.charCodeAt(0) % AVATAR_COLORS.length];
+}
+
+function avatarInitials(name: string | null): string {
+  if (!name) return "?";
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+// ── Time elapsed ──────────────────────────────────────────────────────────────
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const m = Math.floor(diff / 60000);
+  if (m < 1)  return "agora";
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `há ${h}h`;
+  const d = Math.floor(h / 24);
+  if (d < 30) return `há ${d}d`;
+  return `há ${Math.floor(d / 30)}M`;
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function normalizeStr(s: string) {
+  return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
 
 function formatHoras(h: number): string {
   if (h < 1) return "< 1h";
@@ -41,7 +103,21 @@ function calcDelta(hoje: number, ontem: number): string {
   return (pct >= 0 ? "+" : "") + pct.toFixed(0) + "%";
 }
 
-// ── FEAT-01: Hero Dashboard ──────────────────────────────────────────────────
+// ── Metrics type ──────────────────────────────────────────────────────────────
+type Metrics = {
+  leads_ativos:   number;
+  leads_hoje:     number;
+  leads_ontem:    number;
+  taxa_conversao: number;
+  tempo_medio_h:  number;
+  total_leads:    number;
+  total_vendidos: number;
+  computed_at:    string;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FEAT-01: Hero Dashboard — white cards, red accent
+// ─────────────────────────────────────────────────────────────────────────────
 function HeroDashboard() {
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [loadingM, setLoadingM] = useState(true);
@@ -64,9 +140,10 @@ function HeroDashboard() {
     return (
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         {[...Array(4)].map((_, i) => (
-          <div key={i} className="rounded-xl p-4 animate-pulse" style={{ background: "#232323" }}>
-            <div className="h-3 w-24 bg-white/10 rounded mb-3" />
-            <div className="h-8 w-16 bg-white/20 rounded" />
+          <div key={i} className="rounded-xl p-5 animate-pulse"
+            style={{ background: "#fff", border: "1px solid #e8e8e8" }}>
+            <div className="h-3 w-20 rounded mb-3" style={{ background: "#f0f2f5" }} />
+            <div className="h-8 w-16 rounded" style={{ background: "#f0f2f5" }} />
           </div>
         ))}
       </div>
@@ -75,54 +152,100 @@ function HeroDashboard() {
 
   if (erroM || !metrics) {
     return (
-      <div className="mb-6 text-xs text-red-400 bg-red-900/20 rounded-lg p-3">
-        ⚠️ Métricas indisponíveis: {erroM}
+      <div className="mb-6 text-xs text-red-500 bg-red-50 border border-red-200 rounded-lg p-3">
+        Métricas indisponíveis: {erroM}
       </div>
     );
   }
 
-  const delta = calcDelta(metrics.leads_hoje, metrics.leads_ontem);
+  const delta         = calcDelta(metrics.leads_hoje, metrics.leads_ontem);
   const deltaPositivo = metrics.leads_hoje >= metrics.leads_ontem;
 
   const cards = [
-    { label: "Leads Ativos",         value: metrics.leads_ativos.toString(),    sub: `${metrics.total_leads} no total`,            icon: "◉", highlight: false },
-    { label: "Leads Hoje",           value: metrics.leads_hoje.toString(),       sub: `${delta} vs ontem (${metrics.leads_ontem})`, icon: "↑", highlight: deltaPositivo, subColor: deltaPositivo ? "#4ade80" : "#f87171" },
-    { label: "Taxa de Conversão",    value: `${metrics.taxa_conversao}%`,        sub: `${metrics.total_vendidos} vendidos`,         icon: "✓", highlight: metrics.taxa_conversao > 0 },
-    { label: "Tempo Médio Resposta", value: formatHoras(metrics.tempo_medio_h), sub: "1ª interação após chegada",                  icon: "⏱", highlight: false },
+    {
+      label: "Leads Ativos",
+      value: metrics.leads_ativos.toString(),
+      icon: "◉",
+      sub1: { label: "Total", val: metrics.total_leads.toString(), color: "#6b7280" },
+      sub2: null,
+      accent: false,
+    },
+    {
+      label: "Leads Hoje",
+      value: metrics.leads_hoje.toString(),
+      icon: "↑",
+      sub1: { label: "Ontem", val: metrics.leads_ontem.toString(), color: "#6b7280" },
+      sub2: { label: delta, val: "", color: deltaPositivo ? "#22c55e" : "#ef4444" },
+      accent: deltaPositivo,
+    },
+    {
+      label: "Taxa de Conversão",
+      value: `${metrics.taxa_conversao}%`,
+      icon: "✓",
+      sub1: { label: "Vendidos", val: metrics.total_vendidos.toString(), color: "#22c55e" },
+      sub2: null,
+      accent: metrics.taxa_conversao > 0,
+    },
+    {
+      label: "Tempo Médio Resposta",
+      value: formatHoras(metrics.tempo_medio_h),
+      icon: "⏱",
+      sub1: { label: "1ª interação após chegada", val: "", color: "#6b7280" },
+      sub2: null,
+      accent: false,
+    },
   ];
 
   return (
     <div className="mb-6">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {cards.map((card) => (
-          <div key={card.label} className="rounded-xl p-4 flex flex-col gap-1 transition-all"
+          <div key={card.label}
+            className="rounded-xl p-5 flex flex-col gap-1 transition-all"
             style={{
-              background: "#232323",
-              border: card.highlight ? "1px solid #e63946" : "1px solid rgba(255,255,255,0.06)",
+              background: "#fff",
+              border: card.accent ? "1px solid #fca5a5" : "1px solid #e8e8e8",
+              boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
             }}>
-            <div className="flex items-center gap-1.5">
-              <span style={{ color: "#e63946", fontSize: "0.75rem" }}>{card.icon}</span>
-              <span className="text-xs text-gray-400 uppercase tracking-wider">{card.label}</span>
+            <div className="flex items-center gap-1.5 mb-1">
+              <span style={{ color: "#e63946", fontSize: "0.7rem" }}>{card.icon}</span>
+              <span className="text-xs font-medium uppercase tracking-wide" style={{ color: "#9ca3af" }}>
+                {card.label}
+              </span>
             </div>
-            <span className="text-2xl font-bold text-white leading-none mt-1">{card.value}</span>
-            <span className="text-xs mt-0.5" style={{ color: (card as { subColor?: string }).subColor ?? "#6b7280" }}>{card.sub}</span>
+            <span className="text-3xl font-bold leading-none" style={{ color: "#1a1a1a" }}>
+              {card.value}
+            </span>
+            <div className="flex items-center gap-2 mt-1 flex-wrap">
+              {card.sub1 && (
+                <span className="text-xs px-2 py-0.5 rounded-full font-medium"
+                  style={{ background: "#f0f2f5", color: card.sub1.color }}>
+                  {card.sub1.label}{card.sub1.val ? `: ${card.sub1.val}` : ""}
+                </span>
+              )}
+              {card.sub2 && (
+                <span className="text-xs px-2 py-0.5 rounded-full font-bold"
+                  style={{
+                    background: deltaPositivo ? "#dcfce7" : "#fee2e2",
+                    color: card.sub2.color,
+                  }}>
+                  {card.sub2.label}
+                </span>
+              )}
+            </div>
           </div>
         ))}
       </div>
-      <p className="text-right text-[10px] text-gray-700 mt-1">
+      <p className="text-right text-[10px] mt-1" style={{ color: "#d1d5db" }}>
         Atualizado em {new Date(metrics.computed_at).toLocaleTimeString("pt-BR")} · refresh 60s
       </p>
     </div>
   );
 }
 
-// ── FEAT-04: Modal de novo lead manual ───────────────────────────────────────
-const STAGES = [
-  "Novo Lead", "Contato Inicial", "Interesse", "Proposta",
-  "Negociação", "VENDIDO!", "Perdido",
-];
-const SOURCES = ["manual", "whatsapp", "instagram", "facebook", "indicação", "site", "portal"];
-
+// ─────────────────────────────────────────────────────────────────────────────
+// FEAT-04: Modal de novo lead manual — dark overlay style preserved
+// ─────────────────────────────────────────────────────────────────────────────
 type NewLeadForm = { name: string; phone: string; source: string; stage: string; notes: string };
 
 function NewLeadModal({ onClose, onCreated }: { onClose: () => void; onCreated: (lead: Lead) => void }) {
@@ -223,35 +346,140 @@ function NewLeadModal({ onClose, onCreated }: { onClose: () => void; onCreated: 
   );
 }
 
-// ── Cores das colunas ────────────────────────────────────────────────────────
-const STAGE_COLORS: Record<string, string> = {
-  "Novo Lead":       "border-red-500",
-  "Contato Inicial": "border-blue-500",
-  "Interesse":       "border-purple-500",
-  "Proposta":        "border-teal-400",
-  "Negociação":      "border-yellow-400",
-  "VENDIDO!":        "border-green-500",
-  "Perdido":         "border-gray-600",
+// ─────────────────────────────────────────────────────────────────────────────
+// Kanban Card — redesigned white bg, matching screenshot
+// ─────────────────────────────────────────────────────────────────────────────
+const QUAL_CONFIG = {
+  quente: { label: "LEAD QUENTE", bg: "#fee2e2", color: "#dc2626", border: "#dc2626" },
+  morno:  { label: "MORNO",       bg: "#fef3c7", color: "#d97706", border: "#d97706" },
+  frio:   { label: "FRIO",        bg: "#dbeafe", color: "#2563eb", border: "#2563eb" },
 };
 
-// FEAT-03: Badge de qualificação para os cards
-function QualBadge({ q }: { q?: "quente" | "morno" | "frio" | null }) {
-  if (!q) return null;
-  const map = {
-    quente: { label: "🔥 Quente", cls: "bg-red-500/20 text-red-400" },
-    morno:  { label: "⚡ Morno",  cls: "bg-yellow-500/20 text-yellow-400" },
-    frio:   { label: "❄️ Frio",   cls: "bg-blue-500/20 text-blue-400" },
-  };
-  const { label, cls } = map[q];
-  return <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${cls}`}>{label}</span>;
+function KanbanCard({
+  lead,
+  isDragOver,
+  onDragStart,
+  onDragEnd,
+  onDragOver,
+  onDrop,
+  onClick,
+}: {
+  lead: Lead;
+  isDragOver: boolean;
+  onDragStart: (e: React.DragEvent) => void;
+  onDragEnd: (e: React.DragEvent) => void;
+  onDragOver: (e: React.DragEvent) => void;
+  onDrop: (e: React.DragEvent) => void;
+  onClick: () => void;
+}) {
+  const qual    = lead.qualification ? QUAL_CONFIG[lead.qualification] : null;
+  const src     = SOURCE_ICON[lead.source] ?? { icon: lead.source?.[0]?.toUpperCase() ?? "?", color: "#6b7280" };
+  const bgColor = avatarColor(lead.name);
+  const initials = avatarInitials(lead.name);
+  const borderLeft = qual?.border ?? "#e5e7eb";
+
+  return (
+    <div
+      draggable
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      onDragOver={(e) => { e.stopPropagation(); onDragOver(e); }}
+      onDrop={(e)     => { e.stopPropagation(); onDrop(e); }}
+      onClick={onClick}
+      style={{
+        background: "#fff",
+        border: isDragOver ? "1.5px solid #e63946" : "1px solid #e5e7eb",
+        borderLeft: `3px solid ${borderLeft}`,
+        borderRadius: "10px",
+        boxShadow: isDragOver
+          ? "0 4px 16px rgba(230,57,70,0.15)"
+          : "0 1px 3px rgba(0,0,0,0.08)",
+        padding: "12px 12px 10px",
+        cursor: "grab",
+        userSelect: "none",
+        transition: "box-shadow 0.1s, border-color 0.1s",
+        marginTop: isDragOver ? "4px" : "0",
+      }}
+      className="active:cursor-grabbing hover:shadow-md"
+    >
+      {/* Row 1: Avatar + Name + Time */}
+      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "7px" }}>
+        <div style={{
+          width: "32px", height: "32px", borderRadius: "50%",
+          background: bgColor, flexShrink: 0,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: "11px", fontWeight: 700, color: "#fff",
+        }}>
+          {initials}
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "4px" }}>
+            <span style={{
+              fontWeight: 700, fontSize: "13px", color: "#111827",
+              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+              flex: 1,
+            }}>
+              {lead.name || "Sem nome"}
+            </span>
+            <span style={{ fontSize: "10px", color: "#9ca3af", flexShrink: 0, marginLeft: "4px" }}>
+              {timeAgo(lead.created_at)}
+            </span>
+          </div>
+          <span style={{ fontSize: "11px", color: "#9ca3af" }}>{lead.phone}</span>
+        </div>
+      </div>
+
+      {/* Row 2: Source icon + label */}
+      <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "7px" }}>
+        <div style={{
+          width: "18px", height: "18px", borderRadius: "50%",
+          background: src.color,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: "9px", fontWeight: 800, color: "#fff", flexShrink: 0,
+        }}>
+          {src.icon}
+        </div>
+        <span style={{ fontSize: "11px", color: "#6b7280" }}>{lead.source}</span>
+      </div>
+
+      {/* Row 3: Qual badge + Tags */}
+      {(qual || (lead.tags && lead.tags.length > 0)) && (
+        <div style={{ display: "flex", alignItems: "center", gap: "4px", marginBottom: "6px", flexWrap: "wrap" }}>
+          {qual && (
+            <span style={{
+              fontSize: "9px", fontWeight: 700, padding: "2px 7px",
+              borderRadius: "999px", background: qual.bg, color: qual.color,
+              border: `1px solid ${qual.border}`,
+              letterSpacing: "0.04em",
+            }}>
+              {qual.label}
+            </span>
+          )}
+          {lead.tags?.map((tag) => (
+            <span key={tag} style={{
+              fontSize: "9px", padding: "2px 6px", borderRadius: "999px",
+              background: "#f3f4f6", color: "#6b7280",
+              border: "1px solid #e5e7eb",
+            }}>
+              {tag}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Row 4: Seller (bottom right) */}
+      {lead.seller && (
+        <div style={{ textAlign: "right", marginTop: "2px" }}>
+          <span style={{ fontSize: "10px", color: "#c4c7cc" }}>{lead.seller}</span>
+        </div>
+      )}
+    </div>
+  );
 }
 
-// FEAT-05: normaliza string para busca sem acento/case
-function normalizeStr(s: string) {
-  return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-}
-
-// ── Componente principal ─────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Main page
+// ─────────────────────────────────────────────────────────────────────────────
 export default function Home() {
   const [leads, setLeads]               = useState<Lead[]>([]);
   const [loading, setLoading]           = useState(true);
@@ -259,29 +487,36 @@ export default function Home() {
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [showNewLead, setShowNewLead]   = useState(false);
 
+  // BUG-02: multi-tenant userId
+  const [userId, setUserId] = useState<string | null>(null);
+
   // FEAT-05: busca + filtros
   const [searchTerm,          setSearchTerm]          = useState("");
   const [qualificationFilter, setQualificationFilter] = useState("Todos");
   const [sellerFilter,        setSellerFilter]         = useState("Todos");
 
-  const [dragOverStage, setDragOverStage]   = useState<string | null>(null);
+  const [dragOverStage,  setDragOverStage]  = useState<string | null>(null);
   const [dragOverLeadId, setDragOverLeadId] = useState<string | null>(null);
   const draggingRef = useRef<Lead | null>(null);
 
+  // BUG-02: get supabase user first, then fetch leads
   useEffect(() => {
-    fetch("/api/leads")
-      .then((r) => { if (!r.ok) throw new Error(`Erro ${r.status}`); return r.json(); })
-      .then((data) => { setLeads(Array.isArray(data) ? data : []); setLoading(false); })
-      .catch((e) => { setErro(e.message); setLoading(false); });
+    supabase.auth.getUser().then(({ data }) => {
+      const uid = data?.user?.id ?? null;
+      setUserId(uid);
+      const url = uid ? `/api/leads?storeId=${uid}` : "/api/leads";
+      fetch(url)
+        .then((r) => { if (!r.ok) throw new Error(`Erro ${r.status}`); return r.json(); })
+        .then((data) => { setLeads(Array.isArray(data) ? data : []); setLoading(false); })
+        .catch((e) => { setErro(e.message); setLoading(false); });
+    });
   }, []);
 
-  // Lista de vendedores únicos presentes nos leads
   const sellers = useMemo(() =>
     ["Todos", ...Array.from(new Set(leads.map((l) => l.seller).filter(Boolean) as string[]))],
     [leads]
   );
 
-  // FEAT-05: leads filtrados (busca + qualificação + vendedor)
   const filteredLeads = useMemo(() => {
     let result = leads;
     if (qualificationFilter !== "Todos")
@@ -302,10 +537,10 @@ export default function Home() {
   const isFilterActive = qualificationFilter !== "Todos" || sellerFilter !== "Todos" || searchTerm !== "";
   const clearFilters   = () => { setSearchTerm(""); setQualificationFilter("Todos"); setSellerFilter("Todos"); };
 
-  // leadsByStage usa filteredLeads para respeitar filtros ativos no drag & drop
   const leadsByStage = (stage: string) =>
     filteredLeads.filter((l) => l.stage === stage).sort((a, b) => a.position - b.position);
 
+  // ── Drag & drop handlers ──
   const handleDragStart = (e: React.DragEvent, lead: Lead) => {
     draggingRef.current = lead;
     e.dataTransfer.effectAllowed = "move";
@@ -363,209 +598,273 @@ export default function Home() {
   };
 
   if (loading) return (
-    <div className="flex items-center justify-center h-screen">
-      <span className="text-gray-400 text-sm animate-pulse">Carregando CRM...</span>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: "#f0f2f5" }}>
+      <span style={{ color: "#9ca3af", fontSize: "14px" }}>Carregando CRM...</span>
     </div>
   );
 
   if (erro) return (
-    <div className="flex items-center justify-center h-screen flex-col gap-2">
-      <span className="text-red-400 text-sm">⚠️ Erro ao carregar leads: {erro}</span>
-      <span className="text-gray-600 text-xs">Verifique as variáveis de ambiente do Supabase.</span>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", flexDirection: "column", gap: "8px", background: "#f0f2f5" }}>
+      <span style={{ color: "#ef4444", fontSize: "14px" }}>Erro ao carregar leads: {erro}</span>
+      <span style={{ color: "#9ca3af", fontSize: "12px" }}>Verifique as variáveis de ambiente do Supabase.</span>
     </div>
   );
 
+  const totalVendidos = leads.filter((l) => l.stage === "VENDIDO!").length;
+  const taxaConversao = leads.length ? ((totalVendidos / leads.length) * 100).toFixed(1) : "0";
+
   return (
-    <main className="min-h-screen p-6">
+    <main style={{ minHeight: "100vh", background: "#f0f2f5", padding: "24px" }}>
 
       {/* ── Header ── */}
-      <header className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg flex items-center justify-center font-black text-white text-sm"
-            style={{ background: "#e63946" }}>7</div>
+      <header style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        marginBottom: "24px", flexWrap: "wrap", gap: "12px",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+          <div style={{
+            width: "36px", height: "36px", borderRadius: "10px",
+            background: "#e63946", display: "flex", alignItems: "center",
+            justifyContent: "center", fontWeight: 900, color: "#fff", fontSize: "16px",
+            boxShadow: "0 2px 8px rgba(230,57,70,0.35)",
+          }}>7</div>
           <div>
-            <h1 className="text-xl font-bold text-white leading-none">CRM 7Business</h1>
-            <p className="text-xs text-gray-500 mt-0.5">{leads.length} leads no funil</p>
+            <h1 style={{ fontSize: "20px", fontWeight: 800, color: "#111827", lineHeight: 1 }}>
+              CRM 7Business
+            </h1>
+            <p style={{ fontSize: "12px", color: "#9ca3af", marginTop: "2px" }}>
+              {leads.length} leads no funil
+            </p>
           </div>
         </div>
-        <div className="flex items-center gap-3 flex-wrap justify-end">
-          {/* FEAT-04: botão Novo Lead */}
-          <button onClick={() => setShowNewLead(true)}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold text-white transition-opacity hover:opacity-90"
-            style={{ background: "#e63946" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+          <button
+            onClick={() => setShowNewLead(true)}
+            style={{
+              display: "flex", alignItems: "center", gap: "6px",
+              padding: "8px 16px", borderRadius: "8px", border: "none",
+              background: "#e63946", color: "#fff", fontSize: "13px",
+              fontWeight: 700, cursor: "pointer",
+              boxShadow: "0 2px 6px rgba(230,57,70,0.3)",
+            }}>
             + Novo Lead
           </button>
-          <a href="/integrations" className="text-xs text-gray-500 hover:text-white transition-colors">
-            ⚡ Integrações
+          <a href="/integrations"
+            style={{ fontSize: "12px", color: "#6b7280", textDecoration: "none" }}
+            onMouseOver={(e) => (e.currentTarget.style.color = "#e63946")}
+            onMouseOut={(e)  => (e.currentTarget.style.color = "#6b7280")}>
+            Integrações
           </a>
-          <span className="text-xs text-gray-500">
-            Vendidos: <strong className="text-green-400">{leadsByStage("VENDIDO!").length}</strong>
+          <span style={{ fontSize: "12px", color: "#6b7280" }}>
+            Vendidos:{" "}
+            <strong style={{ color: "#22c55e" }}>{totalVendidos}</strong>
           </span>
-          <span className="text-xs text-gray-500">
-            Taxa: <strong style={{ color: "#e63946" }}>
-              {leads.length ? ((leadsByStage("VENDIDO!").length / leads.length) * 100).toFixed(1) : 0}%
-            </strong>
+          <span style={{ fontSize: "12px", color: "#6b7280" }}>
+            Taxa:{" "}
+            <strong style={{ color: "#e63946" }}>{taxaConversao}%</strong>
           </span>
         </div>
       </header>
 
-      {/* ── FEAT-01: Hero Dashboard (KPIs) ── */}
+      {/* ── FEAT-01: Hero Dashboard ── */}
       <HeroDashboard />
 
-      {/* ── FEAT-06: Dashboard Analytics (gráficos) ── */}
+      {/* ── FEAT-06: Dashboard Analytics ── */}
       <DashboardCharts leads={leads} />
 
-      {/* ── FEAT-05: Barra de Busca + Filtros ── */}
-      <div className="mb-4 rounded-xl p-4" style={{ background: "#1e1e1e", border: "1px solid #2e2e2e" }}>
-        {/* Campo de busca */}
-        <div className="relative mb-3">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-600 text-sm select-none">🔍</span>
+      {/* ── FEAT-05: Filter Bar ── */}
+      <div style={{
+        background: "#fff", border: "1px solid #e5e7eb", borderRadius: "12px",
+        padding: "14px 16px", marginBottom: "20px",
+        boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
+      }}>
+        {/* Search input */}
+        <div style={{ position: "relative", marginBottom: "12px" }}>
+          <span style={{
+            position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)",
+            color: "#d1d5db", fontSize: "13px", pointerEvents: "none",
+          }}>
+            &#x1F50D;
+          </span>
           <input
             type="text"
             placeholder="Buscar por nome, telefone ou origem..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-9 pr-8 py-2.5 rounded-lg text-sm text-white placeholder-gray-600 outline-none transition-colors"
-            style={{ background: "#111", border: "1px solid #3a3a3a" }}
-            onFocus={(e) => (e.currentTarget.style.borderColor = "#e63946")}
-            onBlur={(e)  => (e.currentTarget.style.borderColor = "#3a3a3a")}
+            style={{
+              width: "100%", padding: "9px 32px 9px 36px",
+              border: "1px solid #e5e7eb", borderRadius: "8px",
+              fontSize: "13px", color: "#374151", outline: "none",
+              background: "#f9fafb", boxSizing: "border-box",
+              transition: "border-color 0.15s",
+            }}
+            onFocus={(e)  => (e.currentTarget.style.borderColor = "#e63946")}
+            onBlur={(e)   => (e.currentTarget.style.borderColor = "#e5e7eb")}
           />
           {searchTerm && (
-            <button onClick={() => setSearchTerm("")}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white text-xs transition-colors">
+            <button
+              onClick={() => setSearchTerm("")}
+              style={{
+                position: "absolute", right: "12px", top: "50%", transform: "translateY(-50%)",
+                background: "none", border: "none", cursor: "pointer", color: "#9ca3af",
+                fontSize: "12px", padding: "0",
+              }}>
               ✕
             </button>
           )}
         </div>
 
-        {/* Pills + Vendedor + Contador */}
-        <div className="flex items-center gap-2 flex-wrap">
-          {/* Qualificação pills */}
+        {/* Filter pills + seller + counter */}
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
           {[
-            { val: "Todos",   label: "Todos"      },
-            { val: "quente",  label: "🔥 Quente"  },
-            { val: "morno",   label: "⚡ Morno"   },
-            { val: "frio",    label: "❄️ Frio"    },
-          ].map(({ val, label }) => (
-            <button key={val} onClick={() => setQualificationFilter(val)}
-              className="px-3 py-1 rounded-full text-xs font-semibold border transition-all"
-              style={{
-                borderColor: qualificationFilter === val ? "#e63946" : "#3a3a3a",
-                color:       qualificationFilter === val ? "#e63946" : "#666",
-                background:  qualificationFilter === val ? "rgba(230,57,70,0.1)" : "transparent",
-              }}>
-              {label}
-            </button>
-          ))}
+            { val: "Todos",  label: "Todos"      },
+            { val: "quente", label: "Quente"      },
+            { val: "morno",  label: "Morno"       },
+            { val: "frio",   label: "Frio"        },
+          ].map(({ val, label }) => {
+            const isActive = qualificationFilter === val;
+            return (
+              <button
+                key={val}
+                onClick={() => setQualificationFilter(val)}
+                style={{
+                  padding: "5px 14px", borderRadius: "999px", fontSize: "12px",
+                  fontWeight: 600, cursor: "pointer", border: "1px solid",
+                  borderColor: isActive ? "#e63946" : "#e5e7eb",
+                  color:       isActive ? "#e63946" : "#6b7280",
+                  background:  isActive ? "#fff1f2" : "#fff",
+                  transition: "all 0.15s",
+                }}>
+                {label}
+              </button>
+            );
+          })}
 
-          {/* Dropdown vendedor */}
-          <select value={sellerFilter} onChange={(e) => setSellerFilter(e.target.value)}
-            className="px-3 py-1 rounded-full text-xs font-semibold border outline-none transition-all"
+          {/* Seller dropdown */}
+          <select
+            value={sellerFilter}
+            onChange={(e) => setSellerFilter(e.target.value)}
             style={{
-              borderColor: sellerFilter !== "Todos" ? "#e63946" : "#3a3a3a",
-              color:       sellerFilter !== "Todos" ? "#e63946" : "#666",
-              background:  "#111",
-              cursor: "pointer",
+              padding: "5px 14px", borderRadius: "999px", fontSize: "12px",
+              fontWeight: 600, cursor: "pointer", border: "1px solid",
+              borderColor: sellerFilter !== "Todos" ? "#e63946" : "#e5e7eb",
+              color:       sellerFilter !== "Todos" ? "#e63946" : "#6b7280",
+              background:  sellerFilter !== "Todos" ? "#fff1f2" : "#fff",
+              outline: "none",
             }}>
             {sellers.map((s) => (
-              <option key={s} value={s}>{s === "Todos" ? "👤 Vendedor" : s}</option>
+              <option key={s} value={s}>{s === "Todos" ? "Vendedor" : s}</option>
             ))}
           </select>
 
-          {/* Contador + botão limpar */}
-          <div className="ml-auto flex items-center gap-3">
+          {/* Counter + clear */}
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "12px" }}>
             {isFilterActive && (
-              <span className="text-xs text-gray-600">
+              <span style={{ fontSize: "12px", color: "#9ca3af" }}>
                 {filteredLeads.length === leads.length
                   ? `${leads.length} leads`
-                  : `Exibindo ${filteredLeads.length} de ${leads.length} leads`}
+                  : `${filteredLeads.length} de ${leads.length} leads`}
               </span>
             )}
             {isFilterActive && (
-              <button onClick={clearFilters}
-                className="text-xs font-semibold transition-colors"
-                style={{ color: "#e63946" }}>
-                ✕ Limpar filtros
+              <button
+                onClick={clearFilters}
+                style={{
+                  background: "none", border: "none", cursor: "pointer",
+                  fontSize: "12px", fontWeight: 600, color: "#e63946", padding: 0,
+                }}>
+                Limpar filtros
               </button>
             )}
           </div>
         </div>
 
-        {/* Mensagem sem resultados */}
         {isFilterActive && filteredLeads.length === 0 && (
-          <p className="text-center text-xs text-gray-600 mt-3 py-2">
+          <p style={{ textAlign: "center", fontSize: "12px", color: "#9ca3af", marginTop: "12px" }}>
             Nenhum lead encontrado{searchTerm ? ` para "${searchTerm}"` : ""}.
           </p>
         )}
       </div>
 
       {/* ── Kanban Board ── */}
-      <div className="flex gap-4 overflow-x-auto pb-4">
+      <div style={{ display: "flex", gap: "16px", overflowX: "auto", paddingBottom: "16px" }}>
         {STAGES.map((stage) => {
           const stageLeads = leadsByStage(stage);
           const isOver     = dragOverStage === stage;
+          const stageColor = STAGE_COLOR[stage];
 
           return (
-            <div key={stage} className="flex-shrink-0 w-64">
+            <div key={stage} style={{ flexShrink: 0, width: "268px" }}>
+              {/* Column container */}
               <div
-                className={["border-t-2", STAGE_COLORS[stage], "rounded-lg p-3 transition-all duration-150", isOver ? "ring-1 ring-red-500/40" : ""].join(" ")}
-                style={{ background: isOver ? "#2a2020" : "#232323" }}
                 onDragOver={(e) => handleDragOver(e, stage)}
                 onDrop={(e) => handleDrop(e, stage)}
-              >
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-semibold text-gray-300 uppercase tracking-wider">{stage}</span>
-                  <span className="text-xs px-2 py-0.5 rounded-full text-gray-400" style={{ background: "#2e2e2e" }}>
+                style={{
+                  background:    isOver ? "#fafafa" : "#f8f8f8",
+                  borderRadius:  "12px",
+                  border:        isOver ? `1px solid ${stageColor}40` : "1px solid #e5e7eb",
+                  boxShadow:     "0 1px 4px rgba(0,0,0,0.05)",
+                  overflow:      "hidden",
+                  transition:    "all 0.15s",
+                }}>
+
+                {/* Column top color bar */}
+                <div style={{
+                  height: "3px",
+                  background: stageColor,
+                  borderRadius: "12px 12px 0 0",
+                }} />
+
+                {/* Column header */}
+                <div style={{
+                  display: "flex", alignItems: "center", justifyContent: "space-between",
+                  padding: "12px 12px 8px",
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "7px" }}>
+                    <div style={{
+                      width: "9px", height: "9px", borderRadius: "50%",
+                      background: stageColor, flexShrink: 0,
+                    }} />
+                    <span style={{ fontSize: "12px", fontWeight: 700, color: "#374151" }}>
+                      {stage}
+                    </span>
+                  </div>
+                  <span style={{
+                    fontSize: "11px", fontWeight: 600, color: "#9ca3af",
+                    background: "#fff", border: "1px solid #e5e7eb",
+                    padding: "1px 8px", borderRadius: "999px",
+                  }}>
                     {stageLeads.length}
                   </span>
                 </div>
 
-                <div className="space-y-2 min-h-[48px]">
+                {/* Cards */}
+                <div style={{ padding: "0 10px 10px", minHeight: "60px", display: "flex", flexDirection: "column", gap: "8px" }}>
                   {stageLeads.map((lead) => {
-                    const isInsertTarget = dragOverLeadId === lead.id && dragOverStage === stage;
+                    const isDragOver = dragOverLeadId === lead.id && dragOverStage === stage;
                     return (
-                      <div key={lead.id}
-                        draggable
+                      <KanbanCard
+                        key={lead.id}
+                        lead={lead}
+                        isDragOver={isDragOver}
                         onDragStart={(e) => handleDragStart(e, lead)}
                         onDragEnd={handleDragEnd}
-                        onDragOver={(e) => { e.stopPropagation(); handleDragOver(e, stage, lead.id); }}
-                        onDrop={(e) => { e.stopPropagation(); handleDrop(e, stage, lead.id); }}
+                        onDragOver={(e) => handleDragOver(e, stage, lead.id)}
+                        onDrop={(e) => handleDrop(e, stage, lead.id)}
                         onClick={() => setSelectedLead(lead)}
-                        className={[
-                          "rounded-lg p-3 cursor-grab active:cursor-grabbing",
-                          "transition-all duration-100 select-none shadow-sm",
-                          isInsertTarget ? "mt-1 ring-2 ring-red-500" : "hover:shadow-md",
-                        ].join(" ")}
-                        style={{
-                          background: "#ffffff",
-                          borderLeft: `4px solid ${
-                            lead.qualification === "quente" ? "#e53935" :
-                            lead.qualification === "morno"  ? "#ffb300" :
-                            lead.qualification === "frio"   ? "#1e88e5" : "#e0e0e0"
-                          }`,
-                          border: isInsertTarget ? undefined : "1px solid #e8e8e8",
-                          borderLeftWidth: "4px",
-                          borderLeftColor:
-                            lead.qualification === "quente" ? "#e53935" :
-                            lead.qualification === "morno"  ? "#ffb300" :
-                            lead.qualification === "frio"   ? "#1e88e5" : "#e0e0e0",
-                          borderLeftStyle: "solid",
-                        }}
-                      >
-                        <p className="text-sm font-semibold truncate" style={{ color: "#1a1a1a" }}>{lead.name || "Sem nome"}</p>
-                        <p className="text-xs truncate mt-0.5" style={{ color: "#888" }}>{lead.phone}</p>
-                        {/* source + badge qualificação */}
-                        <div className="flex items-center justify-between mt-1.5">
-                          <span className="text-[11px]" style={{ color: "#aaa" }}>{lead.source}</span>
-                          <QualBadge q={lead.qualification} />
-                        </div>
-                      </div>
+                      />
                     );
                   })}
 
                   {stageLeads.length === 0 && (
-                    <div className={["text-center py-6 text-xs rounded-lg transition-all",
-                      isOver ? "text-red-400 bg-red-500/10 border border-dashed border-red-500/30" : "text-gray-700"].join(" ")}>
+                    <div style={{
+                      textAlign: "center", padding: "24px 8px",
+                      fontSize: "11px", borderRadius: "8px",
+                      color:      isOver ? stageColor : "#d1d5db",
+                      background: isOver ? `${stageColor}0d` : "transparent",
+                      border:     isOver ? `1px dashed ${stageColor}80` : "1px dashed transparent",
+                      transition: "all 0.15s",
+                    }}>
                       {isOver ? "Solte aqui" : "vazio"}
                     </div>
                   )}
@@ -576,7 +875,7 @@ export default function Home() {
         })}
       </div>
 
-      {/* ── FEAT-02: Modal/Drawer de perfil ── */}
+      {/* ── FEAT-02: Lead profile modal ── */}
       <LeadModal
         lead={selectedLead}
         onClose={() => setSelectedLead(null)}
@@ -586,7 +885,7 @@ export default function Home() {
         }}
       />
 
-      {/* ── FEAT-04: Modal novo lead manual ── */}
+      {/* ── FEAT-04: New lead modal ── */}
       {showNewLead && (
         <NewLeadModal
           onClose={() => setShowNewLead(false)}

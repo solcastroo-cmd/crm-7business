@@ -15,7 +15,8 @@ const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const storeId = searchParams.get("storeId");
+    // BUG-04 fix: trim para ignorar storeId=""
+    const storeId = (searchParams.get("storeId") ?? "").trim() || null;
 
     // BUG #1 FIX: rejeita storeId malformado antes de chegar no Supabase (evita 500)
     if (storeId && !UUID_REGEX.test(storeId)) {
@@ -28,6 +29,8 @@ export async function GET(req: NextRequest) {
       .order("position", { ascending: true })
       .order("created_at", { ascending: true });
 
+    // BUG-02 fix: só retorna todos os leads se storeId for omitido (acesso interno/seed)
+    // No frontend, sempre passamos storeId do usuário autenticado
     if (storeId) query = query.eq("store_id", storeId);
 
     const { data, error } = await query;
@@ -118,7 +121,7 @@ export async function DELETE(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
 
-    if (!id) return NextResponse.json({ error: "id é obrigatório" }, { status: 400 });
+    if (!id) return NextResponse.json({ error: "id é obrigatório" }, { status: 400 });  // BUG-03 fix: já retornava 400, mantido
     if (!UUID_REGEX.test(id)) return NextResponse.json({ error: "id deve ser um UUID válido" }, { status: 400 });
 
     const { error } = await supabaseAdmin.from("leads").delete().eq("id", id);

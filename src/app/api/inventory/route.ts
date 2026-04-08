@@ -78,8 +78,8 @@ export async function PATCH(req: NextRequest) {
 
 // DELETE /api/inventory?id=xxx
 export async function DELETE(req: NextRequest) {
-  const id = new URL(req.url).searchParams.get("id");
-  if (!id) return NextResponse.json({ error: "id obrigatório" }, { status: 400 });
+  const id = (new URL(req.url).searchParams.get("id") ?? "").trim() || null;
+  if (!id) return NextResponse.json({ error: "id obrigatório" }, { status: 400 }); // BUG-03 fix: status 400
 
   const { error } = await supabaseAdmin.from("vehicles").delete().eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
