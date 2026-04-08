@@ -9,7 +9,7 @@
 // FEAT-04 : botão "Novo Lead" + modal de cadastro manual
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { LeadModal, type Lead } from "@/components/LeadModal";
 
 // ── FEAT-01: tipos e helpers do hero dashboard ───────────────────────────────
@@ -243,6 +243,11 @@ function QualBadge({ q }: { q?: "quente" | "morno" | "frio" | null }) {
   return <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${cls}`}>{label}</span>;
 }
 
+// FEAT-05: normaliza string para busca sem acento/case
+function normalizeStr(s: string) {
+  return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
 // ── Componente principal ─────────────────────────────────────────────────────
 export default function Home() {
   const [leads, setLeads]               = useState<Lead[]>([]);
@@ -250,6 +255,11 @@ export default function Home() {
   const [erro, setErro]                 = useState<string | null>(null);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [showNewLead, setShowNewLead]   = useState(false);
+
+  // FEAT-05: busca + filtros
+  const [searchTerm,          setSearchTerm]          = useState("");
+  const [qualificationFilter, setQualificationFilter] = useState("Todos");
+  const [sellerFilter,        setSellerFilter]         = useState("Todos");
 
   const [dragOverStage, setDragOverStage]   = useState<string | null>(null);
   const [dragOverLeadId, setDragOverLeadId] = useState<string | null>(null);
@@ -262,8 +272,36 @@ export default function Home() {
       .catch((e) => { setErro(e.message); setLoading(false); });
   }, []);
 
+  // Lista de vendedores únicos presentes nos leads
+  const sellers = useMemo(() =>
+    ["Todos", ...Array.from(new Set(leads.map((l) => l.seller).filter(Boolean) as string[]))],
+    [leads]
+  );
+
+  // FEAT-05: leads filtrados (busca + qualificação + vendedor)
+  const filteredLeads = useMemo(() => {
+    let result = leads;
+    if (qualificationFilter !== "Todos")
+      result = result.filter((l) => l.qualification === qualificationFilter);
+    if (sellerFilter !== "Todos")
+      result = result.filter((l) => l.seller === sellerFilter);
+    if (searchTerm.trim()) {
+      const q = normalizeStr(searchTerm.trim());
+      result = result.filter((l) =>
+        normalizeStr(l.name ?? "").includes(q) ||
+        normalizeStr(l.phone).includes(q) ||
+        normalizeStr(l.source).includes(q)
+      );
+    }
+    return result;
+  }, [leads, qualificationFilter, sellerFilter, searchTerm]);
+
+  const isFilterActive = qualificationFilter !== "Todos" || sellerFilter !== "Todos" || searchTerm !== "";
+  const clearFilters   = () => { setSearchTerm(""); setQualificationFilter("Todos"); setSellerFilter("Todos"); };
+
+  // leadsByStage usa filteredLeads para respeitar filtros ativos no drag & drop
   const leadsByStage = (stage: string) =>
-    leads.filter((l) => l.stage === stage).sort((a, b) => a.position - b.position);
+    filteredLeads.filter((l) => l.stage === stage).sort((a, b) => a.position - b.position);
 
   const handleDragStart = (e: React.DragEvent, lead: Lead) => {
     draggingRef.current = lead;
@@ -370,6 +408,90 @@ export default function Home() {
 
       {/* ── FEAT-01: Hero Dashboard ── */}
       <HeroDashboard />
+
+      {/* ── FEAT-05: Barra de Busca + Filtros ── */}
+      <div className="mb-4 rounded-xl p-4" style={{ background: "#1e1e1e", border: "1px solid #2e2e2e" }}>
+        {/* Campo de busca */}
+        <div className="relative mb-3">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-600 text-sm select-none">🔍</span>
+          <input
+            type="text"
+            placeholder="Buscar por nome, telefone ou origem..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-9 pr-8 py-2.5 rounded-lg text-sm text-white placeholder-gray-600 outline-none transition-colors"
+            style={{ background: "#111", border: "1px solid #3a3a3a" }}
+            onFocus={(e) => (e.currentTarget.style.borderColor = "#e63946")}
+            onBlur={(e)  => (e.currentTarget.style.borderColor = "#3a3a3a")}
+          />
+          {searchTerm && (
+            <button onClick={() => setSearchTerm("")}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white text-xs transition-colors">
+              ✕
+            </button>
+          )}
+        </div>
+
+        {/* Pills + Vendedor + Contador */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Qualificação pills */}
+          {[
+            { val: "Todos",   label: "Todos"      },
+            { val: "quente",  label: "🔥 Quente"  },
+            { val: "morno",   label: "⚡ Morno"   },
+            { val: "frio",    label: "❄️ Frio"    },
+          ].map(({ val, label }) => (
+            <button key={val} onClick={() => setQualificationFilter(val)}
+              className="px-3 py-1 rounded-full text-xs font-semibold border transition-all"
+              style={{
+                borderColor: qualificationFilter === val ? "#e63946" : "#3a3a3a",
+                color:       qualificationFilter === val ? "#e63946" : "#666",
+                background:  qualificationFilter === val ? "rgba(230,57,70,0.1)" : "transparent",
+              }}>
+              {label}
+            </button>
+          ))}
+
+          {/* Dropdown vendedor */}
+          <select value={sellerFilter} onChange={(e) => setSellerFilter(e.target.value)}
+            className="px-3 py-1 rounded-full text-xs font-semibold border outline-none transition-all"
+            style={{
+              borderColor: sellerFilter !== "Todos" ? "#e63946" : "#3a3a3a",
+              color:       sellerFilter !== "Todos" ? "#e63946" : "#666",
+              background:  "#111",
+              cursor: "pointer",
+            }}>
+            {sellers.map((s) => (
+              <option key={s} value={s}>{s === "Todos" ? "👤 Vendedor" : s}</option>
+            ))}
+          </select>
+
+          {/* Contador + botão limpar */}
+          <div className="ml-auto flex items-center gap-3">
+            {isFilterActive && (
+              <span className="text-xs text-gray-600">
+                {filteredLeads.length === leads.length
+                  ? `${leads.length} leads`
+                  : `Exibindo ${filteredLeads.length} de ${leads.length} leads`}
+              </span>
+            )}
+            {isFilterActive && (
+              <button onClick={clearFilters}
+                className="text-xs font-semibold transition-colors"
+                style={{ color: "#e63946" }}>
+                ✕ Limpar filtros
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Mensagem sem resultados */}
+        {isFilterActive && filteredLeads.length === 0 && (
+          <p className="text-center text-xs text-gray-600 mt-3 py-2">
+            Nenhum lead encontrado{searchTerm ? ` para "${searchTerm}"` : ""}.
+          </p>
+        )}
+      </div>
 
       {/* ── Kanban Board ── */}
       <div className="flex gap-4 overflow-x-auto pb-4">
