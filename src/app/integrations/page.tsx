@@ -347,10 +347,20 @@ function WhatsAppQRCard() {
   const [proxyErr,      setProxyErr]      = useState<string | null>(null);
   const [proxyOk,       setProxyOk]       = useState(false); // proxy salvo — aguardando QR
 
-  const countdownRef = useRef(0);
+  const countdownRef    = useRef(0);
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null); // BUG-CARD-01/02
+  const proxyTimeoutRef = useRef<ReturnType<typeof setTimeout>  | null>(null); // BUG-CARD-03
 
   const POLL_INTERVAL = 4000;
   const QR_TIMEOUT    = 60;
+
+  // BUG-CARD-01: limpa pollings ao desmontar o componente
+  useEffect(() => {
+    return () => {
+      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+      if (proxyTimeoutRef.current) clearTimeout(proxyTimeoutRef.current);
+    };
+  }, []);
 
   const fetchQR = useCallback(async () => {
     try {
@@ -411,30 +421,49 @@ function WhatsAppQRCard() {
           ...(proxyPass ? { password: proxyPass.trim() } : {}),
         }),
       });
-      const data = await res.json() as { ok?: boolean; error?: string };
-      if (!res.ok || !data.ok) { setProxyErr(data.error ?? "Erro ao salvar proxy."); return; }
-      // Limpa campos sensíveis e sinaliza sucesso — mantém needs_proxy + inicia polling
+      // BUG-CARD-05: parse seguro — JSON inválido da Evolution API gera erro claro
+      const data = await res.json().catch(() => null) as { ok?: boolean; error?: string } | null;
+      if (!res.ok || !data?.ok) { setProxyErr(data?.error ?? "Erro ao salvar proxy. Tente novamente."); return; }
+
+      // Limpa campos sensíveis e sinaliza sucesso
       setProxyHost(""); setProxyPort(""); setProxyUser(""); setProxyPass("");
       setProxyOk(true);
-      // Inicia polling manual: tenta buscar QR a cada 4s enquanto estiver em needs_proxy
-      const pollForQR = setInterval(async () => {
+
+      // BUG-CARD-02: cancela polling anterior antes de criar novo (evita concorrência)
+      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+      if (proxyTimeoutRef.current) clearTimeout(proxyTimeoutRef.current);
+
+      // Polling manual: busca QR a cada 4s
+      pollIntervalRef.current = setInterval(async () => {
         const r = await fetch("/api/evolution/qrcode").catch(() => null);
-        if (!r) return;
-        const d = await r.json().catch(() => null) as { status?: string; base64?: string; phone?: string; profileName?: string } | null;
-        if (!d) return;
-        if (d.status === "qrcode" && d.base64) {
-          clearInterval(pollForQR);
+        // BUG-CARD-05: ignora respostas não-JSON
+        const d = r ? await r.json().catch(() => null) as {
+          status?: string; base64?: string; phone?: string; profileName?: string; error?: string;
+        } | null : null;
+
+        if (d?.status === "qrcode" && d.base64) {
+          clearInterval(pollIntervalRef.current!); pollIntervalRef.current = null;
+          clearTimeout(proxyTimeoutRef.current!);  proxyTimeoutRef.current = null;
+          setProxyOk(false); setQRBase64(d.base64); setQRState("qrcode");
+        } else if (d?.status === "connected") {
+          clearInterval(pollIntervalRef.current!); pollIntervalRef.current = null;
+          clearTimeout(proxyTimeoutRef.current!);  proxyTimeoutRef.current = null;
+          setProxyOk(false); setPhone(d.phone ?? null); setProfile(d.profileName ?? null); setQRState("connected");
+        } else if (d?.status === "needs_proxy" || d?.error) {
+          // BUG-CARD-04: proxy não funcionou — avisa o usuário para tentar outro
+          clearInterval(pollIntervalRef.current!); pollIntervalRef.current = null;
+          clearTimeout(proxyTimeoutRef.current!);  proxyTimeoutRef.current = null;
           setProxyOk(false);
-          setQRBase64(d.base64);
-          setQRState("qrcode");
-        } else if (d.status === "connected") {
-          clearInterval(pollForQR);
-          setProxyOk(false);
-          setPhone(d.phone ?? null);
-          setProfile(d.profileName ?? null);
-          setQRState("connected");
+          setProxyErr(d?.error ?? "Proxy não conseguiu conectar ao WhatsApp. Tente outro.");
         }
       }, 4000);
+
+      // BUG-CARD-03: timeout de 45s — se QR não chegar, reseta banner e avisa
+      proxyTimeoutRef.current = setTimeout(() => {
+        if (pollIntervalRef.current) { clearInterval(pollIntervalRef.current); pollIntervalRef.current = null; }
+        setProxyOk(false);
+        setProxyErr("Tempo esgotado (45s). Proxy não respondeu — verifique as credenciais.");
+      }, 45_000);
     } catch {
       setProxyErr("Erro de rede ao salvar proxy.");
     } finally {
