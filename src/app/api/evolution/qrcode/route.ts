@@ -119,8 +119,23 @@ export async function POST(req: NextRequest) {
       },
       8_000,
     );
-    const proxyData = await proxyRes.json() as { error?: string };
-    if (!proxyRes.ok) return NextResponse.json({ error: proxyData?.error ?? "Erro ao configurar proxy" }, { status: 502 });
+    // BR-03: .catch() para Evolution API retornando HTML (nginx 502/503)
+    const proxyData = await proxyRes.json().catch(() => null) as { error?: string } | null;
+    if (!proxyRes.ok) {
+      // BR-02: mapeia erros crus da Evolution API para mensagens acionáveis
+      const rawErr = proxyData?.error ?? "";
+      let friendlyErr = "Erro ao configurar proxy na Evolution API.";
+      if (proxyRes.status === 400) {
+        friendlyErr = `Instância "${EVO_INST}" não encontrada ou payload inválido. Verifique EVOLUTION_INSTANCE no Railway.`;
+      } else if (proxyRes.status === 401 || proxyRes.status === 403) {
+        friendlyErr = "API Key da Evolution inválida. Verifique EVOLUTION_API_KEY no Railway.";
+      } else if (proxyRes.status === 404) {
+        friendlyErr = `Instância "${EVO_INST}" não existe na Evolution API. Crie-a primeiro.`;
+      } else if (rawErr) {
+        friendlyErr = rawErr;
+      }
+      return NextResponse.json({ error: friendlyErr }, { status: 502 });
+    }
 
     // BUG-PROXY-03: logout + reconnect explícito para garantir nova tentativa com proxy
     // Ignora falha do logout (instância pode já estar close)

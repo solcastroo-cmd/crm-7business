@@ -408,7 +408,7 @@ function WhatsAppQRCard() {
 
   async function handleSaveProxy() {
     const host = hostRef.current?.value.trim() ?? "";
-    const port = portRef.current?.value.trim() ?? "";
+    const port = (portRef.current?.value ?? "").replace(/\D/g, "").trim(); // BR-01/BR-04: strip não-dígitos e espaços
     const user = userRef.current?.value.trim() ?? "";
     const pass = passRef.current?.value.trim() ?? "";
     if (!host || !port) { setProxyErr("Host e porta são obrigatórios."); return; }
@@ -662,6 +662,7 @@ function WhatsAppQRCard() {
                   type="text"
                   inputMode="numeric"
                   maxLength={5}
+                  onInput={e => { const el = e.currentTarget; el.value = el.value.replace(/\D/g, ""); }}
                   className="w-full bg-white border border-amber-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-amber-600"
                 />
               </div>
