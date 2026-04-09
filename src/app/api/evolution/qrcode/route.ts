@@ -1,8 +1,9 @@
 /**
- * GET /api/evolution/qrcode
- * Retorna o QR code base64 da Evolution API para exibir no card.
+ * GET  /api/evolution/qrcode   — status + QR code
+ * POST /api/evolution/qrcode   — configura proxy na instância
+ * DELETE /api/evolution/qrcode — desconecta instância
  */
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
@@ -10,14 +11,12 @@ const EVO_URL  = process.env.EVOLUTION_API_URL  ?? "";
 const EVO_KEY  = process.env.EVOLUTION_API_KEY   ?? "";
 const EVO_INST = process.env.EVOLUTION_INSTANCE  ?? "PH_AUTOSCAR";
 
-/** fetch com timeout via AbortController (compatível com Node 18+) */
 function fetchWithTimeout(url: string, init: RequestInit, ms: number): Promise<Response> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), ms);
   return fetch(url, { ...init, signal: ctrl.signal }).finally(() => clearTimeout(timer));
 }
 
-/** Garante que o base64 tenha prefixo de data URI para uso direto em <img src> */
 function ensureDataUri(raw: string): string {
   return raw.startsWith("data:") ? raw : `data:image/png;base64,${raw}`;
 }
@@ -38,7 +37,6 @@ export async function GET() {
     const state = stateData?.instance?.state ?? "unknown";
 
     if (state === "open") {
-      // Já conectado — busca dados da instância
       const fetchRes = await fetchWithTimeout(
         `${EVO_URL}/instance/fetchInstances?instanceName=${EVO_INST}`,
         { headers: { apikey: EVO_KEY } },
@@ -61,7 +59,7 @@ export async function GET() {
       { headers: { apikey: EVO_KEY } },
       10_000,
     );
-    const qrData = await qrRes.json() as { base64?: string; count?: number; pairingCode?: string };
+    const qrData = await qrRes.json() as { base64?: string; count?: number };
 
     if (qrData?.base64) {
       return NextResponse.json({
@@ -71,12 +69,78 @@ export async function GET() {
       });
     }
 
-    // 3. QR ainda não gerado — informa estado atual
+    // BUG-PROXY-02: needs_proxy apenas quando count=0 (nunca gerou QR) + state=connecting
+    // count > 0 significa que o QR já foi gerado antes mas expirou — não é bloqueio de datacenter
+    if (state === "connecting" && !qrData?.base64 && (qrData?.count ?? 0) === 0) {
+      return NextResponse.json({
+        status: "needs_proxy",
+        message: "WhatsApp bloqueia conexões de datacenter. Configure um proxy residencial.",
+      });
+    }
+
     return NextResponse.json({ status: state, count: qrData?.count ?? 0 });
 
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Erro ao buscar QR code";
     return NextResponse.json({ error: msg }, { status: 500 });
+  }
+}
+
+// POST — configura proxy e reinicia conexão
+export async function POST(req: NextRequest) {
+  if (!EVO_URL) return NextResponse.json({ error: "EVOLUTION_API_URL não configurado" }, { status: 503 });
+
+  let body: { host?: string; port?: string | number; protocol?: string; username?: string; password?: string };
+  try { body = await req.json(); } catch { return NextResponse.json({ error: "Body inválido" }, { status: 400 }); }
+
+  const { host, port, protocol = "http", username, password } = body;
+  if (!host || !port) return NextResponse.json({ error: "host e port são obrigatórios" }, { status: 400 });
+
+  // BUG-PROXY-01: valida porta
+  const portNum = Number(port);
+  if (!Number.isFinite(portNum) || portNum < 1 || portNum > 65535) {
+    return NextResponse.json({ error: "Porta inválida (deve ser 1–65535)" }, { status: 400 });
+  }
+
+  try {
+    // 1. Configura proxy na instância
+    const proxyPayload: Record<string, unknown> = {
+      enabled: true, host, port: portNum, protocol,
+    };
+    if (username) proxyPayload.username = username;
+    if (password) proxyPayload.password = password;
+
+    const proxyRes = await fetchWithTimeout(
+      `${EVO_URL}/proxy/set/${EVO_INST}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", apikey: EVO_KEY },
+        body: JSON.stringify(proxyPayload),
+      },
+      8_000,
+    );
+    const proxyData = await proxyRes.json() as { error?: string };
+    if (!proxyRes.ok) return NextResponse.json({ error: proxyData?.error ?? "Erro ao configurar proxy" }, { status: 502 });
+
+    // BUG-PROXY-03: logout + reconnect explícito para garantir nova tentativa com proxy
+    // Ignora falha do logout (instância pode já estar close)
+    await fetchWithTimeout(
+      `${EVO_URL}/instance/logout/${EVO_INST}`,
+      { method: "DELETE", headers: { apikey: EVO_KEY } },
+      8_000,
+    ).catch(() => null);
+
+    // Força reconexão (inicia Baileys com o proxy configurado)
+    await fetchWithTimeout(
+      `${EVO_URL}/instance/connect/${EVO_INST}`,
+      { headers: { apikey: EVO_KEY } },
+      10_000,
+    ).catch(() => null);
+
+    return NextResponse.json({ ok: true, message: "Proxy configurado. Aguardando QR code..." });
+
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : "Erro" }, { status: 500 });
   }
 }
 

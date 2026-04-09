@@ -328,7 +328,7 @@ function WhatsAppCard() {
 
 // ─── Card WhatsApp QR Code (Evolution API) ────────────────────────────────────
 function WhatsAppQRCard() {
-  type QRState = "idle" | "loading" | "qrcode" | "connected" | "error";
+  type QRState = "idle" | "loading" | "qrcode" | "connected" | "error" | "needs_proxy" | "proxy_saving";
   const [qrState,       setQRState]       = useState<QRState>("idle");
   const [qrBase64,      setQRBase64]      = useState<string | null>(null);
   const [phone,         setPhone]         = useState<string | null>(null);
@@ -337,18 +337,26 @@ function WhatsAppQRCard() {
   const [countdown,     setCountdown]     = useState(0);
   const [disconnecting, setDisconnecting] = useState(false);
 
-  // Ref evita que o countdown entre nas deps dos effects (previne recriação de interval a cada tick)
+  // Proxy form
+  const [proxyHost,     setProxyHost]     = useState("");
+  const [proxyPort,     setProxyPort]     = useState("");
+  const [proxyUser,     setProxyUser]     = useState("");
+  const [proxyPass,     setProxyPass]     = useState("");
+  const [proxyProtocol, setProxyProtocol] = useState<"http" | "socks5">("http");
+  const [proxySaving,   setProxySaving]   = useState(false);
+  const [proxyErr,      setProxyErr]      = useState<string | null>(null);
+
   const countdownRef = useRef(0);
 
-  const POLL_INTERVAL = 4000; // 4 segundos
-  const QR_TIMEOUT    = 60;   // QR expira em ~60s
+  const POLL_INTERVAL = 4000;
+  const QR_TIMEOUT    = 60;
 
   const fetchQR = useCallback(async () => {
     try {
       const res  = await fetch("/api/evolution/qrcode");
       const data = await res.json() as {
         status?: string; base64?: string; count?: number;
-        phone?: string; profileName?: string; error?: string;
+        phone?: string; profileName?: string; error?: string; message?: string;
       };
 
       if (data.error) { setErrMsg(data.error); setQRState("error"); return; }
@@ -367,10 +375,14 @@ function WhatsAppQRCard() {
         return;
       }
 
-      // Ainda conectando — mantém loading
+      // WhatsApp bloqueia IP de datacenter — exibe formulário de proxy
+      if (data.status === "needs_proxy") {
+        setQRState("needs_proxy");
+        return;
+      }
+
       setQRState("loading");
     } catch (e) {
-      // BUG-ZAP-06: erro específico para diagnóstico (EVOLUTION_API_URL inacessível, CORS, timeout)
       const msg = e instanceof Error ? e.message : "Erro desconhecido";
       const isCors = msg.toLowerCase().includes("failed to fetch");
       setErrMsg(
@@ -382,6 +394,37 @@ function WhatsAppQRCard() {
     }
   }, []);
 
+  async function handleSaveProxy() {
+    if (!proxyHost.trim() || !proxyPort.trim()) { setProxyErr("Host e porta são obrigatórios."); return; }
+    setProxyErr(null);
+    setProxySaving(true);
+    try {
+      const res = await fetch("/api/evolution/qrcode", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          host: proxyHost.trim(),
+          port: Number(proxyPort.trim()),
+          protocol: proxyProtocol,
+          ...(proxyUser ? { username: proxyUser.trim() } : {}),
+          ...(proxyPass ? { password: proxyPass.trim() } : {}),
+        }),
+      });
+      const data = await res.json() as { ok?: boolean; error?: string };
+      if (!res.ok || !data.ok) { setProxyErr(data.error ?? "Erro ao salvar proxy."); return; }
+      // BUG-PROXY-05: limpa campos sensíveis após sucesso
+      setProxyHost(""); setProxyPort(""); setProxyUser(""); setProxyPass("");
+      // BUG-PROXY-04: usa estado intermediário para evitar loop imediato de needs_proxy
+      // Baileys precisa de ~5s para iniciar a conexão com o proxy antes de gerar o QR
+      setQRState("proxy_saving");
+      setTimeout(() => setQRState("idle"), 5000);
+    } catch {
+      setProxyErr("Erro de rede ao salvar proxy.");
+    } finally {
+      setProxySaving(false);
+    }
+  }
+
   // Polling: dispara fetchQR ao entrar em "idle" e mantém intervalo em "qrcode"
   useEffect(() => {
     if (qrState === "idle") {
@@ -389,6 +432,7 @@ function WhatsAppQRCard() {
       fetchQR();
       return;
     }
+    // Não faz polling nos estados terminais
     if (qrState !== "qrcode") return;
 
     const id = setInterval(fetchQR, POLL_INTERVAL);
@@ -441,31 +485,35 @@ function WhatsAppQRCard() {
     }
   }
 
-  const isConnected = qrState === "connected";
+  const isConnected  = qrState === "connected";
+  const needsProxy   = qrState === "needs_proxy";
+  const proxySaved   = qrState === "proxy_saving";
 
   return (
     <div className={`rounded-2xl p-6 flex flex-col gap-4 border ${
-      isConnected ? "bg-green-50 border-green-300" : "bg-emerald-50 border-emerald-300"
+      isConnected  ? "bg-green-50 border-green-300"
+      : needsProxy ? "bg-amber-50 border-amber-300"
+      : "bg-emerald-50 border-emerald-300"
     }`}>
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <span className="text-2xl">📱</span>
           <div>
-            <h2 className={`text-sm font-bold ${isConnected ? "text-green-800" : "text-emerald-800"}`}>
+            <h2 className={`text-sm font-bold ${isConnected ? "text-green-800" : needsProxy ? "text-amber-800" : "text-emerald-800"}`}>
               WhatsApp QR Code
             </h2>
-            <p className={`text-xs ${isConnected ? "text-green-600" : "text-emerald-500"}`}>
-              {isConnected ? "Conectado via QR Code" : "Escaneie para conectar"}
+            <p className={`text-xs ${isConnected ? "text-green-600" : needsProxy ? "text-amber-600" : "text-emerald-500"}`}>
+              {isConnected ? "Conectado via QR Code" : needsProxy ? "Proxy necessário" : "Escaneie para conectar"}
             </p>
           </div>
         </div>
         <span className={`text-xs px-3 py-1 rounded-full font-semibold border ${
-          isConnected
-            ? "bg-green-100 text-green-700 border-green-300"
-            : "bg-emerald-100 text-emerald-700 border-emerald-300"
+          isConnected  ? "bg-green-100 text-green-700 border-green-300"
+          : needsProxy ? "bg-amber-100 text-amber-700 border-amber-300"
+          : "bg-emerald-100 text-emerald-700 border-emerald-300"
         }`}>
-          {isConnected ? "✅ ONLINE" : qrState === "loading" ? "⏳ AGUARDANDO" : "QR CODE"}
+          {isConnected ? "✅ ONLINE" : needsProxy ? "⚙️ PROXY" : qrState === "loading" ? "⏳ AGUARDANDO" : "QR CODE"}
         </span>
       </div>
 
@@ -515,6 +563,103 @@ function WhatsAppQRCard() {
         <div className="flex flex-col items-center gap-3 py-4">
           <div className="w-8 h-8 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
           <p className="text-xs text-emerald-600">Gerando QR Code...</p>
+        </div>
+      )}
+
+      {/* BUG-PROXY-04: estado intermediário após salvar proxy */}
+      {proxySaved && (
+        <div className="flex flex-col items-center gap-3 py-4">
+          <div className="w-8 h-8 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
+          <p className="text-xs text-amber-700 font-semibold">Proxy salvo! Conectando ao WhatsApp...</p>
+          <p className="text-xs text-amber-500">Aguardando QR code (pode levar até 10s)</p>
+        </div>
+      )}
+
+      {/* Proxy necessário */}
+      {needsProxy && (
+        <div className="space-y-3">
+          <div className="bg-amber-100 border border-amber-200 rounded-xl p-3">
+            <p className="text-xs font-semibold text-amber-800">Por que precisa de proxy?</p>
+            <p className="text-xs text-amber-700 mt-1">
+              O WhatsApp bloqueia conexões diretas de servidores em nuvem (Railway, AWS, etc.).
+              Um proxy residencial redireciona a conexão por um IP doméstico.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <label className="text-xs font-semibold text-amber-800 block mb-1">Host</label>
+                <input
+                  value={proxyHost}
+                  onChange={e => setProxyHost(e.target.value)}
+                  placeholder="proxy.exemplo.com"
+                  className="w-full bg-white border border-amber-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-amber-500"
+                />
+              </div>
+              <div className="w-20">
+                <label className="text-xs font-semibold text-amber-800 block mb-1">Porta</label>
+                <input
+                  value={proxyPort}
+                  onChange={e => setProxyPort(e.target.value)}
+                  placeholder="8080"
+                  type="number"
+                  className="w-full bg-white border border-amber-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-amber-500"
+                />
+              </div>
+              <div className="w-24">
+                <label className="text-xs font-semibold text-amber-800 block mb-1">Protocolo</label>
+                <select
+                  value={proxyProtocol}
+                  onChange={e => setProxyProtocol(e.target.value as "http" | "socks5")}
+                  className="w-full bg-white border border-amber-300 rounded-lg px-2 py-2 text-xs focus:outline-none focus:border-amber-500"
+                >
+                  <option value="http">HTTP</option>
+                  <option value="socks5">SOCKS5</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <label className="text-xs font-semibold text-amber-800 block mb-1">Usuário (opcional)</label>
+                <input
+                  value={proxyUser}
+                  onChange={e => setProxyUser(e.target.value)}
+                  placeholder="user"
+                  className="w-full bg-white border border-amber-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-amber-500"
+                />
+              </div>
+              <div className="flex-1">
+                <label className="text-xs font-semibold text-amber-800 block mb-1">Senha (opcional)</label>
+                <input
+                  value={proxyPass}
+                  onChange={e => setProxyPass(e.target.value)}
+                  type="password"
+                  placeholder="••••••"
+                  className="w-full bg-white border border-amber-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-amber-500"
+                />
+              </div>
+            </div>
+          </div>
+
+          {proxyErr && (
+            <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+              ⚠️ {proxyErr}
+            </p>
+          )}
+
+          <button
+            onClick={handleSaveProxy}
+            disabled={proxySaving || !proxyHost.trim() || !proxyPort.trim()}
+            className="w-full py-2.5 rounded-xl bg-amber-600 text-white text-sm font-semibold hover:bg-amber-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {proxySaving ? "Configurando..." : "Salvar Proxy e Gerar QR"}
+          </button>
+
+          <p className="text-xs text-amber-600 text-center">
+            Sugestão: IPRoyal, Smartproxy ou Bright Data (planos a partir de $2/GB)
+          </p>
         </div>
       )}
 
