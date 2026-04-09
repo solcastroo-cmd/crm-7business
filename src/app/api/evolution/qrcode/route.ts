@@ -104,8 +104,9 @@ export async function POST(req: NextRequest) {
 
   try {
     // 1. Configura proxy na instância
+    // Evolution API v2 espera port como string (não number)
     const proxyPayload: Record<string, unknown> = {
-      enabled: true, host, port: portNum, protocol,
+      enabled: true, host, port: String(portNum), protocol,
     };
     if (username) proxyPayload.username = username;
     if (password) proxyPayload.password = password;
@@ -120,12 +121,22 @@ export async function POST(req: NextRequest) {
       8_000,
     );
     // BR-03: .catch() para Evolution API retornando HTML (nginx 502/503)
-    const proxyData = await proxyRes.json().catch(() => null) as { error?: string } | null;
+    const proxyData = await proxyRes.json().catch(() => null) as {
+      error?: string;
+      response?: { message?: string | string[] | string[][] };
+    } | null;
     if (!proxyRes.ok) {
       // BR-02: mapeia erros crus da Evolution API para mensagens acionáveis
-      const rawErr = proxyData?.error ?? "";
+      const rawErr   = proxyData?.error ?? "";
+      const msgRaw   = proxyData?.response?.message;
+      // Evolution v2 aninha a mensagem real em response.message (array ou string)
+      const innerMsg = Array.isArray(msgRaw)
+        ? (Array.isArray(msgRaw[0]) ? msgRaw[0][0] : msgRaw[0]) ?? ""
+        : (msgRaw ?? "");
       let friendlyErr = "Erro ao configurar proxy na Evolution API.";
-      if (proxyRes.status === 400) {
+      if (typeof innerMsg === "string" && innerMsg.toLowerCase().includes("invalid proxy")) {
+        friendlyErr = "Proxy inválido ou inacessível — verifique host, porta e credenciais.";
+      } else if (proxyRes.status === 400) {
         friendlyErr = `Instância "${EVO_INST}" não encontrada ou payload inválido. Verifique EVOLUTION_INSTANCE no Railway.`;
       } else if (proxyRes.status === 401 || proxyRes.status === 403) {
         friendlyErr = "API Key da Evolution inválida. Verifique EVOLUTION_API_KEY no Railway.";
