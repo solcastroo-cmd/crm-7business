@@ -24,6 +24,20 @@ const EVOLUTION_API_KEY   = process.env.EVOLUTION_API_KEY ?? "";
 const EVOLUTION_INSTANCE  = process.env.EVOLUTION_INSTANCE ?? "PH_AUTOSCAR";
 const SELLER_NOTIFY_PHONE = process.env.SELLER_NOTIFY_PHONE ?? "";
 
+// BUG-ZAP-04: deduplicação de eventos (Evolution API pode reenviar MESSAGES_UPSERT)
+const processedIds = new Map<string, number>();
+const DEDUP_TTL_MS = 60 * 60 * 1000; // 1 hora
+
+function isDuplicate(id: string): boolean {
+  const now = Date.now();
+  for (const [k, ts] of processedIds) {
+    if (now - ts > DEDUP_TTL_MS) processedIds.delete(k);
+  }
+  if (processedIds.has(id)) return true;
+  processedIds.set(id, now);
+  return false;
+}
+
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
   processEvolution(body).catch(console.error);
@@ -41,10 +55,12 @@ async function saveMessage(leadId: string, text: string, fromMe: boolean) {
 /** Envia texto via Evolution API */
 async function sendWhatsApp(number: string, text: string) {
   if (!EVOLUTION_API_URL || !number) return;
+  // BUG-ZAP-05: timeout adicionado — sem ele, fetch fica pendurado se Evolution estiver fora
   await fetch(`${EVOLUTION_API_URL}/message/sendText/${EVOLUTION_INSTANCE}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "apikey": EVOLUTION_API_KEY },
     body: JSON.stringify({ number, text }),
+    signal: AbortSignal.timeout(10_000),
   }).catch((e) => console.error("[Evolution] Erro envio:", e.message));
 }
 
@@ -57,6 +73,13 @@ async function processEvolution(body: unknown) {
 
     const msg = data?.data as Record<string, unknown>;
     if (!msg || (msg?.key as Record<string, unknown>)?.fromMe) return;
+
+    // BUG-ZAP-04: deduplicação pelo id da mensagem
+    const msgId = ((msg.key as Record<string, unknown>)?.id as string) ?? "";
+    if (msgId && isDuplicate(msgId)) {
+      console.warn("[Evolution] Mensagem duplicada ignorada:", msgId);
+      return;
+    }
 
     const remoteJid = ((msg.key as Record<string, unknown>)?.remoteJid as string) ?? "";
     if (!remoteJid.includes("@s.whatsapp.net")) return;

@@ -146,11 +146,12 @@ export async function sendTemplateMessage(
   langCode      = "pt_BR"
 ): Promise<SendResult> {
 
+  // BUG-ZAP-03: .single() lançava exceção se userId não existisse — .maybeSingle() retorna null
   const { data: user } = await db
     .from("users")
     .select("whatsapp_token, phone_number_id")
     .eq("id", userId)
-    .single<UserRow>();
+    .maybeSingle<UserRow>();
 
   if (!user?.whatsapp_token || !user?.phone_number_id) {
     waWarn("sendTemplateMessage() — WhatsApp não conectado", { userId });

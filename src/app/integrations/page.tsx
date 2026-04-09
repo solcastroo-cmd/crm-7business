@@ -369,8 +369,15 @@ function WhatsAppQRCard() {
 
       // Ainda conectando — mantém loading
       setQRState("loading");
-    } catch {
-      setErrMsg("Sem conexão com o servidor.");
+    } catch (e) {
+      // BUG-ZAP-06: erro específico para diagnóstico (EVOLUTION_API_URL inacessível, CORS, timeout)
+      const msg = e instanceof Error ? e.message : "Erro desconhecido";
+      const isCors = msg.toLowerCase().includes("failed to fetch");
+      setErrMsg(
+        isCors
+          ? "Sem acesso ao servidor WhatsApp. Verifique se EVOLUTION_API_URL está configurado e acessível."
+          : `Erro ao conectar: ${msg}`
+      );
       setQRState("error");
     }
   }, []);

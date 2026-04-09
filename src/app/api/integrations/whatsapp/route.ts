@@ -52,7 +52,8 @@ export async function POST(req: NextRequest) {
   // ── 2. Valida token na Meta API ─────────────────────────────────────────────
   let metaUserId: string;
   try {
-    const meRes  = await fetch(`${GRAPH}/me?access_token=${cleanToken}`, {
+    const meRes  = await fetch(`${GRAPH}/me`, {
+      headers: { "Authorization": `Bearer ${cleanToken}` },
       signal: AbortSignal.timeout(8000),
     });
     const meData = await meRes.json() as MetaMeResponse;
@@ -87,8 +88,8 @@ export async function POST(req: NextRequest) {
   try {
     // Busca WhatsApp Business Accounts
     const waRes = await fetch(
-      `${GRAPH}/${metaUserId}/businesses?fields=id,name&access_token=${cleanToken}`,
-      { signal: AbortSignal.timeout(8000) }
+      `${GRAPH}/${metaUserId}/businesses?fields=id,name`,
+      { headers: { "Authorization": `Bearer ${cleanToken}` }, signal: AbortSignal.timeout(8000) }
     );
     const waData = await waRes.json() as { data?: Array<{ id: string; name: string }> };
     const business = waData.data?.[0];
@@ -98,16 +99,16 @@ export async function POST(req: NextRequest) {
 
       // Busca contas WhatsApp Business
       const acctRes = await fetch(
-        `${GRAPH}/${business.id}/owned_whatsapp_business_accounts?access_token=${cleanToken}`,
-        { signal: AbortSignal.timeout(8000) }
+        `${GRAPH}/${business.id}/owned_whatsapp_business_accounts`,
+        { headers: { "Authorization": `Bearer ${cleanToken}` }, signal: AbortSignal.timeout(8000) }
       );
       const acctData = await acctRes.json() as { data?: Array<{ id: string }> };
       const waAccountId = acctData.data?.[0]?.id;
 
       if (waAccountId) {
         const phoneRes = await fetch(
-          `${GRAPH}/${waAccountId}/phone_numbers?fields=id,display_phone_number,verified_name&access_token=${cleanToken}`,
-          { signal: AbortSignal.timeout(8000) }
+          `${GRAPH}/${waAccountId}/phone_numbers?fields=id,display_phone_number,verified_name`,
+          { headers: { "Authorization": `Bearer ${cleanToken}` }, signal: AbortSignal.timeout(8000) }
         );
         const phoneData = await phoneRes.json() as WAPhoneResponse;
         phoneNumberId = phoneData.data?.[0]?.id                   ?? null;
@@ -127,7 +128,9 @@ export async function POST(req: NextRequest) {
   }
 
   const db = supabaseAdmin;
-  const expiresAt  = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString(); // +60 dias estimado
+  // BUG-ZAP-02: System User Tokens são permanentes — não forçar expiração de 60 dias.
+  // Salvamos null para tokens sem data real de expiração (exibido como "Permanente" no card).
+  const expiresAt: string | null = null;
 
   let savedUserId = userId;
 
