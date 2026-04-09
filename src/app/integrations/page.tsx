@@ -601,9 +601,11 @@ function WhatsAppQRCard() {
                 <label className="text-xs font-semibold text-amber-800 block mb-1">Porta</label>
                 <input
                   value={proxyPort}
-                  onChange={e => setProxyPort(e.target.value)}
+                  onChange={e => setProxyPort(e.target.value.replace(/\D/g, ""))}
                   placeholder="8080"
-                  type="number"
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={5}
                   className="w-full bg-white border border-amber-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-amber-500"
                 />
               </div>
