@@ -642,7 +642,7 @@ function WhatsAppQRCard() {
                   value={proxyHost}
                   onChange={e => setProxyHost(e.target.value)}
                   placeholder="proxy.exemplo.com"
-                  className="w-full bg-white border border-amber-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-amber-500"
+                  className="w-full bg-white border border-amber-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-amber-600"
                 />
               </div>
               <div className="w-20">
@@ -654,7 +654,7 @@ function WhatsAppQRCard() {
                   type="text"
                   inputMode="numeric"
                   maxLength={5}
-                  className="w-full bg-white border border-amber-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-amber-500"
+                  className="w-full bg-white border border-amber-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-amber-600"
                 />
               </div>
               <div className="w-24">
@@ -662,7 +662,7 @@ function WhatsAppQRCard() {
                 <select
                   value={proxyProtocol}
                   onChange={e => setProxyProtocol(e.target.value as "http" | "socks5")}
-                  className="w-full bg-white border border-amber-300 rounded-lg px-2 py-2 text-xs focus:outline-none focus:border-amber-500"
+                  className="w-full bg-white border border-amber-300 rounded-lg px-2 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-amber-600"
                 >
                   <option value="http">HTTP</option>
                   <option value="socks5">SOCKS5</option>
@@ -677,7 +677,7 @@ function WhatsAppQRCard() {
                   value={proxyUser}
                   onChange={e => setProxyUser(e.target.value)}
                   placeholder="user"
-                  className="w-full bg-white border border-amber-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-amber-500"
+                  className="w-full bg-white border border-amber-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-amber-600"
                 />
               </div>
               <div className="flex-1">
@@ -687,7 +687,7 @@ function WhatsAppQRCard() {
                   onChange={e => setProxyPass(e.target.value)}
                   type="password"
                   placeholder="••••••"
-                  className="w-full bg-white border border-amber-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-amber-500"
+                  className="w-full bg-white border border-amber-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-amber-600"
                 />
               </div>
             </div>
@@ -702,6 +702,7 @@ function WhatsAppQRCard() {
           <button
             onClick={handleSaveProxy}
             disabled={proxySaving || !proxyHost.trim() || !proxyPort.trim()}
+            title={!proxyHost.trim() || !proxyPort.trim() ? "Preencha Host e Porta antes de salvar" : undefined}
             className="w-full py-2.5 rounded-xl bg-amber-600 text-white text-sm font-semibold hover:bg-amber-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {proxySaving ? "Configurando..." : "Salvar Proxy e Gerar QR"}
