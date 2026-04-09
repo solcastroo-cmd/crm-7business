@@ -337,15 +337,16 @@ function WhatsAppQRCard() {
   const [countdown,     setCountdown]     = useState(0);
   const [disconnecting, setDisconnecting] = useState(false);
 
-  // Proxy form
-  const [proxyHost,     setProxyHost]     = useState("");
-  const [proxyPort,     setProxyPort]     = useState("");
-  const [proxyUser,     setProxyUser]     = useState("");
-  const [proxyPass,     setProxyPass]     = useState("");
+  // Proxy form — inputs não controlados (useRef) para evitar bloqueio de edição
   const [proxyProtocol, setProxyProtocol] = useState<"http" | "socks5">("http");
   const [proxySaving,   setProxySaving]   = useState(false);
   const [proxyErr,      setProxyErr]      = useState<string | null>(null);
   const [proxyOk,       setProxyOk]       = useState(false); // proxy salvo — aguardando QR
+
+  const hostRef = useRef<HTMLInputElement>(null);
+  const portRef = useRef<HTMLInputElement>(null);
+  const userRef = useRef<HTMLInputElement>(null);
+  const passRef = useRef<HTMLInputElement>(null);
 
   const countdownRef    = useRef(0);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null); // BUG-CARD-01/02
@@ -406,7 +407,11 @@ function WhatsAppQRCard() {
   }, []);
 
   async function handleSaveProxy() {
-    if (!proxyHost.trim() || !proxyPort.trim()) { setProxyErr("Host e porta são obrigatórios."); return; }
+    const host = hostRef.current?.value.trim() ?? "";
+    const port = portRef.current?.value.trim() ?? "";
+    const user = userRef.current?.value.trim() ?? "";
+    const pass = passRef.current?.value.trim() ?? "";
+    if (!host || !port) { setProxyErr("Host e porta são obrigatórios."); return; }
     setProxyErr(null);
     setProxySaving(true);
     try {
@@ -414,11 +419,11 @@ function WhatsAppQRCard() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          host: proxyHost.trim(),
-          port: Number(proxyPort.trim()),
+          host,
+          port: Number(port),
           protocol: proxyProtocol,
-          ...(proxyUser ? { username: proxyUser.trim() } : {}),
-          ...(proxyPass ? { password: proxyPass.trim() } : {}),
+          ...(user ? { username: user } : {}),
+          ...(pass ? { password: pass } : {}),
         }),
       });
       // BUG-CARD-05: parse seguro — JSON inválido da Evolution API gera erro claro
@@ -426,7 +431,10 @@ function WhatsAppQRCard() {
       if (!res.ok || !data?.ok) { setProxyErr(data?.error ?? "Erro ao salvar proxy. Tente novamente."); return; }
 
       // Limpa campos sensíveis e sinaliza sucesso
-      setProxyHost(""); setProxyPort(""); setProxyUser(""); setProxyPass("");
+      if (hostRef.current) hostRef.current.value = "";
+      if (portRef.current) portRef.current.value = "";
+      if (userRef.current) userRef.current.value = "";
+      if (passRef.current) passRef.current.value = "";
       setProxyOk(true);
 
       // BUG-CARD-02: cancela polling anterior antes de criar novo (evita concorrência)
@@ -639,8 +647,8 @@ function WhatsAppQRCard() {
               <div className="flex-1">
                 <label className="text-xs font-semibold text-amber-800 block mb-1">Host</label>
                 <input
-                  value={proxyHost}
-                  onChange={e => setProxyHost(e.target.value)}
+                  ref={hostRef}
+                  defaultValue=""
                   placeholder="proxy.exemplo.com"
                   className="w-full bg-white border border-amber-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-amber-600"
                 />
@@ -648,8 +656,8 @@ function WhatsAppQRCard() {
               <div className="w-20">
                 <label className="text-xs font-semibold text-amber-800 block mb-1">Porta</label>
                 <input
-                  value={proxyPort}
-                  onChange={e => setProxyPort(e.target.value.replace(/\D/g, ""))}
+                  ref={portRef}
+                  defaultValue=""
                   placeholder="8080"
                   type="text"
                   inputMode="numeric"
@@ -674,8 +682,8 @@ function WhatsAppQRCard() {
               <div className="flex-1">
                 <label className="text-xs font-semibold text-amber-800 block mb-1">Usuário (opcional)</label>
                 <input
-                  value={proxyUser}
-                  onChange={e => setProxyUser(e.target.value)}
+                  ref={userRef}
+                  defaultValue=""
                   placeholder="user"
                   className="w-full bg-white border border-amber-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-amber-600"
                 />
@@ -683,8 +691,8 @@ function WhatsAppQRCard() {
               <div className="flex-1">
                 <label className="text-xs font-semibold text-amber-800 block mb-1">Senha (opcional)</label>
                 <input
-                  value={proxyPass}
-                  onChange={e => setProxyPass(e.target.value)}
+                  ref={passRef}
+                  defaultValue=""
                   type="password"
                   placeholder="••••••"
                   className="w-full bg-white border border-amber-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-amber-600"
@@ -701,8 +709,8 @@ function WhatsAppQRCard() {
 
           <button
             onClick={handleSaveProxy}
-            disabled={proxySaving || !proxyHost.trim() || !proxyPort.trim()}
-            title={!proxyHost.trim() || !proxyPort.trim() ? "Preencha Host e Porta antes de salvar" : undefined}
+            disabled={proxySaving}
+            title={proxySaving ? "Configurando proxy..." : "Preencha Host e Porta e clique para salvar"}
             className="w-full py-2.5 rounded-xl bg-amber-600 text-white text-sm font-semibold hover:bg-amber-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {proxySaving ? "Configurando..." : "Salvar Proxy e Gerar QR"}
