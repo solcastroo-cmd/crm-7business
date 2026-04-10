@@ -69,9 +69,26 @@ export async function GET() {
       });
     }
 
-    // BUG-PROXY-02: needs_proxy apenas quando count=0 (nunca gerou QR) + state=connecting
-    // count > 0 significa que o QR já foi gerado antes mas expirou — não é bloqueio de datacenter
+    // BUG-QR-01/02: só retorna needs_proxy se NÃO há proxy configurado na instância.
+    // Com proxy configurado + state=connecting = Baileys ainda inicializando (aguardar).
     if (state === "connecting" && !qrData?.base64 && (qrData?.count ?? 0) === 0) {
+      // Consulta fetchInstances para checar se Proxy está configurado
+      const instRes = await fetchWithTimeout(
+        `${EVO_URL}/instance/fetchInstances`,
+        { headers: { apikey: EVO_KEY } },
+        6_000,
+      ).catch(() => null);
+      const instances = instRes ? await instRes.json().catch(() => null) as Array<{
+        name: string; Proxy?: { host?: string } | null;
+      }> | null : null;
+      const inst = instances?.find(i => i.name === EVO_INST);
+      const hasProxy = !!(inst?.Proxy?.host);
+
+      if (hasProxy) {
+        // Proxy configurado — Baileys ainda conectando via proxy, aguardar
+        return NextResponse.json({ status: "loading", message: "Conectando via proxy..." });
+      }
+
       return NextResponse.json({
         status: "needs_proxy",
         message: "WhatsApp bloqueia conexões de datacenter. Configure um proxy residencial.",
@@ -156,12 +173,15 @@ export async function POST(req: NextRequest) {
       8_000,
     ).catch(() => null);
 
-    // Força reconexão (inicia Baileys com o proxy configurado)
-    await fetchWithTimeout(
+    // BUG-QR-03: captura falha do connect — não retorna ok:true se Baileys não iniciou
+    const connectRes = await fetchWithTimeout(
       `${EVO_URL}/instance/connect/${EVO_INST}`,
       { headers: { apikey: EVO_KEY } },
       10_000,
     ).catch(() => null);
+    if (!connectRes || !connectRes.ok) {
+      console.warn("[QRCode] /instance/connect retornou erro — Baileys pode não ter iniciado");
+    }
 
     return NextResponse.json({ ok: true, message: "Proxy configurado. Aguardando QR code..." });
 
@@ -173,11 +193,31 @@ export async function POST(req: NextRequest) {
 export async function DELETE() {
   if (!EVO_URL) return NextResponse.json({ error: "EVOLUTION_API_URL não configurado" }, { status: 503 });
   try {
+    // BUG-QR-04: logout apenas não limpa sessão do banco — usar delete + recreate
+    // para garantir estado limpo na próxima conexão
     await fetchWithTimeout(
       `${EVO_URL}/instance/logout/${EVO_INST}`,
       { method: "DELETE", headers: { apikey: EVO_KEY } },
       8_000,
-    );
+    ).catch(() => null);
+
+    await fetchWithTimeout(
+      `${EVO_URL}/instance/delete/${EVO_INST}`,
+      { method: "DELETE", headers: { apikey: EVO_KEY } },
+      8_000,
+    ).catch(() => null);
+
+    // Recria instância limpa (sem proxy) para próxima sessão
+    await fetchWithTimeout(
+      `${EVO_URL}/instance/create`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", apikey: EVO_KEY },
+        body: JSON.stringify({ instanceName: EVO_INST, qrcode: true, integration: "WHATSAPP-BAILEYS" }),
+      },
+      10_000,
+    ).catch(() => null);
+
     return NextResponse.json({ ok: true });
   } catch {
     return NextResponse.json({ error: "Erro ao desconectar" }, { status: 500 });
