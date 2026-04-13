@@ -35,7 +35,11 @@ export async function POST(req: NextRequest) {
   }
   if (!data || data.fromMe) return NextResponse.json({ ok: true, skipped: true });
 
-  const phone = (data.from ?? "").replace(/[^0-9]/g, "");
+  // BUG-WA-02: UltraMsg envia "5585911110001@c.us" — normaliza para 11 dígitos (sem DDI 55)
+  const rawPhone = (data.from ?? "").split("@")[0].replace(/[^0-9]/g, "");
+  const phone = rawPhone.length === 13 && rawPhone.startsWith("55")
+    ? rawPhone.slice(2)   // 5585911110001 → 85911110001
+    : rawPhone;
   if (!phone) return NextResponse.json({ ok: true, skipped: true });
 
   const name    = data.pushname ?? null;
@@ -53,12 +57,13 @@ export async function POST(req: NextRequest) {
   }
 
   // Verifica se lead já existe
-  const query = supabaseAdmin
+  // BUG-WA-01: .eq() retorna novo objeto — deve ser reatribuído
+  let query = supabaseAdmin
     .from("leads")
     .select("id, stage, name")
     .eq("phone", phone);
 
-  if (storeId) query.eq("store_id", storeId);
+  if (storeId) query = query.eq("store_id", storeId);
 
   const { data: existing } = await query.maybeSingle();
 
