@@ -363,6 +363,7 @@ function KanbanCard({
   onDragOver,
   onDrop,
   onClick,
+  onDelete,
 }: {
   lead: Lead;
   isDragOver: boolean;
@@ -371,12 +372,35 @@ function KanbanCard({
   onDragOver: (e: React.DragEvent) => void;
   onDrop: (e: React.DragEvent) => void;
   onClick: () => void;
+  onDelete: () => void;
 }) {
+  const [confirmDel, setConfirmDel] = useState(false);
+  const [deleting,   setDeleting]   = useState(false);
+
   const qual    = lead.qualification ? QUAL_CONFIG[lead.qualification] : null;
   const src     = SOURCE_ICON[lead.source] ?? { icon: lead.source?.[0]?.toUpperCase() ?? "?", color: "#6b7280" };
   const bgColor = avatarColor(lead.name);
   const initials = avatarInitials(lead.name);
   const borderLeft = qual?.border ?? "#e5e7eb";
+
+  async function handleConfirmDelete(e: React.MouseEvent) {
+    e.stopPropagation();
+    setDeleting(true);
+    await onDelete();
+    setDeleting(false);
+  }
+
+  function handleDeleteClick(e: React.MouseEvent) {
+    e.stopPropagation();
+    setConfirmDel(true);
+    // auto-cancela após 3s sem confirmação
+    setTimeout(() => setConfirmDel(false), 3000);
+  }
+
+  function handleCancelDelete(e: React.MouseEvent) {
+    e.stopPropagation();
+    setConfirmDel(false);
+  }
 
   return (
     <div
@@ -399,9 +423,66 @@ function KanbanCard({
         userSelect: "none",
         transition: "box-shadow 0.1s, border-color 0.1s",
         marginTop: isDragOver ? "4px" : "0",
+        position: "relative",
       }}
-      className="active:cursor-grabbing hover:shadow-md"
+      className="active:cursor-grabbing hover:shadow-md group"
     >
+      {/* Botão excluir — aparece no hover */}
+      {!confirmDel ? (
+        <button
+          onClick={handleDeleteClick}
+          title="Excluir lead"
+          style={{
+            position: "absolute", top: "8px", right: "8px",
+            width: "20px", height: "20px", borderRadius: "4px",
+            background: "transparent", border: "none",
+            cursor: "pointer", fontSize: "12px",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            color: "#d1d5db", transition: "color 0.15s, background 0.15s",
+            opacity: 0,
+          }}
+          className="group-hover:opacity-100 hover:!text-red-500 hover:!bg-red-50"
+        >
+          🗑
+        </button>
+      ) : (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            position: "absolute", top: "6px", right: "6px",
+            display: "flex", alignItems: "center", gap: "4px",
+            background: "#fff", border: "1px solid #fca5a5",
+            borderRadius: "6px", padding: "2px 5px",
+            zIndex: 10,
+          }}
+        >
+          <span style={{ fontSize: "10px", color: "#ef4444", fontWeight: 600, whiteSpace: "nowrap" }}>
+            {deleting ? "..." : "Excluir?"}
+          </span>
+          <button
+            onClick={handleConfirmDelete}
+            disabled={deleting}
+            style={{
+              background: "#ef4444", color: "#fff", border: "none",
+              borderRadius: "4px", padding: "1px 6px",
+              fontSize: "10px", fontWeight: 700, cursor: "pointer",
+            }}
+          >
+            Sim
+          </button>
+          <button
+            onClick={handleCancelDelete}
+            style={{
+              background: "#f3f4f6", color: "#6b7280", border: "none",
+              borderRadius: "4px", padding: "1px 6px",
+              fontSize: "10px", fontWeight: 600, cursor: "pointer",
+            }}
+          >
+            Não
+          </button>
+        </div>
+      )}
+
       {/* Row 1: Avatar + Name + Time */}
       <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "7px" }}>
         <div style={{
@@ -421,7 +502,7 @@ function KanbanCard({
             }}>
               {lead.name || "Sem nome"}
             </span>
-            <span style={{ fontSize: "10px", color: "#9ca3af", flexShrink: 0, marginLeft: "4px" }}>
+            <span style={{ fontSize: "10px", color: "#9ca3af", flexShrink: 0, marginLeft: "24px" }}>
               {timeAgo(lead.created_at)}
             </span>
           </div>
@@ -539,6 +620,22 @@ export default function Home() {
 
   const leadsByStage = (stage: string) =>
     filteredLeads.filter((l) => l.stage === stage).sort((a, b) => a.position - b.position);
+
+  // ── Delete lead ──
+  const handleDeleteLead = useCallback(async (id: string) => {
+    // Optimistic update — remove imediatamente da UI
+    setLeads((prev) => prev.filter((l) => l.id !== id));
+    try {
+      await fetch(`/api/leads?id=${id}`, { method: "DELETE" });
+    } catch {
+      // Se falhar, recarrega do servidor
+      const uid = localStorage.getItem("crm_userId");
+      if (uid) {
+        const r = await fetch(`/api/leads?storeId=${uid}`);
+        if (r.ok) setLeads(await r.json());
+      }
+    }
+  }, []);
 
   // ── Drag & drop handlers ──
   const handleDragStart = (e: React.DragEvent, lead: Lead) => {
@@ -852,6 +949,7 @@ export default function Home() {
                         onDragOver={(e) => handleDragOver(e, stage, lead.id)}
                         onDrop={(e) => handleDrop(e, stage, lead.id)}
                         onClick={() => setSelectedLead(lead)}
+                        onDelete={() => handleDeleteLead(lead.id)}
                       />
                     );
                   })}
