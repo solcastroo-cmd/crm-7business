@@ -568,8 +568,9 @@ export default function Home() {
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [showNewLead, setShowNewLead]   = useState(false);
 
-  // BUG-02: multi-tenant userId
-  const [userId, setUserId] = useState<string | null>(null);
+  // storeId fixo via env — mais confiável que auth.uid que pode divergir
+  const STORE_ID = process.env.NEXT_PUBLIC_STORE_ID ?? "";
+  const [userId, setUserId] = useState<string | null>(STORE_ID || null);
 
   // FEAT-05: busca + filtros
   const [searchTerm,          setSearchTerm]          = useState("");
@@ -579,19 +580,24 @@ export default function Home() {
   const [dragOverStage,  setDragOverStage]  = useState<string | null>(null);
   const [dragOverLeadId, setDragOverLeadId] = useState<string | null>(null);
   const draggingRef = useRef<Lead | null>(null);
+  const refreshRef  = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // BUG-02: get supabase user first, then fetch leads
+  // fetchLeads reutilizável — usa STORE_ID fixo, nunca auth.uid
+  const fetchLeads = useCallback(() => {
+    const storeId = STORE_ID || localStorage.getItem("crm_userId") || "";
+    const url = storeId ? `/api/leads?storeId=${storeId}` : "/api/leads";
+    fetch(url)
+      .then((r) => { if (!r.ok) throw new Error(`Erro ${r.status}`); return r.json(); })
+      .then((data) => { setLeads(Array.isArray(data) ? data : []); setLoading(false); setErro(null); })
+      .catch((e) => { setErro(e.message); setLoading(false); });
+  }, [STORE_ID]);
+
+  // Carga inicial + auto-refresh a cada 30s (novos leads aparecem sem F5)
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      const uid = data?.user?.id ?? null;
-      setUserId(uid);
-      const url = uid ? `/api/leads?storeId=${uid}` : "/api/leads";
-      fetch(url)
-        .then((r) => { if (!r.ok) throw new Error(`Erro ${r.status}`); return r.json(); })
-        .then((data) => { setLeads(Array.isArray(data) ? data : []); setLoading(false); })
-        .catch((e) => { setErro(e.message); setLoading(false); });
-    });
-  }, []);
+    fetchLeads();
+    refreshRef.current = setInterval(fetchLeads, 30_000);
+    return () => { if (refreshRef.current) clearInterval(refreshRef.current); };
+  }, [fetchLeads]);
 
   const sellers = useMemo(() =>
     ["Todos", ...Array.from(new Set(leads.map((l) => l.seller).filter(Boolean) as string[]))],
@@ -629,13 +635,9 @@ export default function Home() {
       await fetch(`/api/leads?id=${id}`, { method: "DELETE" });
     } catch {
       // Se falhar, recarrega do servidor
-      const uid = localStorage.getItem("crm_userId");
-      if (uid) {
-        const r = await fetch(`/api/leads?storeId=${uid}`);
-        if (r.ok) setLeads(await r.json());
-      }
+      fetchLeads();
     }
-  }, []);
+  }, [fetchLeads]);
 
   // ── Drag & drop handlers ──
   const handleDragStart = (e: React.DragEvent, lead: Lead) => {
