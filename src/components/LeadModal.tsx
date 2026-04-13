@@ -95,8 +95,9 @@ export function LeadModal({ lead, onClose, onUpdate }: Props) {
   const [togglingAi, setTogglingAi]   = useState(false);
   const [replyText, setReplyText]     = useState("");
   const [sendingReply, setSendingReply] = useState(false);
-  const chatEndRef = useRef<HTMLDivElement | null>(null);
-  const saveTimer  = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const chatEndRef  = useRef<HTMLDivElement | null>(null);
+  const saveTimer   = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollTimer   = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Sincroniza anotações, tags, ai_enabled e carrega mensagens quando troca de lead
   useEffect(() => {
@@ -181,12 +182,24 @@ export function LeadModal({ lead, onClose, onUpdate }: Props) {
     if (lead?.id) {
       setMessages([]);
       fetchMessages(lead.id);
+
+      // Polling a cada 5s enquanto o modal estiver aberto
+      // → Paulo responde no WhatsApp e a mensagem aparece automaticamente
+      if (pollTimer.current) clearInterval(pollTimer.current);
+      pollTimer.current = setInterval(() => fetchMessages(lead.id), 5_000);
     }
+    return () => {
+      if (pollTimer.current) { clearInterval(pollTimer.current); pollTimer.current = null; }
+    };
   }, [lead?.id, fetchMessages]);
 
-  // Scroll automático para última mensagem
+  // Scroll automático para última mensagem — só rola se já estava no fundo
+  // (evita interromper o usuário que está lendo mensagens antigas)
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const el = chatEndRef.current?.parentElement;
+    if (!el) return;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+    if (atBottom) chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
   // Fecha o modal com tecla Escape

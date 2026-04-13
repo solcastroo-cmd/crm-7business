@@ -99,20 +99,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Lead não encontrado" }, { status: 404 });
   }
 
-  // 2. Salva mensagem no banco (from_me = true → enviada pela loja/vendedor)
-  const { data: msg, error: msgErr } = await supabaseAdmin
-    .from("messages")
-    .insert({ lead_id: leadId, text: text.trim(), from_me: true })
-    .select("id, text, from_me, created_at")
-    .maybeSingle();
-
-  if (msgErr) return NextResponse.json({ error: msgErr.message }, { status: 500 });
-
-  // 3. Envia via WhatsApp
-  const sent = await sendWhatsApp(lead.phone, text.trim());
-
-  // 4. ⚡ HANDOFF — desativa Paulo automaticamente quando vendedor escreve
-  //    (só atualiza se ainda estava ativo, para evitar writes desnecessários)
+  // 2. ⚡ HANDOFF PRIMEIRO — desativa Paulo ANTES de enviar pelo WhatsApp
+  //    Isso evita race condition: se o cliente responder durante o envio
+  //    (que pode demorar até 10s), o webhook já lê ai_enabled=false no banco.
   if (lead.ai_enabled !== false) {
     await supabaseAdmin
       .from("leads")
@@ -121,6 +110,18 @@ export async function POST(req: NextRequest) {
 
     console.log(`[Handoff] Lead ${leadId} → Paulo desativado (vendedor assumiu)`);
   }
+
+  // 3. Salva mensagem no banco (from_me = true → enviada pela loja/vendedor)
+  const { data: msg, error: msgErr } = await supabaseAdmin
+    .from("messages")
+    .insert({ lead_id: leadId, text: text.trim(), from_me: true })
+    .select("id, text, from_me, created_at")
+    .maybeSingle();
+
+  if (msgErr) return NextResponse.json({ error: msgErr.message }, { status: 500 });
+
+  // 4. Envia via WhatsApp (depois do handoff estar gravado no banco)
+  const sent = await sendWhatsApp(lead.phone, text.trim());
 
   return NextResponse.json({ message: msg, whatsapp_sent: sent, ai_enabled: false });
 }

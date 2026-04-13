@@ -46,7 +46,9 @@ type StoreSettings = {
 // ── Cache de settings (5 min) ─────────────────────────────────────────────────
 let _settingsCache: StoreSettings | null = null;
 let _settingsCacheAt = 0;
-const SETTINGS_TTL = 5 * 60 * 1000;
+const SETTINGS_TTL   = 5 * 60 * 1000;
+// Fallback: STORE_ID da variável de ambiente (evita depender só do instanceId)
+const ENV_STORE_ID   = process.env.STORE_ID ?? "";
 
 async function loadSettings(instanceId?: string | null, storeIdParam?: string | null): Promise<StoreSettings | null> {
   const now = Date.now();
@@ -54,6 +56,7 @@ async function loadSettings(instanceId?: string | null, storeIdParam?: string | 
 
   let store: StoreSettings | null = null;
 
+  // 1ª tentativa: busca pelo instanceId enviado no body do webhook
   if (instanceId) {
     const { data } = await supabaseAdmin
       .from("users")
@@ -63,6 +66,7 @@ async function loadSettings(instanceId?: string | null, storeIdParam?: string | 
     store = data ?? null;
   }
 
+  // 2ª tentativa: query param ?storeId= na URL do webhook
   if (!store && storeIdParam) {
     const { data } = await supabaseAdmin
       .from("users")
@@ -72,9 +76,20 @@ async function loadSettings(instanceId?: string | null, storeIdParam?: string | 
     store = data ?? null;
   }
 
+  // 3ª tentativa: STORE_ID da variável de ambiente (fallback garantido)
+  if (!store && ENV_STORE_ID) {
+    const { data } = await supabaseAdmin
+      .from("users")
+      .select("id, ai_enabled, ai_name, ai_personality, ultramsg_instance, ultramsg_token, notify_phone")
+      .eq("id", ENV_STORE_ID)
+      .maybeSingle<StoreSettings>();
+    store = data ?? null;
+    if (store) console.log("[UltraMsg] Settings carregadas via ENV_STORE_ID (fallback)");
+  }
+
   if (store) {
-    _settingsCache    = store;
-    _settingsCacheAt  = now;
+    _settingsCache   = store;
+    _settingsCacheAt = now;
   }
   return store;
 }
@@ -208,6 +223,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const { data: existing } = await q.maybeSingle();
 
   let leadId: string;
+  // leadRecord sempre aponta para o objeto completo do lead (existente ou recém-criado)
+  let leadRecord: Record<string, unknown> = existing ?? {};
 
   if (existing) {
     leadId = existing.id;
@@ -218,6 +235,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     if (extracted.payment && !existing.payment)  upd.payment = extracted.payment;
     if (Object.keys(upd).length > 1) {
       await supabaseAdmin.from("leads").update(upd).eq("id", leadId);
+      // Atualiza leadRecord local com os campos modificados
+      leadRecord = { ...leadRecord, ...upd };
     }
   } else {
     const row: Record<string, unknown> = {
@@ -229,9 +248,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     if (storeId) row.store_id = storeId;
     const { data: nl } = await supabaseAdmin.from("leads").insert(row).select("*").single();
     leadId = nl?.id ?? "";
-    // Re-busca para ter o objeto completo
+    // Busca objeto completo (inclui ai_enabled e demais colunas) — corrige Object.assign no-op
     const { data: fresh } = await supabaseAdmin.from("leads").select("*").eq("id", leadId).maybeSingle();
-    if (fresh) Object.assign(existing ?? {}, fresh);
+    leadRecord = (fresh as Record<string, unknown>) ?? row;
   }
 
   if (!leadId) return NextResponse.json({ ok: false, error: "leadId vazio" });
@@ -258,9 +277,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   // ── 6. ⚡ HANDOFF — checa ai_enabled NO LEAD ──────────────────────────────
   // Se vendedor assumiu este lead, Paulo fica mudo.
-  // Trata coluna ausente (migration não rodada) como true (safe default).
-  const leadRecord = existing ?? {};
-  const leadAiEnabled = (leadRecord as Record<string, unknown>).ai_enabled !== false;
+  // leadRecord já contém o objeto completo (lead existente OU recém-criado com fresh).
+  const leadAiEnabled = leadRecord.ai_enabled !== false;
 
   if (!leadAiEnabled) {
     console.log(`[UltraMsg] Lead ${leadId} — vendedor assumiu, Paulo pausado`);
@@ -270,11 +288,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // ── 7. IA responde com memória de conversa ────────────────────────────────
   try {
     const leadCtx = {
-      id:      leadId,                                    // ← histórico de conversa
-      name:    (leadRecord as Record<string, unknown>).name as string ?? data.pushname ?? null,
-      budget:  (leadRecord as Record<string, unknown>).budget as string ?? extracted.budget ?? null,
-      type:    (leadRecord as Record<string, unknown>).type as string ?? extracted.type ?? null,
-      payment: (leadRecord as Record<string, unknown>).payment as string ?? extracted.payment ?? null,
+      id:      leadId,
+      name:    (leadRecord.name    as string | null) ?? data.pushname ?? null,
+      budget:  (leadRecord.budget  as string | null) ?? extracted.budget  ?? null,
+      type:    (leadRecord.type    as string | null) ?? extracted.type    ?? null,
+      payment: (leadRecord.payment as string | null) ?? extracted.payment ?? null,
     };
 
     const rawReply = await getAIReply(
