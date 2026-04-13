@@ -128,13 +128,13 @@ async function buildSystemPrompt(
   return system;
 }
 
-// ─── Estoque disponível ───────────────────────────────────────────────────────
+// ─── Estoque disponível (com IDs para envio de fotos) ────────────────────────
 export async function getInventoryContext(): Promise<string> {
   try {
     const { supabaseAdmin } = await import("@/lib/supabaseAdmin");
     const { data } = await supabaseAdmin
       .from("vehicles")
-      .select("brand,model,year,plate,price,color,km,fuel,transmission,description,status")
+      .select("id,brand,model,year,plate,price,color,km,fuel,transmission,description,status,photos")
       .eq("status", "disponivel")
       .order("created_at", { ascending: false })
       .limit(20);
@@ -142,24 +142,42 @@ export async function getInventoryContext(): Promise<string> {
     if (!data || data.length === 0) return "";
 
     const lines = data.map((v) => {
+      const hasPhotos = Array.isArray(v.photos) && v.photos.length > 0;
       const parts = [
         `${v.brand} ${v.model}`,
-        v.year         ? `Ano ${v.year}`                                          : null,
-        v.color        ? v.color                                                  : null,
-        v.km           ? `${Number(v.km).toLocaleString("pt-BR")} km`             : null,
-        v.fuel         ? v.fuel                                                   : null,
-        v.transmission ? v.transmission                                            : null,
-        v.plate        ? `Placa ${v.plate}`                                        : null,
-        v.price        ? `R$ ${Number(v.price).toLocaleString("pt-BR")}`          : null,
-        v.description  ? `(${v.description})`                                     : null,
+        v.year         ? `Ano ${v.year}`                                 : null,
+        v.color        ? v.color                                         : null,
+        v.km           ? `${Number(v.km).toLocaleString("pt-BR")} km`   : null,
+        v.fuel         ? v.fuel                                          : null,
+        v.transmission ? v.transmission                                  : null,
+        v.price        ? `R$ ${Number(v.price).toLocaleString("pt-BR")}`: null,
+        v.description  ? `(${v.description})`                           : null,
+        hasPhotos      ? `📷 ${v.photos.length} foto(s) disponível`     : null,
       ].filter(Boolean);
-      return `- ${parts.join(" | ")}`;
+      // ID do veículo entre colchetes — usado pelo Paulo para acionar envio de fotos
+      return `- [ID:${v.id}] ${parts.join(" | ")}`;
     }).join("\n");
 
-    return `\n\n--- ESTOQUE DISPONÍVEL NA LOJA (use para sugerir veículos) ---\n${lines}`;
+    return (
+      `\n\n--- ESTOQUE DISPONÍVEL NA LOJA ---\n` +
+      `Quando apresentar um veículo específico, adicione EXATAMENTE ao final da mensagem (linha separada):\n` +
+      `[VEICULO:ID_DO_VEICULO]\n` +
+      `Substitua ID_DO_VEICULO pelo ID real do veículo listado abaixo. ` +
+      `O sistema enviará as fotos automaticamente via WhatsApp.\n\n` +
+      lines
+    );
   } catch {
     return "";
   }
+}
+
+// ─── Extrai tag de veículo e retorna texto limpo + vehicleId ─────────────────
+export function parseVehicleTag(reply: string): { message: string; vehicleId: string | null } {
+  const match = reply.match(/\[VEICULO:([a-f0-9-]{36})\]/i);
+  if (!match) return { message: reply.trim(), vehicleId: null };
+  const vehicleId = match[1];
+  const message   = reply.replace(match[0], "").replace(/\n{3,}/g, "\n\n").trim();
+  return { message, vehicleId };
 }
 
 // ─── Chama Groq com histórico completo ───────────────────────────────────────

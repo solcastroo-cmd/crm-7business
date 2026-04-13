@@ -15,7 +15,7 @@
 
 import { NextRequest } from "next/server";
 import { upsertLead } from "@/lib/leads";
-import { getAIReply, extractLeadData, qualifyLead } from "@/lib/ai";
+import { getAIReply, extractLeadData, qualifyLead, parseVehicleTag } from "@/lib/ai";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const dynamic = "force-dynamic";
@@ -116,13 +116,60 @@ async function saveMessage(leadId: string, text: string, fromMe: boolean, extern
 /** Envia texto via Evolution API */
 async function sendWhatsApp(number: string, text: string) {
   if (!EVOLUTION_API_URL || !number) return;
-  // BUG-ZAP-05: timeout adicionado — sem ele, fetch fica pendurado se Evolution estiver fora
   await fetch(`${EVOLUTION_API_URL}/message/sendText/${EVOLUTION_INSTANCE}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "apikey": EVOLUTION_API_KEY },
     body: JSON.stringify({ number, text }),
     signal: AbortSignal.timeout(10_000),
-  }).catch((e) => console.error("[Evolution] Erro envio:", e.message));
+  }).catch((e) => console.error("[Evolution] Erro texto:", e.message));
+}
+
+/** Envia imagem via Evolution API */
+async function sendWhatsAppImage(number: string, imageUrl: string, caption = "") {
+  if (!EVOLUTION_API_URL || !number || !imageUrl) return;
+
+  // Detecta mimetype pela extensão da URL
+  const ext = imageUrl.split("?")[0].split(".").pop()?.toLowerCase() ?? "jpg";
+  const mimeMap: Record<string, string> = {
+    jpg: "image/jpeg", jpeg: "image/jpeg",
+    png: "image/png",  webp: "image/webp",
+    gif: "image/gif",
+  };
+  const mimetype = mimeMap[ext] ?? "image/jpeg";
+
+  await fetch(`${EVOLUTION_API_URL}/message/sendMedia/${EVOLUTION_INSTANCE}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "apikey": EVOLUTION_API_KEY },
+    body: JSON.stringify({ number, mediatype: "image", mimetype, caption, media: imageUrl }),
+    signal: AbortSignal.timeout(15_000),
+  }).catch((e) => console.error("[Evolution] Erro imagem:", e.message));
+}
+
+/** Busca fotos de um veículo e envia via WhatsApp (máx 5 fotos) */
+async function sendVehiclePhotos(number: string, vehicleId: string) {
+  try {
+    const { data: vehicle } = await supabaseAdmin
+      .from("vehicles")
+      .select("brand, model, year, price, photos")
+      .eq("id", vehicleId)
+      .maybeSingle();
+
+    if (!vehicle || !Array.isArray(vehicle.photos) || vehicle.photos.length === 0) return;
+
+    const photos  = vehicle.photos.slice(0, 5); // máx 5 fotos
+    const caption = `${vehicle.brand} ${vehicle.model} ${vehicle.year ?? ""}${vehicle.price ? ` — R$ ${Number(vehicle.price).toLocaleString("pt-BR")}` : ""}`;
+
+    for (let i = 0; i < photos.length; i++) {
+      const photoCaption = i === 0 ? caption : ""; // caption só na primeira
+      await sendWhatsAppImage(number, photos[i], photoCaption);
+      // Pequena pausa entre fotos para não sobrecarregar
+      if (i < photos.length - 1) await new Promise(r => setTimeout(r, 600));
+    }
+
+    console.log(`[Evolution] 📷 ${photos.length} foto(s) enviadas — ${caption}`);
+  } catch (e) {
+    console.error("[Evolution] Erro ao enviar fotos:", e);
+  }
 }
 
 async function processEvolution(body: unknown) {
@@ -194,21 +241,28 @@ async function processEvolution(body: unknown) {
     }
 
     // ── 7. IA responde com memória de conversa (como ChatGPT) ───────────────
-    // lead.id → carrega histórico completo da conversa no banco
-    // settings.ai_personality → skill configurada nas Settings
-    // settings.ai_name        → nome da IA ("Paulo")
-    const reply = await getAIReply(
+    const rawReply = await getAIReply(
       text,
-      { ...lead, id: lead.id },  // ← passa lead.id para carregar histórico
+      { ...lead, id: lead.id },
       settings.ai_personality,
       settings.ai_name,
     );
-    await sendWhatsApp(phoneNum, reply);
 
-    // ── 8. Salva resposta da IA ───────────────────────────────────────────
-    await saveMessage(lead.id, reply, true);
+    // ── 8. Processa tag de veículo [VEICULO:uuid] se presente ─────────────
+    const { message: cleanReply, vehicleId } = parseVehicleTag(rawReply);
 
-    // ── 9. Notifica vendedor se Quente ────────────────────────────────────
+    // Envia texto da resposta
+    await sendWhatsApp(phoneNum, cleanReply);
+
+    // Se Paulo indicou um veículo, envia as fotos automaticamente
+    if (vehicleId) {
+      await sendVehiclePhotos(phoneNum, vehicleId);
+    }
+
+    // ── 9. Salva resposta da IA (sem a tag técnica) ───────────────────────
+    await saveMessage(lead.id, cleanReply, true);
+
+    // ── 10. Notifica vendedor se Quente ───────────────────────────────────
     const notifyPhone = settings.notify_phone ?? "";
     if (qualification === "quente" && notifyPhone) {
       const alerta =
