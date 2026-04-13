@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback, useRef, Suspense } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
 
@@ -373,162 +373,6 @@ function WhatsAppMetaCard() {
   );
 }
 
-// ─── Evolution API (QR Code) ──────────────────────────────────────────────────
-type EvoStatus = { status: string; base64?: string; phone?: string; profileName?: string; message?: string; error?: string };
-
-function EvolutionCard() {
-  const [data, setData]         = useState<EvoStatus | null>(null);
-  const [loading, setLoading]   = useState(true);
-  const [busy, setBusy]         = useState(false);
-  const [err, setErr]           = useState<string | null>(null);
-  const [showProxy, setShowProxy] = useState(false);
-  const [proxy, setProxy]       = useState({ host: "", port: "", protocol: "http", username: "", password: "" });
-  const pollRef                 = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const poll = useCallback(async () => {
-    try {
-      const res = await fetch("/api/evolution/qrcode");
-      const d: EvoStatus = await res.json();
-      setData(d); setLoading(false);
-      if (d.status === "connected") {
-        if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
-      }
-    } catch {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    poll();
-    pollRef.current = setInterval(poll, 15_000);
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [poll]);
-
-  async function handleDisconnect() {
-    setBusy(true); setErr(null);
-    try {
-      await fetch("/api/evolution/qrcode", { method: "DELETE" });
-      setData(null); setLoading(true); poll();
-    } catch { setErr("Erro ao desconectar."); }
-    finally { setBusy(false); }
-  }
-
-  async function handleProxy() {
-    if (!proxy.host || !proxy.port) { setErr("Host e porta são obrigatórios."); return; }
-    setBusy(true); setErr(null);
-    try {
-      const res = await fetch("/api/evolution/qrcode", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(proxy),
-      });
-      const d = await res.json();
-      if (!res.ok) { setErr(d.error ?? "Erro ao configurar proxy."); return; }
-      setShowProxy(false); setLoading(true); setTimeout(poll, 3000);
-    } catch { setErr("Erro de rede."); }
-    finally { setBusy(false); }
-  }
-
-  const connected    = data?.status === "connected";
-  const hasQR        = data?.status === "qrcode";
-  const needsProxy   = data?.status === "needs_proxy";
-  const isLoading    = data?.status === "loading";
-  const isConfigured = !!process.env.NEXT_PUBLIC_SUPABASE_URL; // sempre true se app está rodando
-
-  return (
-    <Card>
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl" style={{ background: "#1a2e1a" }}>📲</div>
-          <div>
-            <h2 className="text-sm font-bold text-white">WhatsApp QR Code</h2>
-            <p className="text-xs text-gray-500">Evolution API — escaneie e conecte</p>
-          </div>
-        </div>
-        <StatusBadge active={connected} label={
-          loading ? "VERIFICANDO..." :
-          connected ? "✓ CONECTADO" :
-          hasQR ? "AGUARD. SCAN" :
-          isLoading ? "CONECTANDO..." :
-          needsProxy ? "PRECISA PROXY" : "DESCONECTADO"
-        } />
-      </div>
-      <Err msg={err} />
-
-      {loading && (
-        <div className="flex justify-center py-6">
-          <div className="w-6 h-6 border-2 border-red-500 border-t-transparent rounded-full animate-spin" />
-        </div>
-      )}
-
-      {!loading && connected && (
-        <div className="space-y-3">
-          {data?.profileName && <p className="text-sm font-semibold text-white">{data.profileName}</p>}
-          {data?.phone && <p className="text-xs text-gray-400">Número: <span className="font-bold text-white">{data.phone}</span></p>}
-          <button onClick={handleDisconnect} disabled={busy}
-            className="w-full py-2 rounded-xl text-xs font-bold text-white disabled:opacity-50"
-            style={{ background: "#7f1d1d" }}>
-            {busy ? "Desconectando..." : "Desconectar QR Code"}
-          </button>
-        </div>
-      )}
-
-      {!loading && hasQR && data?.base64 && (
-        <div className="flex flex-col items-center gap-3">
-          <p className="text-xs text-gray-400 text-center">Escaneie com o WhatsApp → Dispositivos conectados → Conectar dispositivo</p>
-          <img src={data.base64} alt="QR Code WhatsApp" className="w-48 h-48 rounded-xl border border-gray-700" />
-          <p className="text-xs text-gray-500">Atualizando automaticamente a cada 15s...</p>
-        </div>
-      )}
-
-      {!loading && isLoading && (
-        <p className="text-xs text-yellow-400 text-center py-4">{data?.message ?? "Conectando via proxy..."}</p>
-      )}
-
-      {!loading && needsProxy && (
-        <div className="space-y-3">
-          <div className="rounded-xl p-3 text-xs space-y-1" style={{ background: "#111", border: "1px solid #7f1d1d" }}>
-            <p className="font-semibold text-red-400">Proxy residencial necessário</p>
-            <p className="text-gray-400">{data?.message ?? "WhatsApp bloqueia conexões de datacenter."}</p>
-          </div>
-          <button onClick={() => setShowProxy(v => !v)} className="text-xs text-blue-400 underline underline-offset-2">
-            {showProxy ? "Ocultar configuração de proxy" : "Configurar proxy"}
-          </button>
-          {showProxy && (
-            <div className="space-y-2">
-              <div className="grid grid-cols-2 gap-2">
-                <input value={proxy.host} onChange={e => setProxy(p => ({ ...p, host: e.target.value }))}
-                  placeholder="Host do proxy" className={inp} style={inpStyle} />
-                <input value={proxy.port} onChange={e => setProxy(p => ({ ...p, port: e.target.value }))}
-                  placeholder="Porta (ex: 8080)" className={inp} style={inpStyle} />
-              </div>
-              <select value={proxy.protocol} onChange={e => setProxy(p => ({ ...p, protocol: e.target.value }))}
-                className={inp} style={inpStyle}>
-                <option value="http">HTTP</option>
-                <option value="https">HTTPS</option>
-                <option value="socks5">SOCKS5</option>
-              </select>
-              <div className="grid grid-cols-2 gap-2">
-                <input value={proxy.username} onChange={e => setProxy(p => ({ ...p, username: e.target.value }))}
-                  placeholder="Usuário (opcional)" className={inp} style={inpStyle} />
-                <input value={proxy.password} onChange={e => setProxy(p => ({ ...p, password: e.target.value }))}
-                  placeholder="Senha (opcional)" className={inp} style={{ ...inpStyle, fontFamily: "monospace" }} />
-              </div>
-              <button onClick={handleProxy} disabled={busy || !proxy.host || !proxy.port}
-                className="w-full py-2 rounded-xl text-xs font-bold text-white disabled:opacity-50"
-                style={{ background: "#16a34a" }}>
-                {busy ? "Configurando..." : "Salvar Proxy e Reconectar"}
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-
-      {!loading && !connected && !hasQR && !needsProxy && !isLoading && data?.error && (
-        <p className="text-xs text-gray-500 text-center py-2">{data.error}</p>
-      )}
-    </Card>
-  );
-}
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function IntegrationsPage() {
@@ -544,7 +388,6 @@ export default function IntegrationsPage() {
 
         <div className="space-y-4">
           <UltraMsgCard userId={userId} />
-          <EvolutionCard />
           <InstagramCard userId={userId} />
           <WhatsAppMetaCard />
         </div>
@@ -553,8 +396,7 @@ export default function IntegrationsPage() {
           <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Webhook URLs</p>
           <div className="space-y-2">
             {[
-              { label: "UltraMsg", url: "/api/webhook/ultramsg" },
-              { label: "WhatsApp QR (Evolution)", url: "/api/webhook/evolution" },
+              { label: "UltraMsg WhatsApp", url: "/api/webhook/ultramsg" },
               { label: "Instagram / Meta", url: "/api/webhook/meta" },
             ].map(({ label, url }) => (
               <div key={url} className="flex items-center justify-between">
