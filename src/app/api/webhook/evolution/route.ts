@@ -193,15 +193,15 @@ async function processEvolution(body: unknown) {
       return;
     }
 
-    // ── 7. IA responde com a skill configurada nas Settings ───────────────
-    // settings.ai_personality = skill definida na página de configurações
-    // settings.ai_name        = nome da IA (ex: "Paulo")
-    // Se ai_personality for null, usa o PAULO_SYSTEM padrão (vendedor PH Autoscar)
+    // ── 7. IA responde com memória de conversa (como ChatGPT) ───────────────
+    // lead.id → carrega histórico completo da conversa no banco
+    // settings.ai_personality → skill configurada nas Settings
+    // settings.ai_name        → nome da IA ("Paulo")
     const reply = await getAIReply(
       text,
-      lead,
-      settings.ai_personality,   // ← personalidade das Settings (a skill do documento!)
-      settings.ai_name,           // ← nome configurado ("Paulo")
+      { ...lead, id: lead.id },  // ← passa lead.id para carregar histórico
+      settings.ai_personality,
+      settings.ai_name,
     );
     await sendWhatsApp(phoneNum, reply);
 
