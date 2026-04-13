@@ -63,18 +63,38 @@ async function loadStoreSettings(): Promise<StoreSettings> {
   return settingsCache;
 }
 
-// BUG-ZAP-04: deduplicação de eventos (Evolution API pode reenviar MESSAGES_UPSERT)
-const processedIds = new Map<string, number>();
-const DEDUP_TTL_MS = 60 * 60 * 1000; // 1 hora
+// ── Deduplicação híbrida: memória (mesmo processo) + banco (cross-restart) ────
+//
+// Nível 1 — Map em memória: bloqueia eventos duplicados que chegam ao mesmo dyno
+//            na mesma sessão (proteção imediata, sem query ao banco).
+// Nível 2 — Banco (time-window): busca se já existe mensagem idêntica para o
+//            lead nos últimos 30s. Não precisa de coluna nova — usa text+lead_id.
+//            Quando external_id estiver disponível, o upsert faz dedup automático.
+//
+// ⚠️ Para dedup permanente rode no Supabase Dashboard:
+//    supabase/migration_messages_dedup.sql
 
-function isDuplicate(id: string): boolean {
+const recentIds = new Map<string, number>(); // msgId → timestamp
+const MEM_TTL   = 5 * 60 * 1000;            // 5 min (suficiente para retries da Evolution)
+
+function isMemDuplicate(msgId: string): boolean {
   const now = Date.now();
-  for (const [k, ts] of processedIds) {
-    if (now - ts > DEDUP_TTL_MS) processedIds.delete(k);
-  }
-  if (processedIds.has(id)) return true;
-  processedIds.set(id, now);
+  for (const [k, ts] of recentIds) { if (now - ts > MEM_TTL) recentIds.delete(k); }
+  if (recentIds.has(msgId)) return true;
+  recentIds.set(msgId, now);
   return false;
+}
+
+async function isDbDuplicate(leadId: string, text: string): Promise<boolean> {
+  const since = new Date(Date.now() - 30_000).toISOString(); // 30 segundos
+  const { count } = await supabaseAdmin
+    .from("messages")
+    .select("id", { count: "exact", head: true })
+    .eq("lead_id", leadId)
+    .eq("text", text)
+    .eq("from_me", false)
+    .gte("created_at", since);
+  return (count ?? 0) > 0;
 }
 
 export async function POST(req: NextRequest) {
@@ -83,11 +103,13 @@ export async function POST(req: NextRequest) {
   return new Response("OK", { status: 200 });
 }
 
-/** Salva mensagem na tabela messages */
-async function saveMessage(leadId: string, text: string, fromMe: boolean) {
+/** Salva mensagem na tabela messages com external_id para dedup */
+async function saveMessage(leadId: string, text: string, fromMe: boolean, externalId?: string) {
+  const row: Record<string, unknown> = { lead_id: leadId, text, from_me: fromMe };
+  if (externalId) row.external_id = externalId;
   await supabaseAdmin
     .from("messages")
-    .insert({ lead_id: leadId, text, from_me: fromMe })
+    .insert(row)
     .then(({ error }) => { if (error) console.error("[Messages] Erro:", error.message); });
 }
 
@@ -113,10 +135,10 @@ async function processEvolution(body: unknown) {
     const msg = data?.data as Record<string, unknown>;
     if (!msg || (msg?.key as Record<string, unknown>)?.fromMe) return;
 
-    // BUG-ZAP-04: deduplicação pelo id da mensagem
+    // ── Nível 1: dedup em memória (mesma instância) ───────────────────────
     const msgId = ((msg.key as Record<string, unknown>)?.id as string) ?? "";
-    if (msgId && isDuplicate(msgId)) {
-      console.warn("[Evolution] Mensagem duplicada ignorada:", msgId);
+    if (msgId && isMemDuplicate(msgId)) {
+      console.warn("[Evolution] Duplicata ignorada (memória):", msgId);
       return;
     }
 
@@ -151,12 +173,18 @@ async function processEvolution(body: unknown) {
       qualification,
     }, STORE_ID || undefined);
 
-    // ── 4. Salva mensagem do cliente ──────────────────────────────────────
-    await saveMessage(lead.id, text, false);
+    // ── 4. Nível 2: dedup no banco — mesmo texto nos últimos 30s? ────────────
+    if (await isDbDuplicate(lead.id, text)) {
+      console.warn("[Evolution] Duplicata ignorada (banco 30s):", msgId);
+      return;
+    }
+
+    // ── 5. Salva mensagem do cliente (com external_id para dedup futuro) ────
+    await saveMessage(lead.id, text, false, msgId);
 
     const phoneNum = phone.replace("wa:", "");
 
-    // ── 5. ⚡ HANDOFF CHECK — IA só responde se lead.ai_enabled = true ────
+    // ── 6. ⚡ HANDOFF CHECK — IA só responde se lead.ai_enabled = true ────
     // Se o vendedor humano assumiu este lead específico, a IA fica muda.
     const leadAiEnabled = (lead as Record<string, unknown>).ai_enabled !== false;
 
@@ -165,7 +193,7 @@ async function processEvolution(body: unknown) {
       return;
     }
 
-    // ── 6. IA responde com a personalidade configurada nas Settings ────────
+    // ── 7. IA responde com a skill configurada nas Settings ───────────────
     // settings.ai_personality = skill definida na página de configurações
     // settings.ai_name        = nome da IA (ex: "Paulo")
     // Se ai_personality for null, usa o PAULO_SYSTEM padrão (vendedor PH Autoscar)
@@ -177,10 +205,10 @@ async function processEvolution(body: unknown) {
     );
     await sendWhatsApp(phoneNum, reply);
 
-    // ── 7. Salva resposta da IA ───────────────────────────────────────────
+    // ── 8. Salva resposta da IA ───────────────────────────────────────────
     await saveMessage(lead.id, reply, true);
 
-    // ── 8. Notifica vendedor se Quente ────────────────────────────────────
+    // ── 9. Notifica vendedor se Quente ────────────────────────────────────
     const notifyPhone = settings.notify_phone ?? "";
     if (qualification === "quente" && notifyPhone) {
       const alerta =
