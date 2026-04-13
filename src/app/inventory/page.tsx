@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
 type Vehicle = {
   id: string; brand: string; model: string; year?: number; plate?: string;
@@ -8,6 +8,7 @@ type Vehicle = {
   end_plate?: string; renavam?: string; chassis?: string;
   ipva_paid?: boolean; single_owner?: boolean; has_manual?: boolean; has_key?: boolean;
   optional_items?: string[]; description?: string; status: string; created_at?: string;
+  photos?: string[];
 };
 
 const OPTIONALS = [
@@ -25,13 +26,147 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }
 
 const BRANDS = ["Toyota","Honda","Volkswagen","Chevrolet","Ford","Fiat","Hyundai","Nissan","Jeep","Renault","Mitsubishi","BMW","Mercedes-Benz","Audi","Outros"];
 
-const EMPTY: Omit<Vehicle,"id"|"created_at"> = {
+const EMPTY: Omit<Vehicle,"id"|"created_at"|"photos"> = {
   brand:"",model:"",year: new Date().getFullYear(),plate:"",price:undefined,price_fipe:undefined,
   color:"",km:undefined,fuel:"",transmission:"",body_type:"",doors:undefined,end_plate:"",
   renavam:"",chassis:"",ipva_paid:false,single_owner:false,has_manual:false,has_key:false,
   optional_items:[],description:"",status:"disponivel",
 };
 
+const MAX_PHOTOS = 10;
+
+// ── Componente de upload de fotos ─────────────────────────────────────────────
+function PhotoUpload({
+  vehicleId,
+  photos,
+  onPhotosChange,
+}: {
+  vehicleId: string | null;
+  photos: string[];
+  onPhotosChange: (photos: string[]) => void;
+}) {
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadErr, setUploadErr] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const slots = MAX_PHOTOS - photos.length - pendingFiles.length;
+
+  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    const valid = files.filter(f => f.size <= 5 * 1024 * 1024 && f.type.startsWith("image/"));
+    const total = pendingFiles.length + valid.length;
+    const available = MAX_PHOTOS - photos.length;
+    setPendingFiles(prev => [...prev, ...valid].slice(0, available));
+    if (valid.length < files.length) setUploadErr("Alguns arquivos ignorados (max 5MB por foto).");
+    else setUploadErr(null);
+    if (inputRef.current) inputRef.current.value = "";
+  }
+
+  async function uploadPending(vid: string): Promise<string[]> {
+    if (!pendingFiles.length) return photos;
+    setUploading(true); setUploadErr(null);
+    const formData = new FormData();
+    pendingFiles.forEach(f => formData.append("photos", f));
+    try {
+      const res = await fetch(`/api/inventory/photos?vehicleId=${vid}`, { method: "POST", body: formData });
+      const data = await res.json();
+      if (!res.ok) { setUploadErr(data.error ?? "Erro no upload."); return photos; }
+      setPendingFiles([]);
+      onPhotosChange(data.photos);
+      return data.photos;
+    } catch { setUploadErr("Erro de rede no upload."); return photos; }
+    finally { setUploading(false); }
+  }
+
+  async function removePhoto(url: string) {
+    if (!vehicleId) return;
+    const res = await fetch(`/api/inventory/photos?vehicleId=${vehicleId}&url=${encodeURIComponent(url)}`, { method: "DELETE" });
+    const data = await res.json();
+    if (res.ok) onPhotosChange(data.photos);
+  }
+
+  function removePending(idx: number) {
+    setPendingFiles(prev => prev.filter((_, i) => i !== idx));
+  }
+
+  // Expõe uploadPending via ref para o pai chamar após save
+  useEffect(() => {
+    (window as typeof window & { __photoUpload?: { upload: (vid: string) => Promise<string[]> } }).__photoUpload = { upload: uploadPending };
+  });
+
+  const inpStyle = { background: "#111", border: "1px dashed #3a3a3a", color: "#fff" };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+          Fotos do Veiculo <span className="text-gray-600 normal-case font-normal">({photos.length + pendingFiles.length}/{MAX_PHOTOS})</span>
+        </p>
+        {slots > 0 && (
+          <button type="button" onClick={() => inputRef.current?.click()}
+            className="text-xs px-3 py-1 rounded-lg font-bold text-white"
+            style={{ background: "#dc2626" }}>
+            + Adicionar fotos
+          </button>
+        )}
+      </div>
+
+      <input ref={inputRef} type="file" multiple accept="image/*" className="hidden"
+        onChange={handleFileSelect} />
+
+      {uploadErr && <p className="text-xs text-red-400 mb-3 bg-red-950 px-3 py-2 rounded-xl">{uploadErr}</p>}
+      {uploading && <p className="text-xs text-yellow-400 mb-3">Enviando fotos...</p>}
+
+      {/* Fotos já salvas */}
+      {photos.length > 0 && (
+        <div className="grid grid-cols-4 gap-2 mb-3">
+          {photos.map((url, i) => (
+            <div key={i} className="relative group aspect-square rounded-xl overflow-hidden"
+              style={{ border: "1px solid #3a3a3a" }}>
+              <img src={url} alt={`Foto ${i+1}`} className="w-full h-full object-cover" />
+              {vehicleId && (
+                <button type="button" onClick={() => removePhoto(url)}
+                  className="absolute top-1 right-1 w-5 h-5 rounded-full text-white text-xs font-bold flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                  style={{ background: "rgba(220,38,38,0.9)" }}>✕</button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Preview de arquivos selecionados ainda não enviados */}
+      {pendingFiles.length > 0 && (
+        <div className="grid grid-cols-4 gap-2 mb-3">
+          {pendingFiles.map((f, i) => (
+            <div key={i} className="relative group aspect-square rounded-xl overflow-hidden"
+              style={{ border: "1px dashed #dc2626", opacity: 0.8 }}>
+              <img src={URL.createObjectURL(f)} alt={f.name} className="w-full h-full object-cover" />
+              <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-[8px] text-white text-center py-0.5 truncate px-1">
+                pendente
+              </div>
+              <button type="button" onClick={() => removePending(i)}
+                className="absolute top-1 right-1 w-5 h-5 rounded-full text-white text-xs font-bold flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                style={{ background: "rgba(220,38,38,0.9)" }}>✕</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {photos.length === 0 && pendingFiles.length === 0 && (
+        <div className="rounded-xl flex flex-col items-center justify-center py-8 cursor-pointer"
+          style={{ border: "1px dashed #3a3a3a" }}
+          onClick={() => inputRef.current?.click()}>
+          <p className="text-3xl mb-2">📷</p>
+          <p className="text-xs text-gray-500">Clique para adicionar fotos</p>
+          <p className="text-xs text-gray-600">JPG, PNG, WebP • max 5MB cada • até {MAX_PHOTOS} fotos</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Página principal ──────────────────────────────────────────────────────────
 export default function InventoryPage() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [loading, setLoading] = useState(true);
@@ -42,9 +177,11 @@ export default function InventoryPage() {
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Vehicle | null>(null);
   const [form, setForm] = useState<typeof EMPTY>({ ...EMPTY });
+  const [formPhotos, setFormPhotos] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [confirmDel, setConfirmDel] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [lightbox, setLightbox] = useState<{ urls: string[]; idx: number } | null>(null);
 
   const loadVehicles = useCallback(async () => {
     setLoading(true);
@@ -68,7 +205,10 @@ export default function InventoryPage() {
     return true;
   });
 
-  function openNew() { setEditing(null); setForm({ ...EMPTY }); setShowForm(true); setErr(null); }
+  function openNew() {
+    setEditing(null); setForm({ ...EMPTY }); setFormPhotos([]);
+    setShowForm(true); setErr(null);
+  }
   function openEdit(v: Vehicle) {
     setEditing(v);
     setForm({ brand:v.brand,model:v.model,year:v.year,plate:v.plate,price:v.price,price_fipe:v.price_fipe,
@@ -76,6 +216,7 @@ export default function InventoryPage() {
       end_plate:v.end_plate,renavam:v.renavam,chassis:v.chassis,ipva_paid:v.ipva_paid??false,
       single_owner:v.single_owner??false,has_manual:v.has_manual??false,has_key:v.has_key??false,
       optional_items:v.optional_items??[],description:v.description,status:v.status });
+    setFormPhotos(v.photos ?? []);
     setShowForm(true); setErr(null);
   }
 
@@ -83,11 +224,20 @@ export default function InventoryPage() {
     if (!form.brand || !form.model) { setErr("Marca e Modelo sao obrigatorios."); return; }
     setSaving(true); setErr(null);
     try {
-      const url = editing ? `/api/inventory?id=${editing.id}` : "/api/inventory";
+      const url    = editing ? `/api/inventory?id=${editing.id}` : "/api/inventory";
       const method = editing ? "PATCH" : "POST";
-      const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
-      const data = await res.json();
+      const res    = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
+      const data   = await res.json();
       if (!res.ok) { setErr(data.error ?? "Erro ao salvar."); return; }
+
+      const vehicleId: string = data.id ?? editing?.id;
+
+      // Upload das fotos pendentes
+      const photoUploader = (window as typeof window & { __photoUpload?: { upload: (vid: string) => Promise<string[]> } }).__photoUpload;
+      if (vehicleId && photoUploader) {
+        await photoUploader.upload(vehicleId);
+      }
+
       await loadVehicles(); setShowForm(false);
     } catch { setErr("Erro de rede."); }
     finally { setSaving(false); }
@@ -117,7 +267,7 @@ export default function InventoryPage() {
     }));
   }
 
-  const f = (label: string, key: keyof typeof EMPTY, type = "text", placeholder = "") => (
+  const inp = (label: string, key: keyof typeof EMPTY, type = "text", placeholder = "") => (
     <div>
       <label className="text-xs font-semibold text-gray-400 block mb-1">{label}</label>
       <input type={type} value={form[key] as string ?? ""} onChange={e => setForm(p => ({ ...p, [key]: type === "number" ? (e.target.value ? Number(e.target.value) : undefined) : e.target.value }))}
@@ -195,39 +345,78 @@ export default function InventoryPage() {
       ) : (
         <div className={view === "grid" ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4" : "flex flex-col gap-3"}>
           {filtered.map(v => {
-            const cfg = STATUS_CONFIG[v.status] ?? { label: v.status, color: "#888", bg: "#222" };
+            const cfg       = STATUS_CONFIG[v.status] ?? { label: v.status, color: "#888", bg: "#222" };
+            const firstPhoto = v.photos?.[0] ?? null;
             return (
-              <div key={v.id} className="rounded-2xl p-4 flex flex-col gap-3 cursor-pointer transition-all hover:scale-[1.01]"
+              <div key={v.id} className="rounded-2xl overflow-hidden flex flex-col cursor-pointer transition-all hover:scale-[1.01]"
                 style={{ background: "#1a1a1a", border: "1px solid #2e2e2e" }}
                 onClick={() => openEdit(v)}>
-                <div className="flex items-start justify-between">
+                {/* Thumbnail */}
+                <div className="relative w-full" style={{ paddingBottom: "56%", background: "#111" }}>
+                  {firstPhoto ? (
+                    <img src={firstPhoto} alt={`${v.brand} ${v.model}`}
+                      className="absolute inset-0 w-full h-full object-cover" />
+                  ) : (
+                    <div className="absolute inset-0 flex items-center justify-center text-4xl text-gray-700">🚗</div>
+                  )}
+                  <span className="absolute top-2 right-2 text-xs px-2 py-0.5 rounded-full font-bold"
+                    style={{ background: cfg.bg, color: cfg.color }}>{cfg.label}</span>
+                  {(v.photos?.length ?? 0) > 1 && (
+                    <span className="absolute bottom-2 right-2 text-xs px-2 py-0.5 rounded-full font-bold"
+                      style={{ background: "rgba(0,0,0,0.6)", color: "#fff" }}>
+                      📷 {v.photos!.length}
+                    </span>
+                  )}
+                </div>
+
+                <div className="p-4 flex flex-col gap-2 flex-1">
                   <div>
                     <p className="font-bold text-white">{v.brand} {v.model}</p>
                     <p className="text-xs text-gray-500">{v.year} {v.color ? `• ${v.color}` : ""} {v.plate ? `• ${v.plate}` : ""}</p>
                   </div>
-                  <span className="text-xs px-2 py-0.5 rounded-full font-bold" style={{ background: cfg.bg, color: cfg.color }}>{cfg.label}</span>
-                </div>
-                {v.price && <p className="text-lg font-black" style={{ color: "#dc2626" }}>R$ {v.price.toLocaleString("pt-BR")}</p>}
-                {v.km && <p className="text-xs text-gray-500">{v.km.toLocaleString("pt-BR")} km {v.fuel ? `• ${v.fuel}` : ""}</p>}
-                <div className="flex gap-2 mt-1" onClick={e => e.stopPropagation()}>
-                  {v.status !== "disponivel" && (
-                    <button onClick={() => quickStatus(v.id, "disponivel")}
-                      className="flex-1 py-1.5 rounded-xl text-xs font-bold transition-opacity hover:opacity-80"
-                      style={{ background: "#dcfce7", color: "#16a34a" }}>Reativar</button>
+                  {v.price && <p className="text-lg font-black" style={{ color: "#dc2626" }}>R$ {v.price.toLocaleString("pt-BR")}</p>}
+                  {v.km && <p className="text-xs text-gray-500">{v.km.toLocaleString("pt-BR")} km {v.fuel ? `• ${v.fuel}` : ""}</p>}
+
+                  {/* Fotos em miniatura (quando há múltiplas) */}
+                  {(v.photos?.length ?? 0) > 1 && (
+                    <div className="flex gap-1 overflow-hidden" onClick={e => e.stopPropagation()}>
+                      {v.photos!.slice(0,4).map((url, i) => (
+                        <button key={i}
+                          onClick={() => setLightbox({ urls: v.photos!, idx: i })}
+                          className="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0"
+                          style={{ border: "1px solid #3a3a3a" }}>
+                          <img src={url} alt="" className="w-full h-full object-cover" />
+                        </button>
+                      ))}
+                      {v.photos!.length > 4 && (
+                        <div className="w-10 h-10 rounded-lg flex items-center justify-center text-xs font-bold text-gray-400"
+                          style={{ background: "#2e2e2e" }}>
+                          +{v.photos!.length - 4}
+                        </div>
+                      )}
+                    </div>
                   )}
-                  {v.status === "disponivel" && (
-                    <button onClick={() => quickStatus(v.id, "reservado")}
-                      className="flex-1 py-1.5 rounded-xl text-xs font-bold transition-opacity hover:opacity-80"
-                      style={{ background: "#fef9c3", color: "#a16207" }}>Reservar</button>
-                  )}
-                  {v.status !== "vendido" && (
-                    <button onClick={() => quickStatus(v.id, "vendido")}
-                      className="flex-1 py-1.5 rounded-xl text-xs font-bold transition-opacity hover:opacity-80"
-                      style={{ background: "#ede9fe", color: "#7c3aed" }}>Vendido</button>
-                  )}
-                  <button onClick={() => setConfirmDel(v.id)}
-                    className="px-3 py-1.5 rounded-xl text-xs font-bold transition-opacity hover:opacity-80"
-                    style={{ background: "#2e2e2e", color: "#888" }}>🗑</button>
+
+                  <div className="flex gap-2 mt-auto pt-1" onClick={e => e.stopPropagation()}>
+                    {v.status !== "disponivel" && (
+                      <button onClick={() => quickStatus(v.id, "disponivel")}
+                        className="flex-1 py-1.5 rounded-xl text-xs font-bold"
+                        style={{ background: "#dcfce7", color: "#16a34a" }}>Reativar</button>
+                    )}
+                    {v.status === "disponivel" && (
+                      <button onClick={() => quickStatus(v.id, "reservado")}
+                        className="flex-1 py-1.5 rounded-xl text-xs font-bold"
+                        style={{ background: "#fef9c3", color: "#a16207" }}>Reservar</button>
+                    )}
+                    {v.status !== "vendido" && (
+                      <button onClick={() => quickStatus(v.id, "vendido")}
+                        className="flex-1 py-1.5 rounded-xl text-xs font-bold"
+                        style={{ background: "#ede9fe", color: "#7c3aed" }}>Vendido</button>
+                    )}
+                    <button onClick={() => setConfirmDel(v.id)}
+                      className="px-3 py-1.5 rounded-xl text-xs font-bold"
+                      style={{ background: "#2e2e2e", color: "#888" }}>🗑</button>
+                  </div>
                 </div>
               </div>
             );
@@ -249,36 +438,36 @@ export default function InventoryPage() {
                 <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Identificacao</p>
                 <div className="grid grid-cols-2 gap-3">
                   {sel("Marca", "brand", BRANDS)}
-                  {f("Modelo", "model", "text", "Ex: Corolla")}
-                  {f("Ano", "year", "number", "2024")}
-                  {f("Placa", "plate", "text", "ABC1D23")}
-                  {f("Cor", "color", "text", "Branco")}
+                  {inp("Modelo", "model", "text", "Ex: Corolla")}
+                  {inp("Ano", "year", "number", "2024")}
+                  {inp("Placa", "plate", "text", "ABC1D23")}
+                  {inp("Cor", "color", "text", "Branco")}
                   {sel("Status", "status", ["disponivel","reservado","vendido"])}
                 </div>
               </div>
               <div>
                 <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Caracteristicas</p>
                 <div className="grid grid-cols-2 gap-3">
-                  {f("Quilometragem", "km", "number", "50000")}
+                  {inp("Quilometragem", "km", "number", "50000")}
                   {sel("Combustivel", "fuel", ["Flex","Gasolina","Diesel","Etanol","Hibrido","Eletrico"])}
                   {sel("Cambio", "transmission", ["Manual","Automatico","CVT","Semi-automatico"])}
                   {sel("Carroceria", "body_type", ["Sedan","Hatch","SUV","Pickup","Minivan","Coupe","Wagon","Conversivel"])}
-                  {f("Portas", "doors", "number", "4")}
-                  {f("Final de Placa", "end_plate", "text", "3")}
+                  {inp("Portas", "doors", "number", "4")}
+                  {inp("Final de Placa", "end_plate", "text", "3")}
                 </div>
               </div>
               <div>
                 <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Precos</p>
                 <div className="grid grid-cols-2 gap-3">
-                  {f("Preco de Venda (R$)", "price", "number", "85000")}
-                  {f("Preco FIPE (R$)", "price_fipe", "number", "90000")}
+                  {inp("Preco de Venda (R$)", "price", "number", "85000")}
+                  {inp("Preco FIPE (R$)", "price_fipe", "number", "90000")}
                 </div>
               </div>
               <div>
                 <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Documentacao</p>
                 <div className="grid grid-cols-2 gap-3">
-                  {f("RENAVAM", "renavam", "text", "00000000000")}
-                  {f("Chassi", "chassis", "text", "9BWZZZ377VT004251")}
+                  {inp("RENAVAM", "renavam", "text", "00000000000")}
+                  {inp("Chassi", "chassis", "text", "9BWZZZ377VT004251")}
                 </div>
                 <div className="grid grid-cols-2 gap-3 mt-3">
                   {([
@@ -312,7 +501,22 @@ export default function InventoryPage() {
                   className="w-full px-3 py-2 rounded-xl text-sm border focus:outline-none resize-none"
                   style={{ background: "#111", border: "1px solid #3a3a3a", color: "#fff" }} />
               </div>
+
+              {/* Upload de fotos */}
+              <div style={{ borderTop: "1px solid #2e2e2e", paddingTop: "20px" }}>
+                <PhotoUpload
+                  vehicleId={editing?.id ?? null}
+                  photos={formPhotos}
+                  onPhotosChange={setFormPhotos}
+                />
+                {!editing && (
+                  <p className="text-xs text-gray-600 mt-2">
+                    * As fotos serao enviadas apos cadastrar o veiculo.
+                  </p>
+                )}
+              </div>
             </div>
+
             <div className="flex gap-3 mt-6">
               <button onClick={() => setShowForm(false)}
                 className="flex-1 py-2.5 rounded-xl text-sm font-bold text-gray-400"
@@ -344,6 +548,28 @@ export default function InventoryPage() {
             </div>
           </div>
         </>
+      )}
+
+      {/* Lightbox */}
+      {lightbox && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center" style={{ background: "rgba(0,0,0,0.95)" }}
+          onClick={() => setLightbox(null)}>
+          <button className="absolute top-4 right-4 text-white text-2xl" onClick={() => setLightbox(null)}>✕</button>
+          <button className="absolute left-4 text-white text-3xl px-4"
+            onClick={e => { e.stopPropagation(); setLightbox(l => l ? { ...l, idx: (l.idx - 1 + l.urls.length) % l.urls.length } : null); }}>
+            ‹
+          </button>
+          <img src={lightbox.urls[lightbox.idx]} alt="" className="max-w-full max-h-full rounded-xl"
+            style={{ maxWidth: "90vw", maxHeight: "85vh", objectFit: "contain" }}
+            onClick={e => e.stopPropagation()} />
+          <button className="absolute right-4 text-white text-3xl px-4"
+            onClick={e => { e.stopPropagation(); setLightbox(l => l ? { ...l, idx: (l.idx + 1) % l.urls.length } : null); }}>
+            ›
+          </button>
+          <p className="absolute bottom-4 text-xs text-gray-400">
+            {lightbox.idx + 1} / {lightbox.urls.length}
+          </p>
+        </div>
       )}
     </main>
   );
