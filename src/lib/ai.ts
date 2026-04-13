@@ -121,9 +121,50 @@ async function replyViaAnthropic(userContent: string): Promise<string> {
   return block?.type === "text" ? block.text.trim() : "";
 }
 
-export async function getAIReply(message: string, lead: LeadContext): Promise<string> {
+export async function getAIReply(
+  message:          string,
+  lead:             LeadContext,
+  customPersonality?: string | null,
+  agentName?:        string | null,
+): Promise<string> {
   const userContent = await buildUserContent(message, lead);
-  const fallback    = "Olá! Sou o PAULO da 7Business Pro. Como posso ajudar você a encontrar o veículo ideal?";
+  const name        = agentName ?? "PAULO";
+  const fallback    = `Olá! Sou ${name} da 7Business Pro. Como posso ajudar você a encontrar o veículo ideal?`;
+
+  // Usa personalidade customizada se fornecida
+  if (customPersonality) {
+    const customSystem = customPersonality.includes(name)
+      ? customPersonality
+      : `Você é ${name}. ${customPersonality}`;
+    try {
+      if (process.env.GROQ_API_KEY) {
+        const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${process.env.GROQ_API_KEY}` },
+          body: JSON.stringify({
+            model: "llama-3.3-70b-versatile", max_tokens: 200,
+            messages: [{ role: "system", content: customSystem }, { role: "user", content: userContent }],
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json() as { choices: { message: { content: string } }[] };
+          return data.choices[0]?.message?.content?.trim() || fallback;
+        }
+      }
+      if (process.env.ANTHROPIC_API_KEY) {
+        const { default: Anthropic } = await import("@anthropic-ai/sdk");
+        const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+        const response = await client.messages.create({
+          model: "claude-opus-4-6", max_tokens: 200,
+          system: customSystem,
+          messages: [{ role: "user", content: userContent }],
+        });
+        const block = response.content.find((b) => b.type === "text");
+        return block?.type === "text" ? block.text.trim() || fallback : fallback;
+      }
+    } catch (e) { console.error("[AI] Erro personalidade customizada:", e); }
+    return fallback;
+  }
 
   try {
     if (process.env.GROQ_API_KEY)        return await replyViaGroq(userContent)      || fallback;
