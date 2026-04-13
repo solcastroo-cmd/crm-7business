@@ -31,6 +31,7 @@ export type Lead = {
   notes?: string | null;   // anotações livres, salvas via PATCH
   qualification?: "quente" | "morno" | "frio" | null; // qualificação IA
   tags?: string[] | null;  // tags personalizadas
+  ai_enabled?: boolean;    // true = Paulo ativo | false = vendedor humano assumiu
 };
 
 type Props = {
@@ -90,14 +91,59 @@ export function LeadModal({ lead, onClose, onUpdate }: Props) {
   const [loadingMsgs, setLoadingMsgs] = useState(false);
   const [tags, setTags]               = useState<string[]>(lead?.tags ?? []);
   const [tagInput, setTagInput]       = useState("");
+  const [aiEnabled, setAiEnabled]     = useState<boolean>(lead?.ai_enabled !== false);
+  const [togglingAi, setTogglingAi]   = useState(false);
+  const [replyText, setReplyText]     = useState("");
+  const [sendingReply, setSendingReply] = useState(false);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
   const saveTimer  = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Sincroniza anotações, tags e carrega mensagens quando troca de lead
+  // Sincroniza anotações, tags, ai_enabled e carrega mensagens quando troca de lead
   useEffect(() => {
     setNotes(lead?.notes ?? "");
     setTags(lead?.tags ?? []);
+    setAiEnabled(lead?.ai_enabled !== false);
   }, [lead?.id]);
+
+  /** Ativa / desativa Paulo (IA) para este lead */
+  async function toggleAI() {
+    if (!lead || togglingAi) return;
+    setTogglingAi(true);
+    const next = !aiEnabled;
+    const res = await fetch(`/api/leads/ai-toggle?leadId=${lead.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ai_enabled: next }),
+    });
+    if (res.ok) {
+      setAiEnabled(next);
+      onUpdate({ ...lead, ai_enabled: next });
+    }
+    setTogglingAi(false);
+  }
+
+  /** Vendedor envia mensagem manualmente pelo CRM → Paulo para automaticamente */
+  async function sendReply() {
+    if (!lead || !replyText.trim() || sendingReply) return;
+    setSendingReply(true);
+    const res = await fetch("/api/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ leadId: lead.id, text: replyText.trim() }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      // Adiciona mensagem ao chat local imediatamente
+      if (data.message) setMessages((prev) => [...prev, data.message]);
+      setReplyText("");
+      // Atualiza ai_enabled no estado pai (Paulo foi desativado)
+      setAiEnabled(false);
+      onUpdate({ ...lead, ai_enabled: false });
+      // Scroll ao fim
+      setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+    }
+    setSendingReply(false);
+  }
 
   async function saveTags(newTags: string[]) {
     if (!lead) return;
@@ -347,35 +393,65 @@ export function LeadModal({ lead, onClose, onUpdate }: Props) {
             )}
           </section>
 
-          {/* ── Seção: Histórico de Conversa WhatsApp ────────────── */}
+          {/* ── Seção: Conversa WhatsApp ─────────────────────────── */}
           <section>
+            {/* Header com toggle IA */}
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-[10px] font-semibold tracking-widest uppercase text-gray-500">
                 💬 Conversa WhatsApp
               </h3>
-              <button onClick={() => fetchMessages(lead.id)}
-                className="text-[10px] text-gray-600 hover:text-gray-400 transition-colors">
-                ↻ Atualizar
-              </button>
+              <div className="flex items-center gap-2">
+                <button onClick={() => fetchMessages(lead.id)}
+                  className="text-[10px] text-gray-600 hover:text-gray-400 transition-colors">
+                  ↻
+                </button>
+                {/* Toggle IA / Humano */}
+                <button
+                  onClick={toggleAI}
+                  disabled={togglingAi}
+                  title={aiEnabled ? "Paulo (IA) está respondendo. Clique para assumir." : "Você está no controle. Clique para reativar o Paulo."}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold transition-all disabled:opacity-50"
+                  style={{
+                    background: aiEnabled ? "rgba(34,197,94,0.15)" : "rgba(239,68,68,0.15)",
+                    color:      aiEnabled ? "#22c55e"              : "#f87171",
+                    border:     `1px solid ${aiEnabled ? "rgba(34,197,94,0.3)" : "rgba(239,68,68,0.3)"}`,
+                  }}
+                >
+                  <span>{aiEnabled ? "🤖" : "👤"}</span>
+                  <span>{aiEnabled ? "Paulo ativo" : "Humano"}</span>
+                </button>
+              </div>
             </div>
 
+            {/* Status bar */}
+            <div
+              className="rounded-lg px-3 py-1.5 mb-2 flex items-center gap-2"
+              style={{ background: aiEnabled ? "rgba(34,197,94,0.08)" : "rgba(239,68,68,0.08)", border: `1px solid ${aiEnabled ? "rgba(34,197,94,0.15)" : "rgba(239,68,68,0.15)"}` }}
+            >
+              <div
+                className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                style={{ background: aiEnabled ? "#22c55e" : "#f87171", boxShadow: aiEnabled ? "0 0 6px #22c55e" : "none" }}
+              />
+              <p className="text-[10px]" style={{ color: aiEnabled ? "#86efac" : "#fca5a5" }}>
+                {aiEnabled
+                  ? "Paulo está respondendo automaticamente. Escreva abaixo para assumir o atendimento."
+                  : "Você assumiu o atendimento. Paulo está pausado para este lead."}
+              </p>
+            </div>
+
+            {/* Histórico de mensagens */}
             <div
               className="rounded-xl p-3 space-y-2 overflow-y-auto"
-              style={{ background: "#111", border: "1px solid rgba(255,255,255,0.06)", maxHeight: "320px" }}
+              style={{ background: "#111", border: "1px solid rgba(255,255,255,0.06)", maxHeight: "280px" }}
             >
               {loadingMsgs ? (
-                <p className="text-xs text-gray-600 text-center py-6 animate-pulse">
-                  Carregando conversa...
-                </p>
+                <p className="text-xs text-gray-600 text-center py-6 animate-pulse">Carregando...</p>
               ) : messages.length === 0 ? (
-                <p className="text-xs text-gray-600 text-center py-6">
-                  Nenhuma conversa registrada ainda.
-                </p>
+                <p className="text-xs text-gray-600 text-center py-6">Nenhuma conversa ainda.</p>
               ) : (
                 <>
                   {messages.map((msg) => (
-                    <div key={msg.id}
-                      className={`flex ${msg.from_me ? "justify-end" : "justify-start"}`}>
+                    <div key={msg.id} className={`flex ${msg.from_me ? "justify-end" : "justify-start"}`}>
                       <div
                         className="max-w-[80%] rounded-xl px-3 py-2"
                         style={{
@@ -384,9 +460,7 @@ export function LeadModal({ lead, onClose, onUpdate }: Props) {
                           borderBottomLeftRadius:  msg.from_me ? undefined : "4px",
                         }}
                       >
-                        <p className="text-xs text-white leading-relaxed break-words">
-                          {msg.text}
-                        </p>
+                        <p className="text-xs text-white leading-relaxed break-words">{msg.text}</p>
                         <p className={`text-[10px] mt-1 ${msg.from_me ? "text-red-200" : "text-gray-500"}`}>
                           {new Date(msg.created_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
                           {" · "}
@@ -399,6 +473,34 @@ export function LeadModal({ lead, onClose, onUpdate }: Props) {
                 </>
               )}
             </div>
+
+            {/* Input de envio manual — vendedor responde pelo CRM */}
+            <div className="mt-2 flex gap-2">
+              <textarea
+                value={replyText}
+                onChange={(e) => setReplyText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendReply(); }
+                }}
+                placeholder="Responder como vendedor... (Enter para enviar)"
+                rows={2}
+                className="flex-1 rounded-xl px-3 py-2 text-xs text-gray-200 resize-none outline-none placeholder-gray-600"
+                style={{ background: "#1a1d27", border: "1px solid rgba(255,255,255,0.08)" }}
+                onFocus={(e) => (e.currentTarget.style.borderColor = "#e63946")}
+                onBlur={(e)  => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)")}
+              />
+              <button
+                onClick={sendReply}
+                disabled={sendingReply || !replyText.trim()}
+                className="px-3 rounded-xl text-xs font-bold text-white transition-opacity disabled:opacity-40 flex-shrink-0"
+                style={{ background: "#e63946" }}
+              >
+                {sendingReply ? "..." : "↑"}
+              </button>
+            </div>
+            <p className="text-[10px] text-gray-600 mt-1">
+              Ao enviar, Paulo é pausado automaticamente para este lead.
+            </p>
           </section>
 
           {/* ── Seção: Linha do Tempo ─────────────────────────────── */}

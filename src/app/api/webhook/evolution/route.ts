@@ -106,15 +106,26 @@ async function processEvolution(body: unknown) {
     // ── 3. Salva mensagem do cliente ──────────────────────────────────────
     await saveMessage(lead.id, text, false);
 
-    // ── 4. IA responde ────────────────────────────────────────────────────
-    const reply = await getAIReply(text, lead);
     const phoneNum = phone.replace("wa:", "");
+
+    // ── 4. ⚡ HANDOFF CHECK — Paulo só responde se ai_enabled = true ───────
+    // Se o vendedor humano já assumiu (ai_enabled = false), Paulo fica mudo.
+    // Tratamos ausência do campo (coluna ainda não criada) como true (seguro).
+    const aiEnabled = (lead as Record<string, unknown>).ai_enabled !== false;
+
+    if (!aiEnabled) {
+      console.log(`[Evolution] ${phone} (${name}) [${qualification}]: IA desativada — vendedor atende`);
+      return;
+    }
+
+    // ── 5. IA responde ────────────────────────────────────────────────────
+    const reply = await getAIReply(text, lead);
     await sendWhatsApp(phoneNum, reply);
 
-    // ── 5. Salva resposta da loja ─────────────────────────────────────────
+    // ── 6. Salva resposta da IA ───────────────────────────────────────────
     await saveMessage(lead.id, reply, true);
 
-    // ── 6. Notifica vendedor se Quente ────────────────────────────────────
+    // ── 7. Notifica vendedor se Quente ────────────────────────────────────
     if (qualification === "quente" && SELLER_NOTIFY_PHONE) {
       const alerta =
         `🔥 *LEAD QUENTE!*\n👤 ${lead.name ?? phoneNum}\n📱 ${phoneNum}\n` +
