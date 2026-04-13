@@ -66,8 +66,8 @@ export async function POST(req: NextRequest) {
   // Só processa mensagens de texto
   if (data.type && data.type !== "chat") return NextResponse.json({ ok: true, skipped: true });
 
-  // BUG-WA-02: normaliza telefone — "5585911110001@c.us" → "85911110001"
-  const rawPhone = (data.from ?? "").split("@")[0].replace(/[^0-9]/g, "");
+  // LEAD-03: normaliza telefone — strip "wa:", "@c.us", DDI 55
+  const rawPhone = (data.from ?? "").replace(/^wa:/, "").split("@")[0].replace(/[^0-9]/g, "");
   const phone = rawPhone.length === 13 && rawPhone.startsWith("55")
     ? rawPhone.slice(2)
     : rawPhone;
@@ -76,8 +76,15 @@ export async function POST(req: NextRequest) {
   const pushname = data.pushname ?? null;
   const message  = data.body ?? "";
 
-  // ── 1. Descobre a loja pelo instanceId ───────────────────────────────────────
+  // ── 1. Descobre a loja: instanceId → fallback query param ?storeId ───────────
+  // LEAD-01: configure a URL do webhook no UltraMsg como:
+  //   https://crm-7business-production.up.railway.app/api/webhook/ultramsg?storeId=SEU_UUID
+  const { searchParams } = new URL(req.url);
+  const storeIdParam = searchParams.get("storeId") ?? null;
+
   let store: StoreSettings | null = null;
+
+  // Tenta pelo instanceId primeiro
   if (instanceId) {
     const { data: u } = await supabaseAdmin
       .from("users")
@@ -86,6 +93,17 @@ export async function POST(req: NextRequest) {
       .maybeSingle<StoreSettings>();
     store = u ?? null;
   }
+
+  // Fallback: usa ?storeId da URL do webhook
+  if (!store && storeIdParam) {
+    const { data: u } = await supabaseAdmin
+      .from("users")
+      .select("id, ai_enabled, ai_name, ai_personality, ultramsg_instance, ultramsg_token")
+      .eq("id", storeIdParam)
+      .maybeSingle<StoreSettings>();
+    store = u ?? null;
+  }
+
   const storeId = store?.id ?? null;
 
   // ── 2. Extrai dados do lead a partir da mensagem ─────────────────────────────
