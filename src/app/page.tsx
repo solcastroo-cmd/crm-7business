@@ -568,9 +568,10 @@ export default function Home() {
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [showNewLead, setShowNewLead]   = useState(false);
 
-  // storeId fixo via env — mais confiável que auth.uid que pode divergir
-  const STORE_ID = process.env.NEXT_PUBLIC_STORE_ID ?? "";
-  const [userId, setUserId] = useState<string | null>(STORE_ID || null);
+  // storeId hardcoded — NEXT_PUBLIC_* só funciona se presente no build
+  // Usar UUID direto garante funcionamento independente de variável de ambiente
+  const STORE_ID = "abd51721-980b-454c-8e12-d29bd677b992";
+  const [userId, setUserId] = useState<string | null>(STORE_ID);
 
   // FEAT-05: busca + filtros
   const [searchTerm,          setSearchTerm]          = useState("");
@@ -582,15 +583,13 @@ export default function Home() {
   const draggingRef = useRef<Lead | null>(null);
   const refreshRef  = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // fetchLeads reutilizável — usa STORE_ID fixo, nunca auth.uid
+  // fetchLeads reutilizável — storeId sempre fixo
   const fetchLeads = useCallback(() => {
-    const storeId = STORE_ID || localStorage.getItem("crm_userId") || "";
-    const url = storeId ? `/api/leads?storeId=${storeId}` : "/api/leads";
-    fetch(url)
+    fetch(`/api/leads?storeId=${STORE_ID}`)
       .then((r) => { if (!r.ok) throw new Error(`Erro ${r.status}`); return r.json(); })
       .then((data) => { setLeads(Array.isArray(data) ? data : []); setLoading(false); setErro(null); })
       .catch((e) => { setErro(e.message); setLoading(false); });
-  }, [STORE_ID]);
+  }, []);
 
   // Carga inicial + auto-refresh a cada 30s (novos leads aparecem sem F5)
   useEffect(() => {

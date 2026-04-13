@@ -29,9 +29,12 @@ export async function GET(req: NextRequest) {
       .order("position", { ascending: true })
       .order("created_at", { ascending: true });
 
-    // BUG-02 fix: só retorna todos os leads se storeId for omitido (acesso interno/seed)
-    // No frontend, sempre passamos storeId do usuário autenticado
-    if (storeId) query = query.eq("store_id", storeId);
+    // Segurança: storeId é obrigatório — sem ele retorna 400
+    // Evita vazar leads de outras lojas caso o frontend envie request sem filtro
+    if (!storeId) {
+      return NextResponse.json({ error: "storeId é obrigatório" }, { status: 400 });
+    }
+    query = query.eq("store_id", storeId);
 
     const { data, error } = await query;
 
