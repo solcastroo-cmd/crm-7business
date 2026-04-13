@@ -26,6 +26,7 @@ type UltraMsgBody = {
   data?: {
     id?:       string;
     from?:     string;
+    to?:       string;   // número de destino quando fromMe=true
     body?:     string;
     type?:     string;
     fromMe?:   boolean;
@@ -188,12 +189,45 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const { event_type, data, instanceId } = body;
 
-  // Só mensagens recebidas de texto
+  // Só mensagens de texto (chat)
   if (event_type !== "message_received" && event_type !== "message") {
     return NextResponse.json({ ok: true, skipped: "event" });
   }
-  if (!data || data.fromMe || (data.type && data.type !== "chat")) {
-    return NextResponse.json({ ok: true, skipped: "fromMe/type" });
+  if (!data || (data.type && data.type !== "chat")) {
+    return NextResponse.json({ ok: true, skipped: "type" });
+  }
+
+  // ── ⚡ HANDOFF via WhatsApp físico ────────────────────────────────────────
+  // Quando o vendedor responde DIRETAMENTE pelo celular/WhatsApp Web,
+  // o UltraMsg dispara o webhook com fromMe=true e data.to = número do cliente.
+  // Nesse caso: desativa Paulo para aquele lead e salva a mensagem do vendedor.
+  if (data.fromMe) {
+    const clientPhone = normalizePhone(data.to ?? "");
+    const vendorMsg   = (data.body ?? "").trim();
+
+    if (clientPhone && vendorMsg) {
+      // Carrega settings para ter o storeId
+      const { searchParams } = new URL(req.url);
+      const store = await loadSettings(instanceId, searchParams.get("storeId"));
+      const storeId = store?.id ?? null;
+
+      // Busca lead pelo telefone do cliente
+      let q = supabaseAdmin.from("leads").select("id, ai_enabled").eq("phone", clientPhone);
+      if (storeId) q = q.eq("store_id", storeId);
+      const { data: lead } = await q.maybeSingle();
+
+      if (lead) {
+        // Salva mensagem do vendedor no histórico
+        await saveMessage(lead.id, vendorMsg, true, data.id);
+
+        // Desativa Paulo se ainda estava ativo
+        if (lead.ai_enabled !== false) {
+          await supabaseAdmin.from("leads").update({ ai_enabled: false }).eq("id", lead.id);
+          console.log(`[UltraMsg] 📵 Handoff WhatsApp físico → Lead ${lead.id} (${clientPhone}) — Paulo pausado`);
+        }
+      }
+    }
+    return NextResponse.json({ ok: true, handoff: "whatsapp_native" });
   }
 
   const phone   = normalizePhone(data.from ?? "");
