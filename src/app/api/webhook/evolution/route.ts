@@ -272,7 +272,7 @@ async function processEvolution(body: unknown) {
       await sendWhatsApp(notifyPhone, alerta);
     }
 
-    console.log(`[Evolution] ${phone} (${name}) [${qualification}] ai:${settings.ai_name}: "${text}" → "${reply}"`);
+    console.log(`[Evolution] ${phone} (${name}) [${qualification}] ai:${settings.ai_name}: "${text}" → "${cleanReply.slice(0, 60)}"`);
   } catch (e) {
     console.error("[Evolution] Erro:", e);
   }

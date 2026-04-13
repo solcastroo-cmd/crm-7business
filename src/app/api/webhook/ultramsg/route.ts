@@ -1,118 +1,209 @@
 /**
  * POST /api/webhook/ultramsg
- * Recebe mensagens do UltraMsg → cria/atualiza lead → responde via IA (se habilitado)
+ *
+ * Webhook UltraMsg — recebe mensagens WhatsApp e:
+ *  1. Cria/atualiza lead no Supabase
+ *  2. Salva mensagem (schema correto: text + from_me)
+ *  3. Checa ai_enabled no LEAD (handoff humano → Paulo para)
+ *  4. Paulo responde com memória de conversa (histórico completo)
+ *  5. Detecta [VEICULO:uuid] e envia fotos do estoque via UltraMsg
+ *  6. Deduplica eventos repetidos (mesmo msgId nos últimos 30s)
+ *
+ * ⚠️  SQL OBRIGATÓRIO no Supabase Dashboard antes de usar handoff:
+ *   ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS ai_enabled boolean NOT NULL DEFAULT true;
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
-import { getAIReply, qualifyLead, extractLeadData } from "@/lib/ai";
+import { getAIReply, qualifyLead, extractLeadData, parseVehicleTag } from "@/lib/ai";
 
 export const dynamic = "force-dynamic";
 
-type UltraMsgWebhook = {
+// ── Tipos ─────────────────────────────────────────────────────────────────────
+type UltraMsgBody = {
   event_type?: string;
-  instanceId?:  string;
+  instanceId?: string;
   data?: {
     id?:       string;
     from?:     string;
-    to?:       string;
     body?:     string;
     type?:     string;
     fromMe?:   boolean;
     pushname?: string;
-    timestamp?: number;
   };
 };
 
 type StoreSettings = {
-  id:               string;
-  ai_enabled:       boolean | null;
-  ai_name:          string | null;
-  ai_personality:   string | null;
+  id:                string;
+  ai_enabled:        boolean | null;
+  ai_name:           string | null;
+  ai_personality:    string | null;
   ultramsg_instance: string | null;
   ultramsg_token:    string | null;
+  notify_phone:      string | null;
 };
 
-/** Envia mensagem de volta via UltraMsg API */
-async function sendUltraMsg(
-  instance: string,
-  token:    string,
-  to:       string,
-  body:     string,
-): Promise<void> {
-  const phone = to.includes("@") ? to.split("@")[0] : to;
-  // UltraMsg espera número com DDI: se for 11 dígitos BR, adiciona 55
-  const dest = phone.length === 11 && !phone.startsWith("55") ? `55${phone}` : phone;
+// ── Cache de settings (5 min) ─────────────────────────────────────────────────
+let _settingsCache: StoreSettings | null = null;
+let _settingsCacheAt = 0;
+const SETTINGS_TTL = 5 * 60 * 1000;
 
-  await fetch(`https://api.ultramsg.com/${instance}/messages/chat`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ token, to: dest, body }),
-    signal: AbortSignal.timeout(10_000),
-  });
-}
-
-export async function POST(req: NextRequest) {
-  let body: UltraMsgWebhook;
-  try { body = await req.json(); } catch { return NextResponse.json({ ok: false }, { status: 400 }); }
-
-  const { event_type, data, instanceId } = body;
-
-  // Só processa mensagens recebidas (não enviadas)
-  if (event_type !== "message_received" && event_type !== "message") {
-    return NextResponse.json({ ok: true, skipped: true });
-  }
-  if (!data || data.fromMe) return NextResponse.json({ ok: true, skipped: true });
-  // Só processa mensagens de texto
-  if (data.type && data.type !== "chat") return NextResponse.json({ ok: true, skipped: true });
-
-  // LEAD-03: normaliza telefone — strip "wa:", "@c.us", DDI 55
-  const rawPhone = (data.from ?? "").replace(/^wa:/, "").split("@")[0].replace(/[^0-9]/g, "");
-  const phone = rawPhone.length === 13 && rawPhone.startsWith("55")
-    ? rawPhone.slice(2)
-    : rawPhone;
-  if (!phone) return NextResponse.json({ ok: true, skipped: true });
-
-  const pushname = data.pushname ?? null;
-  const message  = data.body ?? "";
-
-  // ── 1. Descobre a loja: instanceId → fallback query param ?storeId ───────────
-  // LEAD-01: configure a URL do webhook no UltraMsg como:
-  //   https://crm-7business-production.up.railway.app/api/webhook/ultramsg?storeId=SEU_UUID
-  const { searchParams } = new URL(req.url);
-  const storeIdParam = searchParams.get("storeId") ?? null;
+async function loadSettings(instanceId?: string | null, storeIdParam?: string | null): Promise<StoreSettings | null> {
+  const now = Date.now();
+  if (_settingsCache && now - _settingsCacheAt < SETTINGS_TTL) return _settingsCache;
 
   let store: StoreSettings | null = null;
 
-  // Tenta pelo instanceId primeiro
   if (instanceId) {
-    const { data: u } = await supabaseAdmin
+    const { data } = await supabaseAdmin
       .from("users")
-      .select("id, ai_enabled, ai_name, ai_personality, ultramsg_instance, ultramsg_token")
+      .select("id, ai_enabled, ai_name, ai_personality, ultramsg_instance, ultramsg_token, notify_phone")
       .eq("ultramsg_instance", instanceId)
       .maybeSingle<StoreSettings>();
-    store = u ?? null;
+    store = data ?? null;
   }
 
-  // Fallback: usa ?storeId da URL do webhook
   if (!store && storeIdParam) {
-    const { data: u } = await supabaseAdmin
+    const { data } = await supabaseAdmin
       .from("users")
-      .select("id, ai_enabled, ai_name, ai_personality, ultramsg_instance, ultramsg_token")
+      .select("id, ai_enabled, ai_name, ai_personality, ultramsg_instance, ultramsg_token, notify_phone")
       .eq("id", storeIdParam)
       .maybeSingle<StoreSettings>();
-    store = u ?? null;
+    store = data ?? null;
   }
 
+  if (store) {
+    _settingsCache    = store;
+    _settingsCacheAt  = now;
+  }
+  return store;
+}
+
+// ── Normaliza telefone ────────────────────────────────────────────────────────
+function normalizePhone(raw: string): string {
+  const digits = raw.replace(/^wa:/, "").split("@")[0].replace(/\D/g, "");
+  // Remove DDI 55 se vier com 13 dígitos (55 + 11 dígitos)
+  return digits.length === 13 && digits.startsWith("55") ? digits.slice(2) : digits;
+}
+
+// ── Envia texto via UltraMsg ──────────────────────────────────────────────────
+async function sendText(instance: string, token: string, to: string, body: string): Promise<void> {
+  const dest = to.replace(/\D/g, "");
+  const number = dest.length <= 11 ? `55${dest}` : dest;
+  await fetch(`https://api.ultramsg.com/${instance}/messages/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token, to: number, body }),
+    signal: AbortSignal.timeout(10_000),
+  }).catch((e) => console.error("[UltraMsg] Erro texto:", e.message));
+}
+
+// ── Envia imagem via UltraMsg ─────────────────────────────────────────────────
+async function sendImage(instance: string, token: string, to: string, imageUrl: string, caption = ""): Promise<void> {
+  const dest = to.replace(/\D/g, "");
+  const number = dest.length <= 11 ? `55${dest}` : dest;
+  await fetch(`https://api.ultramsg.com/${instance}/messages/image`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token, to: number, image: imageUrl, caption }),
+    signal: AbortSignal.timeout(15_000),
+  }).catch((e) => console.error("[UltraMsg] Erro imagem:", e.message));
+}
+
+// ── Busca e envia fotos do veículo ────────────────────────────────────────────
+async function sendVehiclePhotos(instance: string, token: string, to: string, vehicleId: string): Promise<void> {
+  try {
+    const { data: v } = await supabaseAdmin
+      .from("vehicles")
+      .select("brand, model, year, price, photos")
+      .eq("id", vehicleId)
+      .maybeSingle();
+
+    if (!v || !Array.isArray(v.photos) || v.photos.length === 0) return;
+
+    const photos  = v.photos.slice(0, 5);
+    const caption = `${v.brand} ${v.model} ${v.year ?? ""}${v.price ? ` — R$ ${Number(v.price).toLocaleString("pt-BR")}` : ""}`;
+
+    for (let i = 0; i < photos.length; i++) {
+      await sendImage(instance, token, to, photos[i], i === 0 ? caption : "");
+      if (i < photos.length - 1) await new Promise(r => setTimeout(r, 700));
+    }
+    console.log(`[UltraMsg] 📷 ${photos.length} foto(s) — ${caption}`);
+  } catch (e) {
+    console.error("[UltraMsg] Erro fotos:", e);
+  }
+}
+
+// ── Salva mensagem no banco (schema correto: text + from_me) ──────────────────
+async function saveMessage(leadId: string, text: string, fromMe: boolean, externalId?: string): Promise<void> {
+  const row: Record<string, unknown> = { lead_id: leadId, text, from_me: fromMe };
+  if (externalId) row.external_id = externalId;
+  await supabaseAdmin.from("messages").insert(row)
+    .then(({ error }) => { if (error) console.error("[UltraMsg] Erro salvar msg:", error.message); });
+}
+
+// ── Dedup: mesmo msgId nos últimos 30s ────────────────────────────────────────
+const _recentIds = new Map<string, number>();
+
+function isMemDup(id: string): boolean {
+  const now = Date.now();
+  for (const [k, ts] of _recentIds) { if (now - ts > 5 * 60_000) _recentIds.delete(k); }
+  if (_recentIds.has(id)) return true;
+  _recentIds.set(id, now);
+  return false;
+}
+
+async function isDbDup(leadId: string, text: string): Promise<boolean> {
+  const since = new Date(Date.now() - 30_000).toISOString();
+  const { count } = await supabaseAdmin
+    .from("messages")
+    .select("id", { count: "exact", head: true })
+    .eq("lead_id", leadId)
+    .eq("text", text)
+    .eq("from_me", false)
+    .gte("created_at", since);
+  return (count ?? 0) > 0;
+}
+
+// ── Handler principal ─────────────────────────────────────────────────────────
+export async function POST(req: NextRequest): Promise<NextResponse> {
+  let body: UltraMsgBody;
+  try { body = await req.json(); }
+  catch { return NextResponse.json({ ok: false }, { status: 400 }); }
+
+  const { event_type, data, instanceId } = body;
+
+  // Só mensagens recebidas de texto
+  if (event_type !== "message_received" && event_type !== "message") {
+    return NextResponse.json({ ok: true, skipped: "event" });
+  }
+  if (!data || data.fromMe || (data.type && data.type !== "chat")) {
+    return NextResponse.json({ ok: true, skipped: "fromMe/type" });
+  }
+
+  const phone   = normalizePhone(data.from ?? "");
+  const message = (data.body ?? "").trim();
+  const msgId   = data.id ?? "";
+
+  if (!phone || !message) return NextResponse.json({ ok: true, skipped: "empty" });
+
+  // Dedup nível 1 (memória)
+  if (msgId && isMemDup(msgId)) {
+    console.warn("[UltraMsg] Dup ignorada (mem):", msgId);
+    return NextResponse.json({ ok: true, skipped: "dup_mem" });
+  }
+
+  // ── 1. Carrega settings da loja ───────────────────────────────────────────
+  const { searchParams } = new URL(req.url);
+  const store = await loadSettings(instanceId, searchParams.get("storeId"));
   const storeId = store?.id ?? null;
 
-  // ── 2. Extrai dados do lead a partir da mensagem ─────────────────────────────
-  const extracted    = extractLeadData(message);
+  // ── 2. Extrai + qualifica ─────────────────────────────────────────────────
+  const extracted     = extractLeadData(message);
   const qualification = qualifyLead(message);
 
-  // ── 3. Busca lead existente ──────────────────────────────────────────────────
-  // BUG-WA-01: query = query.eq() — reassign obrigatório
-  let q = supabaseAdmin.from("leads").select("id, stage, name, budget, type, payment").eq("phone", phone);
+  // ── 3. Upsert lead ────────────────────────────────────────────────────────
+  let q = supabaseAdmin.from("leads").select("*").eq("phone", phone);
   if (storeId) q = q.eq("store_id", storeId);
   const { data: existing } = await q.maybeSingle();
 
@@ -120,89 +211,107 @@ export async function POST(req: NextRequest) {
 
   if (existing) {
     leadId = existing.id;
-
-    // Atualiza campos extraídos + qualificação
-    const upd: Record<string, unknown> = { qualification, updated_at: new Date().toISOString() };
-    if (!existing.name && pushname) upd.name = pushname;
+    const upd: Record<string, unknown> = { qualification };
+    if (!existing.name && data.pushname) upd.name = data.pushname;
     if (extracted.budget  && !existing.budget)  upd.budget  = extracted.budget;
     if (extracted.type    && !existing.type)     upd.type    = extracted.type;
     if (extracted.payment && !existing.payment)  upd.payment = extracted.payment;
-
-    await supabaseAdmin.from("leads").update(upd).eq("id", leadId);
-  } else {
-    // Cria novo lead
-    const leadData: Record<string, unknown> = {
-      phone,
-      name:          pushname ?? null,
-      source:        "whatsapp",
-      stage:         "Novo Lead",
-      qualification,
-      budget:        extracted.budget  ?? null,
-      type:          extracted.type    ?? null,
-      payment:       extracted.payment ?? null,
-      created_at:    new Date().toISOString(),
-      updated_at:    new Date().toISOString(),
-    };
-    if (storeId) leadData.store_id = storeId;
-
-    const { data: newLead } = await supabaseAdmin
-      .from("leads").insert(leadData).select("id").single();
-    leadId = newLead?.id ?? "";
-  }
-
-  // ── 4. Registra mensagem recebida ────────────────────────────────────────────
-  if (leadId) {
-    await supabaseAdmin.from("messages").insert({
-      lead_id:    leadId,
-      direction:  "in",
-      content:    message,
-      source:     "ultramsg",
-      created_at: new Date().toISOString(),
-    });
-  }
-
-  // ── 5. Resposta automática via IA ────────────────────────────────────────────
-  const aiEnabled = store?.ai_enabled === true;
-
-  if (aiEnabled && leadId && store?.ultramsg_instance && store?.ultramsg_token && message.trim()) {
-    try {
-      // Monta contexto do lead para a IA
-      const leadCtx = {
-        name:    existing?.name ?? pushname ?? null,
-        budget:  existing?.budget ?? extracted.budget ?? null,
-        type:    existing?.type   ?? extracted.type   ?? null,
-        payment: existing?.payment ?? extracted.payment ?? null,
-      };
-
-      const aiReply = await getAIReply(
-        message,
-        leadCtx,
-        store.ai_personality ?? null,
-        store.ai_name ?? "Paulo",
-      );
-
-      if (aiReply) {
-        // Envia resposta via UltraMsg
-        await sendUltraMsg(
-          store.ultramsg_instance,
-          store.ultramsg_token,
-          data.from ?? phone,
-          aiReply,
-        );
-
-        // Loga mensagem enviada
-        await supabaseAdmin.from("messages").insert({
-          lead_id:    leadId,
-          direction:  "out",
-          content:    aiReply,
-          source:     "ultramsg_ai",
-          created_at: new Date().toISOString(),
-        });
-      }
-    } catch (e) {
-      // IA nunca deve travar o webhook — apenas loga
-      console.error("[Webhook/UltraMsg] Erro na resposta IA:", e);
+    if (Object.keys(upd).length > 1) {
+      await supabaseAdmin.from("leads").update(upd).eq("id", leadId);
     }
+  } else {
+    const row: Record<string, unknown> = {
+      phone, name: data.pushname ?? null, source: "whatsapp",
+      stage: "Novo Lead", qualification,
+      budget: extracted.budget ?? null, type: extracted.type ?? null,
+      payment: extracted.payment ?? null,
+    };
+    if (storeId) row.store_id = storeId;
+    const { data: nl } = await supabaseAdmin.from("leads").insert(row).select("*").single();
+    leadId = nl?.id ?? "";
+    // Re-busca para ter o objeto completo
+    const { data: fresh } = await supabaseAdmin.from("leads").select("*").eq("id", leadId).maybeSingle();
+    if (fresh) Object.assign(existing ?? {}, fresh);
+  }
+
+  if (!leadId) return NextResponse.json({ ok: false, error: "leadId vazio" });
+
+  // Dedup nível 2 (banco 30s)
+  if (await isDbDup(leadId, message)) {
+    console.warn("[UltraMsg] Dup ignorada (DB):", msgId);
+    return NextResponse.json({ ok: true, skipped: "dup_db" });
+  }
+
+  // ── 4. Salva mensagem do cliente ──────────────────────────────────────────
+  await saveMessage(leadId, message, false, msgId);
+
+  // ── 5. Checa IA global (settings da loja) ─────────────────────────────────
+  if (store?.ai_enabled !== true) {
+    console.log("[UltraMsg] IA desativada globalmente");
+    return NextResponse.json({ ok: true, ai: "disabled_global" });
+  }
+
+  if (!store.ultramsg_instance || !store.ultramsg_token) {
+    console.warn("[UltraMsg] Credenciais UltraMsg ausentes na loja");
+    return NextResponse.json({ ok: true, ai: "no_credentials" });
+  }
+
+  // ── 6. ⚡ HANDOFF — checa ai_enabled NO LEAD ──────────────────────────────
+  // Se vendedor assumiu este lead, Paulo fica mudo.
+  // Trata coluna ausente (migration não rodada) como true (safe default).
+  const leadRecord = existing ?? {};
+  const leadAiEnabled = (leadRecord as Record<string, unknown>).ai_enabled !== false;
+
+  if (!leadAiEnabled) {
+    console.log(`[UltraMsg] Lead ${leadId} — vendedor assumiu, Paulo pausado`);
+    return NextResponse.json({ ok: true, ai: "disabled_lead" });
+  }
+
+  // ── 7. IA responde com memória de conversa ────────────────────────────────
+  try {
+    const leadCtx = {
+      id:      leadId,                                    // ← histórico de conversa
+      name:    (leadRecord as Record<string, unknown>).name as string ?? data.pushname ?? null,
+      budget:  (leadRecord as Record<string, unknown>).budget as string ?? extracted.budget ?? null,
+      type:    (leadRecord as Record<string, unknown>).type as string ?? extracted.type ?? null,
+      payment: (leadRecord as Record<string, unknown>).payment as string ?? extracted.payment ?? null,
+    };
+
+    const rawReply = await getAIReply(
+      message,
+      leadCtx,
+      store.ai_personality ?? null,
+      store.ai_name ?? "Paulo",
+    );
+
+    if (!rawReply) return NextResponse.json({ ok: true, ai: "no_reply" });
+
+    // ── 8. Processa tag [VEICULO:uuid] ────────────────────────────────────
+    const { message: cleanReply, vehicleId } = parseVehicleTag(rawReply);
+
+    // Envia texto
+    await sendText(store.ultramsg_instance, store.ultramsg_token, phone, cleanReply);
+
+    // Envia fotos se Paulo indicou veículo
+    if (vehicleId) {
+      await sendVehiclePhotos(store.ultramsg_instance, store.ultramsg_token, phone, vehicleId);
+    }
+
+    // ── 9. Salva resposta da IA ───────────────────────────────────────────
+    await saveMessage(leadId, cleanReply, true);
+
+    // ── 10. Notifica vendedor se lead Quente ──────────────────────────────
+    const notifyPhone = store.notify_phone ?? "";
+    if (qualification === "quente" && notifyPhone) {
+      const alerta =
+        `🔥 *LEAD QUENTE!*\n👤 ${data.pushname ?? phone}\n📱 ${phone}\n` +
+        `💬 "${message.slice(0, 100)}"\n\n⚡ Acesse o CRM agora!`;
+      await sendText(store.ultramsg_instance, store.ultramsg_token, notifyPhone, alerta);
+    }
+
+    console.log(`[UltraMsg] ${phone} [${qualification}]: "${message}" → "${cleanReply.slice(0, 60)}"`);
+  } catch (e) {
+    console.error("[UltraMsg] Erro IA:", e);
   }
 
   return NextResponse.json({ ok: true });

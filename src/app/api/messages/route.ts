@@ -3,7 +3,7 @@
  *
  * GET  ?leadId=xxx  → últimas 50 mensagens (ordem cronológica)
  * POST              → vendedor envia mensagem manualmente pelo CRM
- *                     → salva no banco + envia via WhatsApp + desativa IA (handoff)
+ *                     → salva no banco + envia via UltraMsg + desativa IA (handoff)
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -11,27 +11,47 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const dynamic = "force-dynamic";
 
-const UUID_REGEX      = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const EVOLUTION_URL   = process.env.EVOLUTION_API_URL  ?? "";
-const EVOLUTION_KEY   = process.env.EVOLUTION_API_KEY  ?? "";
-const EVOLUTION_INST  = process.env.EVOLUTION_INSTANCE ?? "PH_AUTOSCAR";
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const STORE_ID   = process.env.STORE_ID ?? "";
 
-/** Envia mensagem via Evolution API (WhatsApp) */
+// ── Carrega credenciais UltraMsg da loja ──────────────────────────────────────
+type UltraCredentials = { instance: string; token: string } | null;
+
+async function loadUltraCredentials(): Promise<UltraCredentials> {
+  if (!STORE_ID) return null;
+  const { data } = await supabaseAdmin
+    .from("users")
+    .select("ultramsg_instance, ultramsg_token")
+    .eq("id", STORE_ID)
+    .maybeSingle();
+  if (!data?.ultramsg_instance || !data?.ultramsg_token) return null;
+  return { instance: data.ultramsg_instance, token: data.ultramsg_token };
+}
+
+/** Envia mensagem via UltraMsg */
 async function sendWhatsApp(phone: string, text: string): Promise<boolean> {
-  if (!EVOLUTION_URL) return false;
-  // Remove prefixo wa: e não-numéricos
-  const number = phone.replace(/^wa:/, "").replace(/\D/g, "");
-  if (!number) return false;
+  const creds = await loadUltraCredentials();
+  if (!creds) {
+    console.warn("[Messages] UltraMsg sem credenciais — mensagem não enviada");
+    return false;
+  }
+
+  // Normaliza número: remove prefixo wa:, não-dígitos, adiciona DDI 55 se necessário
+  const digits = phone.replace(/^wa:/, "").replace(/\D/g, "");
+  if (!digits) return false;
+  const number = digits.length <= 11 ? `55${digits}` : digits;
+
   try {
-    const res = await fetch(`${EVOLUTION_URL}/message/sendText/${EVOLUTION_INST}`, {
+    const res = await fetch(`https://api.ultramsg.com/${creds.instance}/messages/chat`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "apikey": EVOLUTION_KEY },
-      body: JSON.stringify({ number, text }),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: creds.token, to: number, body: text }),
       signal: AbortSignal.timeout(10_000),
     });
+    if (!res.ok) console.error("[Messages] UltraMsg status:", res.status);
     return res.ok;
   } catch (e) {
-    console.error("[Messages] Erro WhatsApp:", e);
+    console.error("[Messages] Erro UltraMsg:", e);
     return false;
   }
 }
