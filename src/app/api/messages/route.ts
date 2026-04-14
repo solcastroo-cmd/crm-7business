@@ -3,7 +3,7 @@
  *
  * GET  ?leadId=xxx  → últimas 50 mensagens (ordem cronológica)
  * POST              → vendedor envia mensagem manualmente pelo CRM
- *                     → salva no banco + envia via UltraMsg + desativa IA (handoff)
+ *                     → salva no banco + envia via Z-API + desativa IA (handoff)
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -14,25 +14,25 @@ export const dynamic = "force-dynamic";
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const STORE_ID   = process.env.STORE_ID ?? "";
 
-// ── Carrega credenciais UltraMsg da loja ──────────────────────────────────────
-type UltraCredentials = { instance: string; token: string } | null;
+// ── Carrega credenciais Z-API da loja ─────────────────────────────────────────
+type ZApiCredentials = { instance: string; token: string; clientToken: string } | null;
 
-async function loadUltraCredentials(): Promise<UltraCredentials> {
+async function loadZApiCredentials(): Promise<ZApiCredentials> {
   if (!STORE_ID) return null;
   const { data } = await supabaseAdmin
     .from("users")
-    .select("ultramsg_instance, ultramsg_token")
+    .select("zapi_instance, zapi_token, zapi_client_token")
     .eq("id", STORE_ID)
     .maybeSingle();
-  if (!data?.ultramsg_instance || !data?.ultramsg_token) return null;
-  return { instance: data.ultramsg_instance, token: data.ultramsg_token };
+  if (!data?.zapi_instance || !data?.zapi_token || !data?.zapi_client_token) return null;
+  return { instance: data.zapi_instance, token: data.zapi_token, clientToken: data.zapi_client_token };
 }
 
-/** Envia mensagem via UltraMsg */
+/** Envia mensagem via Z-API */
 async function sendWhatsApp(phone: string, text: string): Promise<boolean> {
-  const creds = await loadUltraCredentials();
+  const creds = await loadZApiCredentials();
   if (!creds) {
-    console.warn("[Messages] UltraMsg sem credenciais — mensagem não enviada");
+    console.warn("[Messages] Z-API sem credenciais — mensagem não enviada");
     return false;
   }
 
@@ -42,16 +42,19 @@ async function sendWhatsApp(phone: string, text: string): Promise<boolean> {
   const number = digits.length <= 11 ? `55${digits}` : digits;
 
   try {
-    const res = await fetch(`https://api.ultramsg.com/${creds.instance}/messages/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token: creds.token, to: number, body: text }),
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (!res.ok) console.error("[Messages] UltraMsg status:", res.status);
+    const res = await fetch(
+      `https://api.z-api.io/instances/${creds.instance}/token/${creds.token}/send-text`,
+      {
+        method:  "POST",
+        headers: { "Content-Type": "application/json", "Client-Token": creds.clientToken },
+        body:    JSON.stringify({ phone: number, message: text }),
+        signal:  AbortSignal.timeout(10_000),
+      }
+    );
+    if (!res.ok) console.error("[Messages] Z-API status:", res.status);
     return res.ok;
   } catch (e) {
-    console.error("[Messages] Erro UltraMsg:", e);
+    console.error("[Messages] Erro Z-API:", e);
     return false;
   }
 }

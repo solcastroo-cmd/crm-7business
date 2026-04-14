@@ -46,19 +46,20 @@ function Err({ msg }: { msg: string | null }) {
   return <p className="text-xs text-red-400 bg-red-950 border border-red-800 rounded-xl px-3 py-2">{msg}</p>;
 }
 
-// ─── UltraMsg ─────────────────────────────────────────────────────────────────
-function UltraMsgCard({ userId }: { userId: string | null }) {
+// ─── Z-API ────────────────────────────────────────────────────────────────────
+function ZApiCard({ userId }: { userId: string | null }) {
   const [connected, setConnected] = useState(false);
   const [phone, setPhone] = useState<string | null>(null);
   const [instance, setInstance] = useState("");
   const [token, setToken] = useState("");
+  const [clientToken, setClientToken] = useState("");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async (uid: string) => {
     try {
-      const res = await fetch(`/api/integrations/ultramsg?userId=${uid}`);
+      const res = await fetch(`/api/integrations/zapi?userId=${uid}`);
       if (!res.ok) return;
       const d = await res.json();
       if (d.active) { setConnected(true); setPhone(d.phone ?? null); }
@@ -68,17 +69,26 @@ function UltraMsgCard({ userId }: { userId: string | null }) {
   useEffect(() => { if (userId) load(userId); }, [userId, load]);
 
   async function handleSave() {
-    if (!instance.trim() || !token.trim()) { setErr("Preencha Instance ID e Token."); return; }
+    if (!instance.trim() || !token.trim() || !clientToken.trim()) {
+      setErr("Preencha Instance ID, Token e Client-Token.");
+      return;
+    }
     if (!userId) return;
     setErr(null); setSaving(true);
     try {
-      const res = await fetch("/api/integrations/ultramsg", {
+      const res = await fetch("/api/integrations/zapi", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, instance: instance.trim(), token: token.trim() }),
+        body: JSON.stringify({
+          userId,
+          instance:    instance.trim(),
+          token:       token.trim(),
+          clientToken: clientToken.trim(),
+        }),
       });
       const d = await res.json();
       if (!res.ok) { setErr(d.error ?? "Erro ao conectar."); return; }
-      setConnected(true); setPhone(d.phone ?? null); setInstance(""); setToken("");
+      setConnected(true); setPhone(d.phone ?? null);
+      setInstance(""); setToken(""); setClientToken("");
     } catch { setErr("Erro de rede."); }
     finally { setSaving(false); }
   }
@@ -87,7 +97,7 @@ function UltraMsgCard({ userId }: { userId: string | null }) {
     if (!userId) return;
     setBusy(true);
     try {
-      await fetch(`/api/integrations/ultramsg?userId=${userId}`, { method: "DELETE" });
+      await fetch(`/api/integrations/zapi?userId=${userId}`, { method: "DELETE" });
       setConnected(false); setPhone(null);
     } catch { /* ignore */ }
     finally { setBusy(false); }
@@ -100,7 +110,7 @@ function UltraMsgCard({ userId }: { userId: string | null }) {
           <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl" style={{ background: "#14532d" }}>📱</div>
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-sm font-bold text-white">UltraMsg WhatsApp</h2>
+              <h2 className="text-sm font-bold text-white">Z-API WhatsApp</h2>
               <span className="text-xs px-2 py-0.5 rounded-full font-bold" style={{ background: "#14532d", color: "#4ade80" }}>RECOMENDADO</span>
             </div>
             <p className="text-xs text-gray-500">Receba leads via WhatsApp automaticamente</p>
@@ -114,26 +124,36 @@ function UltraMsgCard({ userId }: { userId: string | null }) {
           {phone && <p className="text-xs text-gray-400">Número: <span className="font-bold text-white">{phone}</span></p>}
           <div className="rounded-xl px-3 py-2 text-xs font-mono" style={{ background: "#111", border: "1px solid #2e2e2e" }}>
             <span className="text-gray-500 block mb-1 font-sans font-semibold">Webhook URL:</span>
-            <span className="text-green-400 break-all">{typeof window !== "undefined" ? `${window.location.origin}/api/webhook/ultramsg` : "/api/webhook/ultramsg"}</span>
+            <span className="text-green-400 break-all">{typeof window !== "undefined" ? `${window.location.origin}/api/webhook/zapi` : "/api/webhook/zapi"}</span>
           </div>
           <button onClick={handleDisconnect} disabled={busy}
             className="w-full py-2 rounded-xl text-xs font-bold text-white disabled:opacity-50"
             style={{ background: "#7f1d1d" }}>
-            {busy ? "Desconectando..." : "Desconectar UltraMsg"}
+            {busy ? "Desconectando..." : "Desconectar Z-API"}
           </button>
         </div>
       ) : (
         <div className="space-y-3">
-          <input value={instance} onChange={e => setInstance(e.target.value)} placeholder="Instance ID (ex: instance12345)"
+          <input value={instance} onChange={e => setInstance(e.target.value)} placeholder="Instance ID (ex: 3ABC12)"
             className={inp} style={inpStyle} />
-          <input value={token} onChange={e => setToken(e.target.value)} placeholder="Token UltraMsg"
+          <input value={token} onChange={e => setToken(e.target.value)} placeholder="Token da instância"
             className={inp} style={{ ...inpStyle, fontFamily: "monospace" }} />
-          <button onClick={handleSave} disabled={saving || !instance.trim() || !token.trim()}
+          <input value={clientToken} onChange={e => setClientToken(e.target.value)} placeholder="Client-Token (Security → Client-Token)"
+            className={inp} style={{ ...inpStyle, fontFamily: "monospace" }} />
+          <button
+            onClick={handleSave}
+            disabled={saving || !instance.trim() || !token.trim() || !clientToken.trim()}
             className="w-full py-2 rounded-xl text-sm font-bold text-white disabled:opacity-50"
             style={{ background: "#16a34a" }}>
-            {saving ? "Conectando..." : "Conectar UltraMsg"}
+            {saving ? "Conectando..." : "Conectar Z-API"}
           </button>
-          <p className="text-xs text-gray-500">Configure o webhook no painel UltraMsg: <code className="text-green-400">/api/webhook/ultramsg</code></p>
+          <div className="rounded-xl p-3 text-xs text-gray-500 space-y-1" style={{ background: "#111", border: "1px dashed #3a3a3a" }}>
+            <p className="font-semibold text-gray-300">Como obter as credenciais:</p>
+            <p>1. Acesse o painel Z-API e abra sua instância</p>
+            <p>2. <strong className="text-gray-300">Instance ID</strong> e <strong className="text-gray-300">Token</strong> estão na aba <code className="text-green-400">Credenciais</code></p>
+            <p>3. <strong className="text-gray-300">Client-Token</strong> está em <code className="text-green-400">Security → Client-Token</code></p>
+            <p>4. Configure o webhook da instância: <code className="text-green-400">/api/webhook/zapi</code></p>
+          </div>
         </div>
       )}
     </Card>
@@ -387,7 +407,7 @@ export default function IntegrationsPage() {
         </div>
 
         <div className="space-y-4">
-          <UltraMsgCard userId={userId} />
+          <ZApiCard userId={userId} />
           <InstagramCard userId={userId} />
           <WhatsAppMetaCard />
         </div>
@@ -396,7 +416,7 @@ export default function IntegrationsPage() {
           <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Webhook URLs</p>
           <div className="space-y-2">
             {[
-              { label: "UltraMsg WhatsApp", url: "/api/webhook/ultramsg" },
+              { label: "Z-API WhatsApp", url: "/api/webhook/zapi" },
               { label: "Instagram / Meta", url: "/api/webhook/meta" },
             ].map(({ label, url }) => (
               <div key={url} className="flex items-center justify-between">
