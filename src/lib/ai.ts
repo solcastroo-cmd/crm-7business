@@ -1,17 +1,20 @@
 /**
- * 🤖 ai.ts — Agente PAULO com memória de conversa (como ChatGPT)
+ * 🤖 ai.ts — Agente PAULO com memória completa de conversa (ChatGPT-style)
  *
  * Providers (em ordem de preferência):
- *  1. Groq  (GROQ_API_KEY)  → llama-3.3-70b-versatile — gratuito, rápido
- *  2. Anthropic (ANTHROPIC_API_KEY) → claude-haiku-3-5
- *  3. Fallback estático
+ *  1. Groq  (GROQ_API_KEY)  → llama-3.3-70b-versatile — gratuito, rápido (~300ms)
+ *  2. Anthropic (ANTHROPIC_API_KEY) → claude-haiku-4-5
+ *  3. Fallback estático (nunca deveria chegar aqui em produção)
  *
- * Memória: carrega o histórico completo da conversa da tabela messages
- * e envia como array [{role, content}] para o LLM — igual ao ChatGPT.
+ * Memória: carrega histórico completo da conversa (últimas 40 msgs)
+ * e envia como [{role, content}] para o LLM — igual ao ChatGPT.
+ *
+ * Estoque: injeta veículos disponíveis no system prompt com instrução
+ * de usar [VEICULO:uuid] para acionar envio automático de fotos.
  */
 
 export type LeadContext = {
-  id?:     string | null; // ← NOVO: usado para carregar histórico
+  id?:     string | null;
   name:    string | null;
   budget:  string | null;
   type:    string | null;
@@ -20,66 +23,67 @@ export type LeadContext = {
 
 export type Qualification = "quente" | "morno" | "frio";
 
-// Tipo de mensagem para o histórico de conversa
 type ChatMessage = { role: "user" | "assistant"; content: string };
 
-// ─── System prompt padrão (usado quando ai_personality não está configurado) ──
-const PAULO_SYSTEM = `Você é Paulo, o melhor vendedor de carros do mundo, atendendo pelo WhatsApp da PH Autoscar.
+// ─── System prompt padrão ────────────────────────────────────────────────────
+const PAULO_SYSTEM = `Você é Paulo, vendedor da PH Autoscar, atendendo pelo WhatsApp.
 
-IDENTIDADE:
-- Humano, simpático, rápido e objetivo
-- NUNCA diga que é IA, robô ou assistente virtual
-- Persuasivo sem parecer vendedor chato
-- Especialista em veículos, financiamento e consórcio
-- Tom WhatsApp brasileiro: frases curtas, linguagem simples, emojis moderados
-- Sempre termine com uma pergunta quando possível
-- Máximo 3-4 linhas por mensagem
+QUEM VOCÊ É:
+- Vendedor humano, simpático, consultivo e objetivo
+- NUNCA revele que é IA, robô ou assistente virtual
+- Especialista em carros, financiamento, consórcio e troca
+- Fala como brasileiro: frases curtas, diretas, com emojis moderados
+- Sempre termina com uma pergunta para manter o diálogo
+- Máximo 3-4 linhas por mensagem — nunca textos longos
 
-ABERTURA PADRÃO (use APENAS na primeira mensagem da conversa):
-"Olá 😊 aqui é o Paulo da phautoscar. Vi que você demonstrou interesse em um veículo. Me conta, é esse modelo mesmo que você procura ou está avaliando outras opções também?"
+PRIMEIRA MENSAGEM (use APENAS se for o início da conversa, sem histórico anterior):
+"Olá! 😊 Aqui é o Paulo da PH Autoscar. Vi que você demonstrou interesse em um veículo. Me conta — você está buscando para uso próprio ou é presentear alguém?"
 
-INTERPRETAÇÃO DO INTERESSE:
-- Cliente manda FOTO: identificar marca/modelo → "Que carrão 👀 você está procurando esse modelo mesmo?"
-- Cliente manda TEXTO com modelo: confirmar → "Perfeito! Você procura exatamente esse modelo?"
-- Cliente manda intenção geral (ex: carro até 50 mil): confirmar faixa
+FLUXO DE ATENDIMENTO (SPIN Selling — siga esta ordem):
+1. CONFIRMAR INTERESSE: "É esse modelo mesmo que você procura ou está avaliando opções?"
+2. USO: "Seria para uso do dia a dia, trabalho ou família?"
+3. FORMA DE PAGAMENTO: "Pretende financiar, pagar à vista ou tem carta de consórcio?"
+4. ENTRADA: "Tem algum valor para dar de entrada?"
+5. APRESENTAR VEÍCULO DO ESTOQUE que combine com o perfil
+6. FECHAR: "Quer agendar uma visita ou prefere resolver tudo online?"
 
-SPIN SELLING — perguntas em sequência após confirmar interesse:
-1. USO: "O carro seria mais para uso do dia a dia, trabalho ou família?"
-2. FORMA: "Você pretende financiar, pagar à vista ou tem carta de consórcio?"
-3. ENTRADA: "Pretende dar entrada ou financiar 100%?"
-4. PRAZO: "Prefere parcelas mais baixas ou prazo menor?"
+QUANDO CLIENTE PEDE FOTOS OU QUER VER O CARRO:
+- Apresente o veículo no formato abaixo E adicione a tag [VEICULO:ID] na linha final
+- Formato de apresentação:
+  "Perfeito! Tenho uma opção que combina muito com o que você procura 👇
+  🚗 [MARCA MODELO ANO]
+  💰 R$ [VALOR]
+  ⛽ [COMBUSTÍVEL] | [CÂMBIO]
+  📍 PH Autoscar — Fortaleza CE
+  Vou te mandar as fotos agora 👇"
+  [VEICULO:ID_DO_VEICULO]
 
 FINANCIAMENTO:
-"Conseguimos simular rapidinho com os bancos 😊 Pode ser pelo CPF ou pela sua CNH. Qual prefere enviar?"
-Após doc: "Perfeito 🙌 vou rodar a simulação nos bancos e já te trago as melhores taxas."
-A loja trabalha com TODOS os bancos.
+"Conseguimos simular rapidinho com os bancos parceiros 😊
+Trabalhamos com todos os bancos — BV, Santander, Itaú, Bradesco e mais.
+Me passa seu CPF ou CNH para rodar a simulação?"
+Após receber: "Perfeito! Vou checar as melhores condições e já te mando as opções 🙌"
 
 CONSÓRCIO:
-"Perfeito! Trabalhamos com carta de consórcio sim 😊 Você já tem a carta contemplada?"
-Se SIM: "Ótimo! A carta funciona como pagamento à vista, facilita muito a aprovação."
+"Trabalhamos com consórcio sim! Você já tem carta contemplada?"
+- SIM: "Ótimo! Carta contemplada funciona como pagamento à vista — facilita muito!"
+- NÃO: "Posso te indicar um consultor de consórcio se preferir essa modalidade 😊"
 
-APRESENTAÇÃO DE VEÍCULO (formato obrigatório):
-"Tenho uma opção perfeita para você 👇
-🚗 [MARCA MODELO]
-📅 Ano: [ano]
-💰 Valor: R$ [valor]
-⛽ Combustível: [combustível]
-📍 Loja: PH Autoscar
-Vou te enviar as fotos agora 👇"
-
-FECHAMENTO:
-"Esse carro combina muito com o que você procura 😊 Quer agendar uma visita ou prefere finalizar tudo online?"
-"Se quiser, já deixo pré-aprovado para você hoje."
+TROCA:
+"Claro! Trabalhamos com troca sim. Qual é o seu carro atual? Marca, modelo e ano?"
+Após receber: "Perfeito! Vou verificar a avaliação e já volto com uma proposta."
 
 REGRAS ABSOLUTAS:
-- NUNCA diga "sou IA", "sou robô", "sou assistente virtual"
-- NUNCA use textos longos
-- NUNCA pressione agressivamente
+- NUNCA diga "sou IA", "sou robô", "sou assistente virtual", "como IA"
+- NUNCA escreva parágrafos longos — máximo 4 linhas
+- NUNCA pressione o cliente de forma agressiva
 - SEMPRE soar 100% humano e consultivo
-- SEMPRE conduzir para: CPF/CNH → simulação → visita → venda
-- Responda SEMPRE em português do Brasil`;
+- SEMPRE conduzir para: interesse → dados → simulação/visita → venda
+- Responda SEMPRE em português do Brasil
+- Se cliente mandar áudio, diga: "Recebi seu áudio! Aqui pelo WhatsApp prefiro responder por texto para ficar tudo registrado 😊 Me conta o que precisa?"
+- Se cliente mandar imagem de carro, diga: "Que modelo bacana! 👀 É exatamente esse que você procura?"`;
 
-// ─── Carrega histórico de conversa do banco ───────────────────────────────────
+// ─── Carrega histórico de conversa ───────────────────────────────────────────
 async function loadHistory(leadId: string): Promise<ChatMessage[]> {
   try {
     const { supabaseAdmin } = await import("@/lib/supabaseAdmin");
@@ -88,47 +92,22 @@ async function loadHistory(leadId: string): Promise<ChatMessage[]> {
       .select("text, from_me, created_at")
       .eq("lead_id", leadId)
       .order("created_at", { ascending: true })
-      .limit(30); // últimas 30 mensagens = contexto suficiente sem estourar tokens
+      .limit(40); // 40 mensagens = memória robusta sem estourar tokens
 
     if (!data || data.length === 0) return [];
 
-    return data.map((m) => ({
-      role:    m.from_me ? "assistant" : "user",
-      content: m.text ?? "",
-    }));
+    return data
+      .filter(m => (m.text ?? "").trim() !== "")
+      .map((m): ChatMessage => ({
+        role:    m.from_me ? "assistant" : "user",
+        content: m.text ?? "",
+      }));
   } catch {
     return [];
   }
 }
 
-// ─── Monta system prompt com contexto do lead + estoque ─────────────────────
-async function buildSystemPrompt(
-  baseSystem: string,
-  lead: LeadContext,
-): Promise<string> {
-  // Contexto do lead (nome, orçamento, tipo, pagamento)
-  const leadCtx = [
-    lead.name    ? `Nome do cliente: ${lead.name}` : null,
-    lead.budget  ? `Orçamento informado: R$${Number(lead.budget).toLocaleString("pt-BR")}` : null,
-    lead.type    ? `Tipo de veículo preferido: ${lead.type}` : null,
-    lead.payment ? `Forma de pagamento: ${lead.payment}` : null,
-  ].filter(Boolean);
-
-  // Estoque disponível
-  const inventory = await getInventoryContext();
-
-  let system = baseSystem;
-  if (leadCtx.length > 0) {
-    system += `\n\n--- DADOS DO CLIENTE (use para personalizar a conversa) ---\n${leadCtx.join("\n")}`;
-  }
-  if (inventory) {
-    system += inventory;
-  }
-
-  return system;
-}
-
-// ─── Estoque disponível (com IDs para envio de fotos) ────────────────────────
+// ─── Estoque disponível com IDs para envio de fotos ──────────────────────────
 export async function getInventoryContext(): Promise<string> {
   try {
     const { supabaseAdmin } = await import("@/lib/supabaseAdmin");
@@ -137,33 +116,31 @@ export async function getInventoryContext(): Promise<string> {
       .select("id,brand,model,year,plate,price,color,km,fuel,transmission,description,status,photos")
       .eq("status", "disponivel")
       .order("created_at", { ascending: false })
-      .limit(20);
+      .limit(25);
 
-    if (!data || data.length === 0) return "";
+    if (!data || data.length === 0) return "\n\n--- ESTOQUE ---\nNenhum veículo disponível no momento.";
 
     const lines = data.map((v) => {
       const hasPhotos = Array.isArray(v.photos) && v.photos.length > 0;
       const parts = [
         `${v.brand} ${v.model}`,
-        v.year         ? `Ano ${v.year}`                                 : null,
-        v.color        ? v.color                                         : null,
-        v.km           ? `${Number(v.km).toLocaleString("pt-BR")} km`   : null,
-        v.fuel         ? v.fuel                                          : null,
-        v.transmission ? v.transmission                                  : null,
-        v.price        ? `R$ ${Number(v.price).toLocaleString("pt-BR")}`: null,
-        v.description  ? `(${v.description})`                           : null,
-        hasPhotos      ? `📷 ${v.photos.length} foto(s) disponível`     : null,
+        v.year         ? `${v.year}`                                        : null,
+        v.color        ? v.color                                             : null,
+        v.km           ? `${Number(v.km).toLocaleString("pt-BR")}km`        : null,
+        v.fuel         ? v.fuel                                              : null,
+        v.transmission ? v.transmission                                      : null,
+        v.price        ? `R$${Number(v.price).toLocaleString("pt-BR")}`     : null,
+        v.description  ? `(${v.description})`                               : null,
+        hasPhotos      ? `[${v.photos.length} fotos]`                       : "[sem fotos]",
       ].filter(Boolean);
-      // ID do veículo entre colchetes — usado pelo Paulo para acionar envio de fotos
-      return `- [ID:${v.id}] ${parts.join(" | ")}`;
+      return `• ID:${v.id} | ${parts.join(" | ")}`;
     }).join("\n");
 
     return (
-      `\n\n--- ESTOQUE DISPONÍVEL NA LOJA ---\n` +
-      `Quando apresentar um veículo específico, adicione EXATAMENTE ao final da mensagem (linha separada):\n` +
-      `[VEICULO:ID_DO_VEICULO]\n` +
-      `Substitua ID_DO_VEICULO pelo ID real do veículo listado abaixo. ` +
-      `O sistema enviará as fotos automaticamente via WhatsApp.\n\n` +
+      `\n\n--- ESTOQUE DISPONÍVEL (${data.length} veículos) ---\n` +
+      `INSTRUÇÃO IMPORTANTE: Quando apresentar um veículo específico, inclua OBRIGATORIAMENTE\n` +
+      `na ÚLTIMA linha da mensagem exatamente: [VEICULO:ID_DO_VEICULO]\n` +
+      `Exemplo: [VEICULO:a1b2c3d4-e5f6-...] — isso envia as fotos automaticamente.\n\n` +
       lines
     );
   } catch {
@@ -171,7 +148,7 @@ export async function getInventoryContext(): Promise<string> {
   }
 }
 
-// ─── Extrai tag de veículo e retorna texto limpo + vehicleId ─────────────────
+// ─── Extrai tag de veículo e retorna texto limpo ──────────────────────────────
 export function parseVehicleTag(reply: string): { message: string; vehicleId: string | null } {
   const match = reply.match(/\[VEICULO:([a-f0-9-]{36})\]/i);
   if (!match) return { message: reply.trim(), vehicleId: null };
@@ -180,17 +157,30 @@ export function parseVehicleTag(reply: string): { message: string; vehicleId: st
   return { message, vehicleId };
 }
 
-// ─── Chama Groq com histórico completo ───────────────────────────────────────
+// ─── Monta system prompt completo ────────────────────────────────────────────
+async function buildSystemPrompt(baseSystem: string, lead: LeadContext): Promise<string> {
+  const leadCtx: string[] = [];
+  if (lead.name)    leadCtx.push(`Nome do cliente: ${lead.name}`);
+  if (lead.budget)  leadCtx.push(`Orçamento: R$${Number(lead.budget).toLocaleString("pt-BR")}`);
+  if (lead.type)    leadCtx.push(`Tipo de veículo desejado: ${lead.type}`);
+  if (lead.payment) leadCtx.push(`Forma de pagamento: ${lead.payment}`);
+
+  const inventory = await getInventoryContext();
+
+  let system = baseSystem;
+  if (leadCtx.length > 0) {
+    system += `\n\n--- PERFIL DO CLIENTE (use para personalizar) ---\n${leadCtx.join("\n")}`;
+  }
+  system += inventory;
+  return system;
+}
+
+// ─── Groq ─────────────────────────────────────────────────────────────────────
 async function replyViaGroq(
   systemPrompt: string,
   history: ChatMessage[],
   currentMessage: string,
 ): Promise<string> {
-  const messages = [
-    ...history,
-    { role: "user" as const, content: currentMessage },
-  ];
-
   const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -199,21 +189,26 @@ async function replyViaGroq(
     },
     body: JSON.stringify({
       model:       "llama-3.3-70b-versatile",
-      max_tokens:  500,
-      temperature: 0.7,
+      max_tokens:  600,
+      temperature: 0.65,
       messages: [
         { role: "system", content: systemPrompt },
-        ...messages,
+        ...history,
+        { role: "user", content: currentMessage },
       ],
     }),
+    signal: AbortSignal.timeout(15_000),
   });
 
-  if (!res.ok) throw new Error(`Groq ${res.status}: ${await res.text()}`);
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Groq ${res.status}: ${err}`);
+  }
   const data = await res.json() as { choices: { message: { content: string } }[] };
   return data.choices[0]?.message?.content?.trim() ?? "";
 }
 
-// ─── Chama Anthropic (Claude) com histórico completo ─────────────────────────
+// ─── Anthropic ───────────────────────────────────────────────────────────────
 async function replyViaAnthropic(
   systemPrompt: string,
   history: ChatMessage[],
@@ -222,46 +217,48 @@ async function replyViaAnthropic(
   const { default: Anthropic } = await import("@anthropic-ai/sdk");
   const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-  const messages = [
-    ...history,
-    { role: "user" as const, content: currentMessage },
-  ];
-
   const response = await client.messages.create({
-    model:       "claude-haiku-4-5",
-    max_tokens:  500,
-    system:      systemPrompt,
-    messages,
+    model:      "claude-haiku-4-5",
+    max_tokens: 600,
+    system:     systemPrompt,
+    messages:   [...history, { role: "user", content: currentMessage }],
   });
 
   const block = response.content.find((b) => b.type === "text");
   return block?.type === "text" ? block.text.trim() : "";
 }
 
-// ─── Função principal: responde com memória de conversa ──────────────────────
+// ─── Função principal ─────────────────────────────────────────────────────────
 export async function getAIReply(
-  message:           string,
-  lead:              LeadContext,
+  message:            string,
+  lead:               LeadContext,
   customPersonality?: string | null,
   agentName?:         string | null,
 ): Promise<string> {
   const name     = agentName ?? "Paulo";
-  const fallback = `Olá! Sou o ${name} da PH Autoscar. Como posso ajudar você a encontrar o veículo ideal? 😊`;
+  const fallback = `Olá! 😊 Aqui é o ${name} da PH Autoscar. Como posso ajudar você a encontrar o veículo ideal?`;
 
-  // Escolhe o system prompt: personalidade customizada (Settings) ou padrão
-  const baseSystem = customPersonality?.trim()
-    ? (customPersonality.toLowerCase().includes("paulo") || customPersonality.toLowerCase().includes("você é")
-        ? customPersonality
-        : `Você é ${name}, vendedor da PH Autoscar.\n\n${customPersonality}`)
-    : PAULO_SYSTEM;
+  // Sistema: usa personalidade customizada do Settings ou o padrão
+  let baseSystem: string;
+  if (customPersonality?.trim()) {
+    const lc = customPersonality.toLowerCase();
+    baseSystem = (lc.includes("você é") || lc.includes("voce e") || lc.includes("paulo"))
+      ? customPersonality
+      : `Você é ${name}, vendedor da PH Autoscar.\n\n${customPersonality}`;
+  } else {
+    baseSystem = PAULO_SYSTEM;
+  }
 
-  // Monta system prompt com contexto do lead + estoque
   const systemPrompt = await buildSystemPrompt(baseSystem, lead);
+  const history      = lead.id ? await loadHistory(lead.id) : [];
 
-  // Carrega histórico de conversa (memória como ChatGPT)
-  const history = lead.id ? await loadHistory(lead.id) : [];
+  const provider = process.env.GROQ_API_KEY ? "groq" : process.env.ANTHROPIC_API_KEY ? "anthropic" : "none";
+  console.log(`[AI] Lead:${lead.id ?? "?"} | histórico:${history.length}msgs | provider:${provider}`);
 
-  console.log(`[AI] Lead ${lead.id ?? "?"} | histórico: ${history.length} msgs | modelo: ${process.env.GROQ_API_KEY ? "groq" : "anthropic"}`);
+  if (provider === "none") {
+    console.error("[AI] ERRO CRÍTICO: Nenhuma API key configurada (GROQ_API_KEY ou ANTHROPIC_API_KEY)");
+    return fallback;
+  }
 
   try {
     if (process.env.GROQ_API_KEY) {
@@ -274,6 +271,15 @@ export async function getAIReply(
     }
   } catch (e) {
     console.error("[AI] Erro ao gerar resposta:", e);
+    // Tenta o próximo provider se o primeiro falhou
+    try {
+      if (process.env.ANTHROPIC_API_KEY) {
+        const reply = await replyViaAnthropic(systemPrompt, history, message);
+        if (reply) return reply;
+      }
+    } catch (e2) {
+      console.error("[AI] Fallback também falhou:", e2);
+    }
   }
 
   return fallback;
@@ -288,32 +294,34 @@ export function qualifyLead(message: string): Qualification {
     "vou levar", "quero esse", "reserva pra mim", "pode reservar",
     "quanto custa", "qual o preço", "qual o valor", "qual o menor preço",
     "tá bom o preço", "faz negócio", "desconto", "aceita troca",
-    "me passa o pix", "valor à vista",
+    "me passa o pix", "valor à vista", "valor a vista",
     "tem parcela", "tem financiamento", "posso parcelar", "quero financiar",
     "quero simular", "faz simulação", "manda simulação", "aprovação",
     "meu cpf", "minha cnh", "vou mandar o cpf", "vou mandar a cnh",
     "posso ir buscar", "quando posso ver", "quero agendar", "pode me ligar",
-    "vou visitar", "posso ir lá", "quando abre", "endereço da loja",
+    "vou visitar", "posso ir lá", "posso ir la", "quando abre", "endereço da loja",
+    "qual endereço", "como chego",
   ];
 
   const sinaisMorno = [
     "gostei", "interessante", "me fala mais", "tem outro", "como funciona",
-    "me envia foto", "manda foto", "tem foto",
+    "me envia foto", "manda foto", "tem foto", "quero ver foto",
     "tem km", "qual ano", "que cor", "qual motor", "quantas portas",
     "tem ar condicionado", "manual ou automático", "tem revisão",
     "qual a procedência", "tem garantia", "tem ipva", "único dono",
     "tem manual", "chave reserva", "consume muito",
-    "estou vendo", "estou pesquisando", "comparando", "avaliando outras",
+    "estou vendo", "estou pesquisando", "comparando", "avaliando",
+    "qual modelo", "qual carro", "me indica",
   ];
 
   if (sinaisQuente.some((kw) => m.includes(kw))) return "quente";
-  if (sinaisMorno.some((kw) => m.includes(kw))) return "morno";
+  if (sinaisMorno.some((kw) => m.includes(kw)))  return "morno";
   return "frio";
 }
 
 // ─── parseBudget ─────────────────────────────────────────────────────────────
 function parseBudget(raw: string): string {
-  let n = raw.replace(/r\$\s*/i, "").replace(/\./g, "").replace(",", ".");
+  const n = raw.replace(/r\$\s*/i, "").replace(/\./g, "").replace(",", ".");
   const milMatch = n.match(/^(\d+[\d.]*)\s*mil/i);
   if (milMatch) return String(Math.round(parseFloat(milMatch[1]) * 1000));
   const kMatch = n.match(/^(\d+[\d.]*)\s*k/i);
@@ -342,15 +350,17 @@ export function extractLeadData(message: string): Partial<LeadContext> {
     }
   }
 
-  if (m.includes("hatch"))  updates.type = "Hatch";
-  if (m.includes("sedan"))  updates.type = "Sedan";
-  if (m.includes("suv"))    updates.type = "SUV";
-  if (m.includes("pickup")) updates.type = "Pickup";
+  if (m.includes("hatch"))   updates.type = "Hatch";
+  if (m.includes("sedan"))   updates.type = "Sedan";
+  if (m.includes("suv"))     updates.type = "SUV";
+  if (m.includes("pickup"))  updates.type = "Pickup";
+  if (m.includes("caminho")) updates.type = "Caminhonete";
 
   if (m.includes("financ"))                            updates.payment = "Financiado";
-  if (m.includes("à vista") || m.includes("avista"))  updates.payment = "À Vista";
+  if (m.includes("à vista") || m.includes("avista") || m.includes("a vista")) updates.payment = "À Vista";
+  if (m.includes("consórcio") || m.includes("consorcio")) updates.payment = "Consórcio";
 
-  const nameMatch = m.match(/(?:meu nome é|me chamo|sou o|sou a)\s+([a-záéíóúãõ]+)/i);
+  const nameMatch = message.match(/(?:meu nome é|me chamo|sou o|sou a)\s+([A-ZÀ-Úa-zà-ú]+)/i);
   if (nameMatch) updates.name = nameMatch[1];
 
   return updates;
