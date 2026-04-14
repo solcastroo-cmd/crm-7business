@@ -181,6 +181,15 @@ async function isDbDup(leadId: string, text: string): Promise<boolean> {
   return (count ?? 0) > 0;
 }
 
+// Dedup por external_id no banco (serverless-safe: funciona entre instâncias)
+async function isExternalIdDup(externalId: string): Promise<boolean> {
+  const { count } = await supabaseAdmin
+    .from("messages")
+    .select("id", { count: "exact", head: true })
+    .eq("external_id", externalId);
+  return (count ?? 0) > 0;
+}
+
 // ── Handler principal ─────────────────────────────────────────────────────────
 export async function POST(req: NextRequest): Promise<NextResponse> {
   let body: UltraMsgBody;
@@ -268,10 +277,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   if (!phone || !message) return NextResponse.json({ ok: true, skipped: "empty" });
 
-  // Dedup nível 1 (memória)
+  // Dedup nível 1 (memória — rápido, mesmo processo)
   if (msgId && isMemDup(msgId)) {
     console.warn("[UltraMsg] Dup ignorada (mem):", msgId);
     return NextResponse.json({ ok: true, skipped: "dup_mem" });
+  }
+
+  // Dedup nível 1b (banco por external_id — serverless-safe, entre instâncias)
+  if (msgId && await isExternalIdDup(msgId)) {
+    console.warn("[UltraMsg] Dup ignorada (external_id):", msgId);
+    return NextResponse.json({ ok: true, skipped: "dup_ext" });
   }
 
   // ── 1. Carrega settings da loja ───────────────────────────────────────────
