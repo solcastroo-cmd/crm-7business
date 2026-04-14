@@ -189,8 +189,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const { event_type, data, instanceId } = body;
 
-  // Só mensagens de texto (chat)
-  if (event_type !== "message_received" && event_type !== "message") {
+  // Aceita: message_received (cliente), message_create (vendedor via WhatsApp físico)
+  const VALID_EVENTS = ["message_received", "message", "message_create"];
+  if (!VALID_EVENTS.includes(event_type ?? "")) {
     return NextResponse.json({ ok: true, skipped: "event" });
   }
   if (!data || (data.type && data.type !== "chat")) {
@@ -198,9 +199,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   // ── ⚡ HANDOFF via WhatsApp físico ────────────────────────────────────────
-  // Quando o vendedor responde DIRETAMENTE pelo celular/WhatsApp Web,
-  // o UltraMsg dispara o webhook com fromMe=true e data.to = número do cliente.
-  // Nesse caso: desativa Paulo para aquele lead e salva a mensagem do vendedor.
+  // message_create dispara quando o VENDEDOR envia pelo celular/WhatsApp Web.
+  // fromMe=true também pode vir em message_received (ex: mensagens enviadas via API).
+  // Em ambos os casos: desativa Paulo e salva a mensagem no histórico.
   if (data.fromMe) {
     const clientPhone = normalizePhone(data.to ?? "");
     const vendorMsg   = (data.body ?? "").trim();
