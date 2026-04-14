@@ -235,7 +235,9 @@ async function processMessage(body: unknown) {
       const extracted = extractLeadData(text);
       waDebug("extractLeadData()", extracted);
 
-      const lead = await upsertLead(`wa:${from}`, name, "whatsapp", extracted, store.userId);
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { id: _id, ...extractedSafe } = extracted;
+      const lead = await upsertLead(`wa:${from}`, name, "whatsapp", extractedSafe, store.userId);
       waDebug("Lead upsert concluído", { leadId: lead.id, stage: lead.stage });
 
       // ── IA responde ───────────────────────────────────────────────────────

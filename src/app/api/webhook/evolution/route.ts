@@ -215,8 +215,10 @@ async function processEvolution(body: unknown) {
     const qualification = qualifyLead(text);
 
     // ── 3. Upsert lead ────────────────────────────────────────────────────
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { id: _id, ...extractedSafe } = extracted;
     const lead = await upsertLead(phone, name, "whatsapp_evolution", {
-      ...extracted,
+      ...extractedSafe,
       qualification,
     }, STORE_ID || undefined);
 

@@ -75,20 +75,6 @@ async function sendWhatsApp(number: string, text: string): Promise<boolean> {
   }
 }
 
-async function sendWhatsApp(number: string, text: string): Promise<boolean> {
-  if (!EVOLUTION_API_URL || !number) return false;
-  try {
-    const res = await fetch(`${EVOLUTION_API_URL}/message/sendText/${EVOLUTION_INSTANCE}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "apikey": EVOLUTION_API_KEY },
-      body: JSON.stringify({ number, text }),
-    });
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
-
 export async function POST(req: NextRequest) {
   const secret    = req.headers.get("x-followup-secret");
   const envSecret = process.env.FOLLOWUP_SECRET;
