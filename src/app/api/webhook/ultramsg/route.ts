@@ -184,49 +184,80 @@ async function isDbDup(leadId: string, text: string): Promise<boolean> {
 // ── Handler principal ─────────────────────────────────────────────────────────
 export async function POST(req: NextRequest): Promise<NextResponse> {
   let body: UltraMsgBody;
-  try { body = await req.json(); }
-  catch { return NextResponse.json({ ok: false }, { status: 400 }); }
+  let rawBody: unknown;
+  try {
+    const text = await req.text();
+    rawBody = JSON.parse(text);
+    body = rawBody as UltraMsgBody;
+  } catch {
+    return NextResponse.json({ ok: false }, { status: 400 });
+  }
 
   const { event_type, data, instanceId } = body;
+
+  // LOG COMPLETO — diagnóstico de payload real do UltraMsg
+  console.log("[UltraMsg] RAW PAYLOAD:", JSON.stringify({
+    event_type,
+    instanceId,
+    fromMe:    data?.fromMe,
+    type:      data?.type,
+    from:      data?.from,
+    to:        data?.to,
+    body_text: (data?.body ?? "").slice(0, 80),
+    id:        data?.id,
+  }));
 
   // Aceita: message_received (cliente), message_create (vendedor via WhatsApp físico)
   const VALID_EVENTS = ["message_received", "message", "message_create"];
   if (!VALID_EVENTS.includes(event_type ?? "")) {
-    return NextResponse.json({ ok: true, skipped: "event" });
+    console.log("[UltraMsg] Evento ignorado:", event_type);
+    return NextResponse.json({ ok: true, skipped: "event", event_type });
   }
   if (!data || (data.type && data.type !== "chat")) {
-    return NextResponse.json({ ok: true, skipped: "type" });
+    console.log("[UltraMsg] Tipo ignorado:", data?.type);
+    return NextResponse.json({ ok: true, skipped: "type", msg_type: data?.type });
   }
 
   // ── ⚡ HANDOFF via WhatsApp físico ────────────────────────────────────────
   // message_create dispara quando o VENDEDOR envia pelo celular/WhatsApp Web.
   // fromMe=true também pode vir em message_received (ex: mensagens enviadas via API).
-  // Em ambos os casos: desativa Paulo e salva a mensagem no histórico.
   if (data.fromMe) {
     const clientPhone = normalizePhone(data.to ?? "");
     const vendorMsg   = (data.body ?? "").trim();
 
+    console.log("[UltraMsg] fromMe=true | clientPhone:", clientPhone, "| msg:", vendorMsg.slice(0, 60));
+
     if (clientPhone && vendorMsg) {
-      // Carrega settings para ter o storeId
       const { searchParams } = new URL(req.url);
       const store = await loadSettings(instanceId, searchParams.get("storeId"));
       const storeId = store?.id ?? null;
 
-      // Busca lead pelo telefone do cliente
-      let q = supabaseAdmin.from("leads").select("id, ai_enabled").eq("phone", clientPhone);
-      if (storeId) q = q.eq("store_id", storeId);
-      const { data: lead } = await q.maybeSingle();
+      // Busca lead pelo telefone — tenta com e sem DDI 55 para garantir match
+      const phones = [clientPhone];
+      if (clientPhone.length === 11) phones.push(`55${clientPhone}`);
+      if (clientPhone.startsWith("55") && clientPhone.length === 13) phones.push(clientPhone.slice(2));
+
+      let lead: { id: string; ai_enabled: boolean } | null = null;
+      for (const ph of phones) {
+        let q = supabaseAdmin.from("leads").select("id, ai_enabled").eq("phone", ph);
+        if (storeId) q = q.eq("store_id", storeId);
+        const { data: found } = await q.maybeSingle();
+        if (found) { lead = found; break; }
+      }
+
+      console.log("[UltraMsg] Lead encontrado para handoff:", lead?.id ?? "NÃO ENCONTRADO", "| phones tentados:", phones);
 
       if (lead) {
-        // Salva mensagem do vendedor no histórico
         await saveMessage(lead.id, vendorMsg, true, data.id);
-
-        // Desativa Paulo se ainda estava ativo
         if (lead.ai_enabled !== false) {
           await supabaseAdmin.from("leads").update({ ai_enabled: false }).eq("id", lead.id);
-          console.log(`[UltraMsg] 📵 Handoff WhatsApp físico → Lead ${lead.id} (${clientPhone}) — Paulo pausado`);
+          console.log(`[UltraMsg] Handoff OK → Lead ${lead.id} (${clientPhone}) — Paulo pausado`);
+        } else {
+          console.log(`[UltraMsg] Lead ${lead.id} já estava com Paulo pausado`);
         }
       }
+    } else {
+      console.log("[UltraMsg] fromMe=true mas clientPhone ou msg vazio — sem handoff");
     }
     return NextResponse.json({ ok: true, handoff: "whatsapp_native" });
   }
