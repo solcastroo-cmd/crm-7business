@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import { Sidebar } from "@/components/Sidebar";
+import { TrialBanner } from "@/components/TrialBanner";
 import "./globals.css";
 
 const inter = Inter({
@@ -21,7 +22,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {/* Flex horizontal: Sidebar fixa à esquerda + conteúdo principal */}
         <div className="flex min-h-screen">
           <Sidebar />
-          <div className="flex-1 min-w-0">
+          <div className="flex-1 min-w-0 flex flex-col">
+            <TrialBanner />
             {children}
           </div>
         </div>

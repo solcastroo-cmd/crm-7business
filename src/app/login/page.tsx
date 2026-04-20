@@ -40,9 +40,16 @@ export default function LoginPage() {
     if (error) { setError(error.message); setLoading(false); return; }
     const userId = data.user?.id;
     if (userId) {
-      await supabase.from("users").upsert({ id: userId, email, business_name: name || null });
+      const trialEndsAt = new Date(Date.now() + 7 * 86_400_000).toISOString();
+      await supabase.from("users").upsert({
+        id: userId,
+        email,
+        business_name: name || null,
+        trial_ends_at: trialEndsAt,
+        plan_status: "trial",
+      });
     }
-    setMessage("✅ Conta criada! Verifique seu e-mail para confirmar o cadastro.");
+    setMessage("✅ Conta criada! Você tem 7 dias de trial gratuito. Verifique seu e-mail para confirmar.");
     setLoading(false);
   }
 
