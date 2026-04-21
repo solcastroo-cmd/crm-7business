@@ -11,11 +11,13 @@ const supabase = createClient(
 );
 
 const NAV = [
-  { href: "/",             icon: "⚡", label: "Funil de Leads" },
-  { href: "/dashboard",    icon: "📊", label: "Dashboard"      },
-  { href: "/inventory",    icon: "🚗", label: "Estoque"        },
-  { href: "/integrations", icon: "🔗", label: "Integracoes"    },
-  { href: "/settings",     icon: "⚙️", label: "Configuracoes"  },
+  { href: "/",              icon: "⚡", label: "Funil de Leads" },
+  { href: "/dashboard",     icon: "📊", label: "Dashboard"      },
+  { href: "/clientes",      icon: "👥", label: "Clientes"       },
+  { href: "/atendimentos",  icon: "💬", label: "Atendimentos"   },
+  { href: "/inventory",     icon: "🚗", label: "Estoque"        },
+  { href: "/integrations",  icon: "🔗", label: "Integracoes"    },
+  { href: "/settings",      icon: "⚙️", label: "Configuracoes"  },
 ];
 
 export function Sidebar() {
