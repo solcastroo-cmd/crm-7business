@@ -99,18 +99,20 @@ async function isDbDuplicate(leadId: string, text: string): Promise<boolean> {
 
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
-  processEvolution(body).catch(console.error);
+  await processEvolution(body).catch(console.error); // BUG-01 fix: await evita retry duplicado
   return new Response("OK", { status: 200 });
 }
 
-/** Salva mensagem na tabela messages com external_id para dedup */
+/** Salva mensagem com upsert — external_id previne duplicatas no banco (BUG-04 fix) */
 async function saveMessage(leadId: string, text: string, fromMe: boolean, externalId?: string) {
   const row: Record<string, unknown> = { lead_id: leadId, text, from_me: fromMe };
   if (externalId) row.external_id = externalId;
-  await supabaseAdmin
-    .from("messages")
-    .insert(row)
-    .then(({ error }) => { if (error) console.error("[Messages] Erro:", error.message); });
+  const q = externalId
+    ? supabaseAdmin.from("messages").upsert(row, { onConflict: "external_id", ignoreDuplicates: true })
+    : supabaseAdmin.from("messages").insert(row);
+  await q.then(({ error }) => {
+    if (error && !error.message.includes("duplicate")) console.error("[Messages] Erro:", error.message);
+  });
 }
 
 /** Envia texto via Evolution API */
@@ -189,6 +191,18 @@ async function processEvolution(body: unknown) {
       return;
     }
 
+    // ── Nível 2: dedup no banco por external_id — ANTES de qualquer processamento (BUG-03 fix) ─
+    if (msgId) {
+      const { count } = await supabaseAdmin
+        .from("messages")
+        .select("id", { count: "exact", head: true })
+        .eq("external_id", msgId);
+      if ((count ?? 0) > 0) {
+        console.warn("[Evolution] Duplicata ignorada (external_id DB):", msgId);
+        return;
+      }
+    }
+
     const remoteJid = ((msg.key as Record<string, unknown>)?.remoteJid as string) ?? "";
     if (!remoteJid.includes("@s.whatsapp.net")) return;
 
@@ -222,13 +236,7 @@ async function processEvolution(body: unknown) {
       qualification,
     }, STORE_ID || undefined);
 
-    // ── 4. Nível 2: dedup no banco — mesmo texto nos últimos 30s? ────────────
-    if (await isDbDuplicate(lead.id, text)) {
-      console.warn("[Evolution] Duplicata ignorada (banco 30s):", msgId);
-      return;
-    }
-
-    // ── 5. Salva mensagem do cliente (com external_id para dedup futuro) ────
+    // ── 5. Salva mensagem do cliente (external_id garante dedup no banco) ────
     await saveMessage(lead.id, text, false, msgId);
 
     const phoneNum = phone.replace("wa:", "");
