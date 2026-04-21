@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { createClient } from "@supabase/supabase-js";
+import { useUserId } from "@/hooks/useUserId";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -41,16 +42,15 @@ export default function AtendimentosPage() {
   const [loadingMsgs, setLoadingMsgs] = useState(false);
   const [search, setSearch]           = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
+  const { userId } = useUserId();
 
   useEffect(() => {
-    const uid = localStorage.getItem("crm_userId");
-    if (!uid) { setLoading(false); return; }
+    if (!userId) return;
 
-    // Busca leads com mensagens, agrupando a última mensagem por lead
     supabase
       .from("leads")
       .select("id,name,phone")
-      .eq("user_id", uid)
+      .eq("store_id", userId)
       .then(async ({ data: leads }) => {
         if (!leads?.length) { setLoading(false); return; }
 
@@ -83,7 +83,7 @@ export default function AtendimentosPage() {
         setContacts(contactList);
         setLoading(false);
       });
-  }, []);
+  }, [userId]);
 
   async function selectContact(c: Contact) {
     setSelected(c);

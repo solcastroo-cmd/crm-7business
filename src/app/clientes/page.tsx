@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { createClient } from "@supabase/supabase-js";
+import { useUserId } from "@/hooks/useUserId";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -32,21 +33,21 @@ export default function ClientesPage() {
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [loading, setLoading]   = useState(true);
   const [search, setSearch]     = useState("");
+  const { userId } = useUserId();
 
   useEffect(() => {
-    const uid = localStorage.getItem("crm_userId");
-    if (!uid) { setLoading(false); return; }
+    if (!userId) return;
     supabase
       .from("leads")
       .select("id,name,phone,seller,source,updated_at,budget,notes")
-      .eq("user_id", uid)
+      .eq("store_id", userId)
       .eq("stage", "VENDIDO!")
       .order("updated_at", { ascending: false })
       .then(({ data }) => {
         setClientes((data as Cliente[]) ?? []);
         setLoading(false);
       });
-  }, []);
+  }, [userId]);
 
   const filtered = useMemo(() => {
     if (!search.trim()) return clientes;

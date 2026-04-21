@@ -17,6 +17,7 @@ import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { createClient } from "@supabase/supabase-js";
 import { LeadModal, type Lead } from "@/components/LeadModal";
 import { DashboardCharts } from "@/components/DashboardCharts";
+import { useUserId } from "@/hooks/useUserId";
 
 // ── Supabase client (browser) ────────────────────────────────────────────────
 const supabase = createClient(
@@ -118,17 +119,18 @@ type Metrics = {
 // ─────────────────────────────────────────────────────────────────────────────
 // FEAT-01: Hero Dashboard — white cards, red accent
 // ─────────────────────────────────────────────────────────────────────────────
-function HeroDashboard() {
+function HeroDashboard({ storeId }: { storeId: string | null }) {
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [loadingM, setLoadingM] = useState(true);
   const [erroM, setErroM]       = useState<string | null>(null);
 
   const fetchMetrics = useCallback(() => {
-    fetch("/api/metrics")
+    const url = storeId ? `/api/metrics?storeId=${storeId}` : "/api/metrics";
+    fetch(url)
       .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
       .then((data: Metrics) => { setMetrics(data); setLoadingM(false); setErroM(null); })
       .catch((e: Error) => { setErroM(e.message); setLoadingM(false); });
-  }, []);
+  }, [storeId]);
 
   useEffect(() => {
     fetchMetrics();
@@ -568,10 +570,7 @@ export default function Home() {
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [showNewLead, setShowNewLead]   = useState(false);
 
-  // storeId hardcoded — NEXT_PUBLIC_* só funciona se presente no build
-  // Usar UUID direto garante funcionamento independente de variável de ambiente
-  const STORE_ID = "abd51721-980b-454c-8e12-d29bd677b992";
-  const [userId, setUserId] = useState<string | null>(STORE_ID);
+  const { userId } = useUserId();
 
   // FEAT-05: busca + filtros
   const [searchTerm,          setSearchTerm]          = useState("");
@@ -583,20 +582,20 @@ export default function Home() {
   const draggingRef = useRef<Lead | null>(null);
   const refreshRef  = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // fetchLeads reutilizável — storeId sempre fixo
   const fetchLeads = useCallback(() => {
-    fetch(`/api/leads?storeId=${STORE_ID}`)
+    if (!userId) return;
+    fetch(`/api/leads?storeId=${userId}`)
       .then((r) => { if (!r.ok) throw new Error(`Erro ${r.status}`); return r.json(); })
       .then((data) => { setLeads(Array.isArray(data) ? data : []); setLoading(false); setErro(null); })
       .catch((e) => { setErro(e.message); setLoading(false); });
-  }, []);
+  }, [userId]);
 
-  // Carga inicial + auto-refresh a cada 30s (novos leads aparecem sem F5)
   useEffect(() => {
+    if (!userId) return;
     fetchLeads();
     refreshRef.current = setInterval(fetchLeads, 30_000);
     return () => { if (refreshRef.current) clearInterval(refreshRef.current); };
-  }, [fetchLeads]);
+  }, [fetchLeads, userId]);
 
   const sellers = useMemo(() =>
     ["Todos", ...Array.from(new Set(leads.map((l) => l.seller).filter(Boolean) as string[]))],
@@ -765,7 +764,7 @@ export default function Home() {
       </header>
 
       {/* ── FEAT-01: Hero Dashboard ── */}
-      <HeroDashboard />
+      <HeroDashboard storeId={userId} />
 
       {/* ── FEAT-06: Dashboard Analytics ── */}
       <DashboardCharts leads={leads} />

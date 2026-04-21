@@ -2,6 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { createClient } from "@supabase/supabase-js";
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 type TrialInfo = {
   status: "trial" | "active" | "expired";
@@ -15,19 +21,22 @@ export function TrialBanner() {
   const router = useRouter();
 
   useEffect(() => {
-    const userId = localStorage.getItem("crm_userId");
-    if (!userId) return;
+    supabase.auth.getUser().then(({ data }) => {
+      const userId = data?.user?.id;
+      if (!userId) return;
+      if (data.user?.id) localStorage.setItem("crm_userId", data.user.id);
 
-    fetch(`/api/trial?userId=${userId}`)
-      .then(r => r.ok ? r.json() : null)
-      .then((data: TrialInfo | null) => {
-        if (!data) return;
-        setTrial(data);
-        if (data.status === "expired") {
-          router.replace("/pricing?expired=1");
-        }
-      })
-      .catch(() => {});
+      fetch(`/api/trial?userId=${userId}`)
+        .then(r => r.ok ? r.json() : null)
+        .then((info: TrialInfo | null) => {
+          if (!info) return;
+          setTrial(info);
+          if (info.status === "expired") {
+            router.replace("/pricing?expired=1");
+          }
+        })
+        .catch(() => {});
+    });
   }, [router]);
 
   if (!trial || trial.status === "active" || trial.status === "expired") return null;

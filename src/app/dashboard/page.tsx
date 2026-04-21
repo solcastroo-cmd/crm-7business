@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@supabase/supabase-js";
+import { useUserId } from "@/hooks/useUserId";
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, Tooltip, ResponsiveContainer, Legend
@@ -26,25 +27,21 @@ export default function DashboardPage() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [range, setRange] = useState<30 | 7 | 90>(30);
+  const { userId } = useUserId();
 
   const load = useCallback(async (uid: string, days: number) => {
     const since = new Date(Date.now() - days * 86400000).toISOString();
     const [{ data: l }, { data: v }] = await Promise.all([
-      supabase.from("leads").select("id,status,created_at,origin,seller").eq("user_id", uid).gte("created_at", since),
-      supabase.from("vehicles").select("id,status,brand,price").eq("user_id", uid),
+      supabase.from("leads").select("id,status,created_at,origin,seller").eq("store_id", uid).gte("created_at", since),
+      supabase.from("vehicles").select("id,status,brand,price").eq("store_id", uid),
     ]);
     setLeads(l ?? []);
     setVehicles(v ?? []);
   }, []);
 
   useEffect(() => {
-    (async () => {
-      const stored = localStorage.getItem("crm_userId");
-      if (stored) { load(stored, range); return; }
-      const { data } = await supabase.auth.getUser();
-      if (data?.user) { localStorage.setItem("crm_userId", data.user.id); load(data.user.id, range); }
-    })();
-  }, [load, range]);
+    if (userId) load(userId, range);
+  }, [userId, range, load]);
 
   const active  = leads.filter(l => !["ganho","perdido"].includes(l.status)).length;
   const hot     = leads.filter(l => l.status === "negociacao").length;
