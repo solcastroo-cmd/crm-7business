@@ -3,7 +3,7 @@
 import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 
-const WHATSAPP_VENDAS = "5585988887777"; // substituir pelo número real de vendas
+const WHATSAPP_VENDAS = "5585992041818";
 const PRECO_MENSAL = "R$ 197";
 const PRECO_ANUAL  = "R$ 1.697";
 

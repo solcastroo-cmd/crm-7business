@@ -8,7 +8,7 @@ type TrialInfo = {
   days_left: number | null;
 };
 
-const WHATSAPP_VENDAS = "5585988887777"; // substituir pelo número real de vendas
+const WHATSAPP_VENDAS = "5585992041818";
 
 export function TrialBanner() {
   const [trial, setTrial] = useState<TrialInfo | null>(null);
