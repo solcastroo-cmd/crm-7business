@@ -429,14 +429,16 @@ function TabOrigens({ leads }: { leads: Lead[] }) {
 // ── ABA 8: Relatório PDF ──────────────────────────────────────────────────────
 function TabRelatorio({ leads, vehicles }: { leads: Lead[]; vehicles: Vehicle[] }) {
   const now = new Date();
-  const mesAtual  = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
+  const mesAtual    = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
   const mesAnterior = (() => { const d=new Date(now); d.setMonth(d.getMonth()-1); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; })();
 
   const leadsDoMes  = leads.filter(l=>monthKey(l.created_at)===mesAtual);
   const leadsAntes  = leads.filter(l=>monthKey(l.created_at)===mesAnterior);
   const vendidosMes = leadsDoMes.filter(l=>l.stage==="VENDIDO!");
-  const fat = vendidosMes.map(l=>l.budget??0).filter(b=>b>0).reduce((s,b)=>s+b,0);
-  const ticket = vendidosMes.length && fat ? Math.round(fat/vendidosMes.length) : 0;
+  const fat         = vendidosMes.map(l=>l.budget??0).filter(b=>b>0).reduce((s,b)=>s+b,0);
+  const ticket      = vendidosMes.length && fat ? Math.round(fat/vendidosMes.length) : 0;
+  const emEstoque   = vehicles.filter(v=>v.status==="disponivel").length;
+  const emProposta  = leadsDoMes.filter(l=>l.stage==="Proposta"||l.stage==="Negociação").length;
 
   // Gargalo
   const stageCounts = STAGES.map(s=>({ stage:s, count:leads.filter(l=>l.stage===s).length }));
@@ -457,71 +459,147 @@ function TabRelatorio({ leads, vehicles }: { leads: Lead[]; vehicles: Vehicle[] 
   const topCanal = Object.entries(canalMap).filter(([,v])=>v.total>=3).sort((a,b)=>(b[1].conv/b[1].total)-(a[1].conv/a[1].total))[0];
 
   const insights = [
-    `📊 Leads este mês: ${leadsDoMes.length} ${leadsDoMes.length>=leadsAntes.length ? `(▲ +${leadsDoMes.length-leadsAntes.length} vs mês anterior)` : `(▼ ${leadsAntes.length-leadsDoMes.length} vs mês anterior)`}`,
-    gargalo ? `⚠️ Maior gargalo do funil: ${gargaloN} leads perdidos em ${gargalo}` : "✅ Funil sem gargalos críticos identificados",
-    topSeller ? `🏆 Vendedor destaque: ${topSeller[0]} com ${topSeller[1]} venda(s) no mês` : "👤 Nenhuma venda registrada com vendedor no mês",
-    topCanal ? `🎯 Canal com melhor conversão: ${topCanal[0]} (${Math.round((topCanal[1].conv/topCanal[1].total)*100)}% de taxa)` : "📡 Dados de canal insuficientes para análise",
+    `Leads este mes: ${leadsDoMes.length} ${leadsDoMes.length>=leadsAntes.length?`(+${leadsDoMes.length-leadsAntes.length} vs mes anterior)`:`(-${leadsAntes.length-leadsDoMes.length} vs mes anterior)`}`,
+    gargalo ? `Maior gargalo do funil: ${gargaloN} leads perdidos em ${gargalo}` : "Funil sem gargalos criticos identificados",
+    topSeller ? `Vendedor destaque: ${topSeller[0]} com ${topSeller[1]} venda(s) no mes` : "Nenhuma venda registrada com vendedor no mes",
+    topCanal ? `Canal com melhor conversao: ${topCanal[0]} (${Math.round((topCanal[1].conv/topCanal[1].total)*100)}% de taxa)` : "Dados de canal insuficientes para analise",
   ];
 
+  const kpis = [
+    { l:"Leads no Mes",    v:String(leadsDoMes.length) },
+    { l:"Vendas",          v:String(vendidosMes.length) },
+    { l:"Faturamento",     v:fat?brl(fat):"—" },
+    { l:"Ticket Medio",    v:ticket?brl(ticket):"—" },
+    { l:"Em Estoque",      v:String(emEstoque) },
+    { l:"Em Proposta",     v:String(emProposta) },
+  ];
+
+  // Funil para o relatório
+  const funnelRows = stageCounts.map(({stage,count})=>({ stage, count, pct: leads.length?Math.round((count/leads.length)*100):0 }));
+
+  // Gera HTML em nova janela e imprime
+  function handlePrint() {
+    const mesLabel = now.toLocaleDateString("pt-BR",{ month:"long", year:"numeric" });
+    const dataLabel = now.toLocaleDateString("pt-BR");
+
+    const kpisHTML = kpis.map(({l,v})=>`
+      <div style="background:#f8f8f8;border:1px solid #ddd;border-radius:8px;padding:14px 18px;">
+        <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:0.05em;">${l}</div>
+        <div style="font-size:22px;font-weight:800;color:#1a1a1a;margin-top:4px;">${v}</div>
+      </div>`).join("");
+
+    const insightsHTML = insights.map((ins,i)=>`
+      <div style="border-left:4px solid #e63946;padding:12px 16px;background:#fff8f8;border-radius:0 8px 8px 0;margin-bottom:10px;">
+        <span style="font-size:13px;color:#333;line-height:1.6;">${i+1}. ${ins}</span>
+      </div>`).join("");
+
+    const funnelHTML = funnelRows.map(({stage,count,pct})=>`
+      <tr>
+        <td style="padding:8px 12px;border-bottom:1px solid #eee;font-size:13px;color:#333;">${stage}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #eee;font-size:13px;font-weight:700;text-align:center;">${count}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #eee;font-size:13px;text-align:center;color:#666;">${pct}%</td>
+      </tr>`).join("");
+
+    const vendedoresMap: Record<string,{atendidos:number;vendas:number}> = {};
+    leads.forEach(l=>{ const s=l.seller||"Sem vendedor"; if(!vendedoresMap[s])vendedoresMap[s]={atendidos:0,vendas:0}; vendedoresMap[s].atendidos++; if(l.stage==="VENDIDO!")vendedoresMap[s].vendas++; });
+    const vendedoresHTML = Object.entries(vendedoresMap).sort((a,b)=>b[1].vendas-a[1].vendas).slice(0,5).map(([name,v],i)=>`
+      <tr>
+        <td style="padding:8px 12px;border-bottom:1px solid #eee;font-size:13px;">${i+1}. ${name}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #eee;font-size:13px;text-align:center;">${v.atendidos}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #eee;font-size:13px;font-weight:700;text-align:center;color:#16a34a;">${v.vendas}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #eee;font-size:13px;text-align:center;">${v.atendidos>0?Math.round((v.vendas/v.atendidos)*100):0}%</td>
+      </tr>`).join("");
+
+    const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"/>
+  <title>Relatorio Mensal CRM 7Business — ${mesLabel}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; color: #1a1a1a; background: #fff; padding: 40px; }
+    h1 { font-size: 24px; font-weight: 800; color: #1a1a1a; }
+    h2 { font-size: 16px; font-weight: 700; color: #1a1a1a; margin: 28px 0 12px; border-bottom: 2px solid #e63946; padding-bottom: 6px; }
+    .header { text-align: center; margin-bottom: 36px; padding-bottom: 24px; border-bottom: 1px solid #eee; }
+    .badge { display: inline-block; width: 56px; height: 56px; background: #e63946; border-radius: 14px; font-size: 26px; font-weight: 900; color: #fff; line-height: 56px; text-align: center; margin-bottom: 12px; }
+    .kpis { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; margin-bottom: 28px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { background: #f0f0f0; padding: 10px 12px; text-align: left; font-size: 11px; text-transform: uppercase; color: #666; }
+    @media print { body { padding: 20px; } }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="badge">7</div>
+    <h1>Relatorio Mensal — CRM 7Business</h1>
+    <p style="color:#888;font-size:14px;margin-top:6px;">${mesLabel} &nbsp;·&nbsp; Gerado em ${dataLabel}</p>
+  </div>
+
+  <h2>Resumo do Mes</h2>
+  <div class="kpis">${kpisHTML}</div>
+
+  <h2>Insights Automaticos</h2>
+  ${insightsHTML}
+
+  <h2>Funil de Conversao</h2>
+  <table>
+    <thead><tr><th>Etapa</th><th style="text-align:center">Leads</th><th style="text-align:center">% do Total</th></tr></thead>
+    <tbody>${funnelHTML}</tbody>
+  </table>
+
+  <h2>Ranking de Vendedores</h2>
+  <table>
+    <thead><tr><th>Vendedor</th><th style="text-align:center">Leads</th><th style="text-align:center">Vendas</th><th style="text-align:center">Conversao</th></tr></thead>
+    <tbody>${vendedoresHTML}</tbody>
+  </table>
+</body>
+</html>`;
+
+    const win = window.open("", "_blank", "width=900,height=700");
+    if (!win) { alert("Permita pop-ups para gerar o relatório."); return; }
+    win.document.write(html);
+    win.document.close();
+    win.onload = () => { win.print(); };
+  }
+
+  // Preview na tela
   return (
     <div>
-      <button
-        onClick={() => window.print()}
-        style={{
-          background:"#e63946", color:"#fff", border:"none", borderRadius:"10px",
-          padding:"12px 28px", fontWeight:700, fontSize:"15px", cursor:"pointer",
-          marginBottom:"28px", display:"flex", alignItems:"center", gap:"8px",
-        }}
-      >
-        🖨️ Imprimir / Salvar PDF
+      <button onClick={handlePrint} style={{
+        background:"#e63946", color:"#fff", border:"none", borderRadius:"10px",
+        padding:"12px 28px", fontWeight:700, fontSize:"15px", cursor:"pointer",
+        marginBottom:"28px", display:"flex", alignItems:"center", gap:"8px",
+      }}>
+        🖨️ Gerar Relatório do Mês (PDF)
       </button>
 
-      {/* Conteúdo do relatório */}
-      <div id="relatorio-print" style={{ ...S.card, padding:"32px", maxWidth:"720px" }}>
-        <div style={{ textAlign:"center", marginBottom:"28px", borderBottom:"1px solid #333", paddingBottom:"20px" }}>
-          <div style={{ width:"48px", height:"48px", background:"#e63946", borderRadius:"12px", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"22px", fontWeight:900, color:"#fff", margin:"0 auto 12px" }}>7</div>
-          <h2 style={{ color:"#fff", fontSize:"22px", fontWeight:800, margin:0 }}>Relatório Mensal — CRM 7Business</h2>
-          <p style={{ color:"#555", fontSize:"14px", marginTop:"6px" }}>
-            {now.toLocaleDateString("pt-BR",{ month:"long", year:"numeric" })} · Gerado em {now.toLocaleDateString("pt-BR")}
-          </p>
+      {/* Preview */}
+      <div style={{ ...S.card, padding:"32px", maxWidth:"720px" }}>
+        <div style={{ textAlign:"center", marginBottom:"24px", borderBottom:"1px solid #333", paddingBottom:"20px" }}>
+          <div style={{ width:"48px", height:"48px", background:"#e63946", borderRadius:"12px", display:"inline-flex", alignItems:"center", justifyContent:"center", fontSize:"22px", fontWeight:900, color:"#fff", marginBottom:"12px" }}>7</div>
+          <h2 style={{ color:"#fff", fontSize:"20px", fontWeight:800 }}>Relatório Mensal — {now.toLocaleDateString("pt-BR",{month:"long",year:"numeric"})}</h2>
+          <p style={{ color:"#555", fontSize:"13px", marginTop:"4px" }}>Gerado em {now.toLocaleDateString("pt-BR")}</p>
         </div>
 
-        {/* KPIs do mês */}
-        <p style={{ ...S.label, marginBottom:"16px" }}>Resumo do mês</p>
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:"12px", marginBottom:"28px" }}>
-          {[
-            { l:"Leads",    v:String(leadsDoMes.length) },
-            { l:"Vendas",   v:String(vendidosMes.length) },
-            { l:"Faturamento", v:fat?brl(fat):"—" },
-            { l:"Ticket Médio",v:ticket?brl(ticket):"—" },
-            { l:"Estoque",  v:String(vehicles.filter(v=>v.status==="disponivel").length) },
-            { l:"Em Proposta",v:String(leadsDoMes.filter(l=>l.stage==="Proposta"||l.stage==="Negociação").length) },
-          ].map(({l,v})=>(
-            <div key={l} style={{ background:"#1e1e1e", borderRadius:"10px", padding:"14px" }}>
+        <p style={{ ...S.label, marginBottom:"12px" }}>Resumo do mês</p>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:"10px", marginBottom:"24px" }}>
+          {kpis.map(({l,v})=>(
+            <div key={l} style={{ background:"#1e1e1e", borderRadius:"8px", padding:"12px" }}>
               <p style={S.label}>{l}</p>
-              <p style={{ ...S.value, fontSize:"20px" }}>{v}</p>
+              <p style={{ color:"#fff", fontSize:"18px", fontWeight:800, marginTop:"4px" }}>{v}</p>
             </div>
           ))}
         </div>
 
-        {/* Insights */}
-        <p style={{ ...S.label, marginBottom:"16px" }}>Insights automáticos</p>
-        <div style={{ display:"flex", flexDirection:"column", gap:"12px" }}>
+        <p style={{ ...S.label, marginBottom:"12px" }}>Insights automáticos</p>
+        <div style={{ display:"flex", flexDirection:"column", gap:"10px" }}>
           {insights.map((ins,i)=>(
-            <div key={i} style={{ background:"#1e1e1e", border:"1px solid #2a2a2a", borderRadius:"10px", padding:"14px 18px" }}>
-              <p style={{ color:"#d1d5db", fontSize:"14px", lineHeight:"1.6", margin:0 }}>{ins}</p>
+            <div key={i} style={{ borderLeft:"3px solid #e63946", paddingLeft:"14px", paddingTop:"6px", paddingBottom:"6px" }}>
+              <p style={{ color:"#d1d5db", fontSize:"13px", lineHeight:"1.6", margin:0 }}>{i+1}. {ins}</p>
             </div>
           ))}
         </div>
       </div>
-
-      <style>{`
-        @media print {
-          body > * { display: none !important; }
-          #relatorio-print { display: block !important; color: #000 !important; background: #fff !important; }
-          #relatorio-print * { color: #000 !important; background: transparent !important; border-color: #ccc !important; }
-        }
-      `}</style>
     </div>
   );
 }
