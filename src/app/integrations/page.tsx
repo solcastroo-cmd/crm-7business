@@ -1,24 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { createClient } from "@supabase/supabase-js";
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
-
-function useUserId() {
-  const [userId, setUserId] = useState<string | null>(null);
-  useEffect(() => {
-    const stored = localStorage.getItem("crm_userId");
-    if (stored) { setUserId(stored); return; }
-    supabase.auth.getUser().then(({ data }) => {
-      if (data?.user) { localStorage.setItem("crm_userId", data.user.id); setUserId(data.user.id); }
-    });
-  }, []);
-  return userId;
-}
+import { useUserId } from "@/hooks/useUserId";
 
 const inp = "w-full px-3 py-2 rounded-xl text-sm border focus:outline-none";
 const inpStyle = { background: "#111", border: "1px solid #3a3a3a", color: "#fff" };
@@ -261,7 +244,7 @@ function OAuthResultHandler({ onResult }: { onResult: (uid: string | null, err: 
   return null;
 }
 
-function WhatsAppMetaCard() {
+function WhatsAppMetaCard({ userId }: { userId: string | null }) {
   const [connected, setConnected] = useState(false);
   const [phone, setPhone] = useState<string | null>(null);
   const [bizName, setBizName] = useState<string | null>(null);
@@ -287,29 +270,26 @@ function WhatsAppMetaCard() {
   }, []);
 
   useEffect(() => {
-    const uid = localStorage.getItem("crm_userId");
-    if (uid) loadStatus(uid);
-  }, [loadStatus]);
+    if (userId) loadStatus(userId);
+  }, [userId, loadStatus]);
 
   function handleOAuthResult(uid: string | null, errStr: string | null) {
     if (errStr) { setOauthError(errStr); return; }
-    if (uid) { localStorage.setItem("crm_userId", uid); loadStatus(uid); }
+    if (uid) loadStatus(uid);
   }
 
   async function handleSaveManual() {
     if (!token.trim()) { setErr("Cole o token antes de salvar."); return; }
+    if (!userId) return;
     setErr(null); setSaving(true);
     try {
-      const uid = localStorage.getItem("crm_userId");
-      const body: Record<string, string> = { token: token.trim() };
-      if (uid) body.userId = uid;
+      const body: Record<string, string> = { token: token.trim(), userId };
       const res = await fetch("/api/integrations/whatsapp", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) { setErr(data?.error ?? "Erro ao salvar."); return; }
-      if (data?.userId) localStorage.setItem("crm_userId", data.userId);
       setPhone(data?.displayPhone ?? null); setBizName(data?.businessName ?? null);
       setConnected(true); setToken(""); setShowManual(false);
     } catch { setErr("Erro de rede."); }
@@ -317,11 +297,10 @@ function WhatsAppMetaCard() {
   }
 
   async function handleDisconnect() {
-    const uid = localStorage.getItem("crm_userId");
-    if (!uid) return;
+    if (!userId) return;
     setBusy(true);
     try {
-      const res = await fetch(`/api/integrations/whatsapp?userId=${uid}`, { method: "DELETE" });
+      const res = await fetch(`/api/integrations/whatsapp?userId=${userId}`, { method: "DELETE" });
       if (!res.ok) { const d = await res.json().catch(() => null); setErr(d?.error ?? "Erro."); return; }
       setConnected(false); setPhone(null); setBizName(null); setDaysLeft(null);
     } catch { setErr("Erro de rede."); }
@@ -784,7 +763,7 @@ function FacebookLeadsCard({ userId }: { userId: string | null }) {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function IntegrationsPage() {
-  const userId = useUserId();
+  const { userId } = useUserId();
 
   return (
     <main className="min-h-screen p-6" style={{ background: "#111111" }}>
@@ -800,7 +779,7 @@ export default function IntegrationsPage() {
           <div className="space-y-4">
             <ZApiCard userId={userId} />
             <InstagramCard userId={userId} />
-            <WhatsAppMetaCard />
+            <WhatsAppMetaCard userId={userId} />
           </div>
         </div>
 
