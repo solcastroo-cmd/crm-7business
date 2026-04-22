@@ -581,6 +581,30 @@ export default function Home() {
   const [dragOverLeadId, setDragOverLeadId] = useState<string | null>(null);
   const draggingRef = useRef<Lead | null>(null);
   const refreshRef  = useRef<ReturnType<typeof setInterval> | null>(null);
+  const boardRef    = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll: rola coluna (vertical) e board (horizontal) durante drag
+  const autoScroll = (e: React.DragEvent) => {
+    const ZONE  = 80;   // px da borda que ativa o scroll
+    const SPEED = 10;   // px por evento
+
+    // Scroll vertical — encontra o container da coluna com data-scroll
+    let el: HTMLElement | null = e.target as HTMLElement;
+    while (el && !el.dataset.scroll) el = el.parentElement;
+    if (el) {
+      const rect = el.getBoundingClientRect();
+      if (e.clientY - rect.top  < ZONE) el.scrollTop -= SPEED;
+      if (rect.bottom - e.clientY < ZONE) el.scrollTop += SPEED;
+    }
+
+    // Scroll horizontal — board
+    const board = boardRef.current;
+    if (board) {
+      const rect = board.getBoundingClientRect();
+      if (e.clientX - rect.left  < 120) board.scrollLeft -= SPEED;
+      if (rect.right - e.clientX < 120) board.scrollLeft += SPEED;
+    }
+  };
 
   const fetchLeads = useCallback(() => {
     if (!userId) return;
@@ -656,6 +680,7 @@ export default function Home() {
     e.dataTransfer.dropEffect = "move";
     setDragOverStage(stage);
     setDragOverLeadId(overLeadId ?? null);
+    autoScroll(e);
   };
 
   const handleDrop = async (e: React.DragEvent, targetStage: string, beforeLeadId?: string) => {
@@ -884,7 +909,7 @@ export default function Home() {
       </div>
 
       {/* ── Kanban Board ── */}
-      <div style={{ display: "flex", gap: "16px", overflowX: "auto", paddingBottom: "16px" }}>
+      <div ref={boardRef} id="kanban-board" style={{ display: "flex", gap: "16px", overflowX: "auto", paddingBottom: "16px" }}>
         {STAGES.map((stage) => {
           const stageLeads = leadsByStage(stage);
           const isOver     = dragOverStage === stage;
@@ -894,15 +919,16 @@ export default function Home() {
             <div key={stage} style={{ flexShrink: 0, width: "268px" }}>
               {/* Column container */}
               <div
-                onDragOver={(e) => handleDragOver(e, stage)}
-                onDrop={(e) => handleDrop(e, stage)}
                 style={{
-                  background:    isOver ? "#fafafa" : "#f8f8f8",
-                  borderRadius:  "12px",
-                  border:        isOver ? `1px solid ${stageColor}40` : "1px solid #e5e7eb",
-                  boxShadow:     "0 1px 4px rgba(0,0,0,0.05)",
-                  overflow:      "hidden",
-                  transition:    "all 0.15s",
+                  background:   isOver ? "#fafafa" : "#f8f8f8",
+                  borderRadius: "12px",
+                  border:       isOver ? `1px solid ${stageColor}40` : "1px solid #e5e7eb",
+                  boxShadow:    "0 1px 4px rgba(0,0,0,0.05)",
+                  overflow:     "hidden",
+                  transition:   "all 0.15s",
+                  display:      "flex",
+                  flexDirection:"column",
+                  maxHeight:    "calc(100vh - 260px)",
                 }}>
 
                 {/* Column top color bar */}
@@ -910,12 +936,13 @@ export default function Home() {
                   height: "3px",
                   background: stageColor,
                   borderRadius: "12px 12px 0 0",
+                  flexShrink: 0,
                 }} />
 
                 {/* Column header */}
                 <div style={{
                   display: "flex", alignItems: "center", justifyContent: "space-between",
-                  padding: "12px 12px 8px",
+                  padding: "12px 12px 8px", flexShrink: 0,
                 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "7px" }}>
                     <div style={{
@@ -935,8 +962,18 @@ export default function Home() {
                   </span>
                 </div>
 
-                {/* Cards */}
-                <div style={{ padding: "0 10px 10px", minHeight: "60px", display: "flex", flexDirection: "column", gap: "8px" }}>
+                {/* Cards — scrollável com auto-scroll durante drag */}
+                <div
+                  data-scroll="true"
+                  onDragOver={(e) => handleDragOver(e, stage)}
+                  onDrop={(e) => handleDrop(e, stage)}
+                  style={{
+                    padding: "0 10px 10px", minHeight: "60px",
+                    display: "flex", flexDirection: "column", gap: "8px",
+                    overflowY: "auto", flex: 1,
+                    scrollbarWidth: "thin",
+                    scrollbarColor: "#e5e7eb transparent",
+                  }}>
                   {stageLeads.map((lead) => {
                     const isDragOver = dragOverLeadId === lead.id && dragOverStage === stage;
                     return (
