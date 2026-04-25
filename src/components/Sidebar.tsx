@@ -17,6 +17,7 @@ const NAV = [
   { href: "/clientes",      icon: "👥", label: "Clientes"       },
   { href: "/atendimentos",  icon: "💬", label: "Atendimentos"   },
   { href: "/inventory",     icon: "🚗", label: "Estoque"        },
+  { href: "/financeiro",    icon: "💰", label: "Financeiro"     },
   { href: "/integrations",  icon: "🔗", label: "Integracoes"    },
   { href: "/settings",      icon: "⚙️", label: "Configuracoes"  },
 ];
