@@ -187,6 +187,9 @@ export default function VendasPage() {
   // modals
   const [showNew, setShowNew]   = useState(false);
   const [detail, setDetail]     = useState<Sale | null>(null);
+  const [editMode, setEditMode] = useState(false);
+  const [editForm, setEditForm] = useState<Partial<Sale>>({});
+  const [savingEdit, setSavingEdit] = useState(false);
   const [form, setForm]         = useState({ ...EMPTY_FORM });
   const [saving, setSaving]     = useState(false);
   const [sortCol, setSortCol]   = useState<keyof Sale>("closing_date");
@@ -267,6 +270,47 @@ export default function VendasPage() {
   }
 
   /* ── nova venda ── */
+  function openDetail(sale: Sale) {
+    setDetail(sale);
+    setEditMode(false);
+    setEditForm({
+      buyer_name: sale.buyer_name,
+      buyer_cpf: sale.buyer_cpf ?? "",
+      buyer_phone: sale.buyer_phone ?? "",
+      buyer_address: sale.buyer_address ?? "",
+      payment_method: sale.payment_method,
+      total_value: sale.total_value,
+      down_payment: sale.down_payment ?? 0,
+      installments_count: sale.installments_count ?? 1,
+      installment_value: sale.installment_value ?? undefined,
+      closing_date: sale.closing_date,
+      status: sale.status,
+      notes: sale.notes ?? "",
+    });
+  }
+
+  async function saveEdit() {
+    if (!detail) return;
+    setSavingEdit(true);
+    const res = await fetch("/api/vendas", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: detail.id, ...editForm }),
+    });
+    setSavingEdit(false);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: "Erro desconhecido" }));
+      alert(`Erro ao salvar: ${err.error}`);
+      return;
+    }
+    const updated: Sale = await res.json();
+    // Preserve vehicle join data
+    const updatedWithVehicle: Sale = { ...updated, vehicle: detail.vehicle };
+    setDetail(updatedWithVehicle);
+    setSales(prev => prev.map(s => s.id === detail.id ? updatedWithVehicle : s));
+    setEditMode(false);
+  }
+
   async function handleNewSale(e: React.FormEvent) {
     e.preventDefault();
     if (!form.vehicle_id || !form.buyer_name || !form.total_value) return;
@@ -392,7 +436,7 @@ export default function VendasPage() {
                         style={{ borderBottom: "1px solid #1f2937", background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.02)" }}
                         onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = "rgba(230,57,70,0.07)"}
                         onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.02)"}
-                        onClick={() => setDetail(s)}>
+                        onClick={() => openDetail(s)}>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
                             {s.vehicle?.photos?.[0]
@@ -420,7 +464,7 @@ export default function VendasPage() {
                           </span>
                         </td>
                         <td className="px-4 py-3">
-                          <button onClick={e => { e.stopPropagation(); setDetail(s); }}
+                          <button onClick={e => { e.stopPropagation(); openDetail(s); }}
                             className="text-xs px-3 py-1.5 rounded-lg font-semibold transition-all"
                             style={{ background: "#1f2937", color: "#9ca3af" }}>
                             Ver detalhes
@@ -587,7 +631,7 @@ export default function VendasPage() {
       {detail && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
           style={{ background: "rgba(0,0,0,0.8)", backdropFilter: "blur(4px)" }}
-          onClick={e => { if (e.target === e.currentTarget) setDetail(null); }}>
+          onClick={e => { if (e.target === e.currentTarget) { setDetail(null); setEditMode(false); } }}>
           <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl"
             style={{ background: "#111827", border: "1px solid #1f2937" }}>
 
@@ -595,20 +639,40 @@ export default function VendasPage() {
             <div className="flex items-center justify-between px-6 py-4 sticky top-0 z-10"
               style={{ background: "#111827", borderBottom: "1px solid #1f2937" }}>
               <div>
-                <h2 className="text-lg font-black text-white">
-                  {vehicleLabel(detail.vehicle)}
-                </h2>
+                <h2 className="text-lg font-black text-white">{vehicleLabel(detail.vehicle)}</h2>
                 <p className="text-xs mt-0.5" style={{ color: "#6b7280" }}>
                   Venda · {fmtDate(detail.closing_date)} · {PAYMENT_LABEL[detail.payment_method]}
                 </p>
               </div>
-              <div className="flex gap-2">
-                <button onClick={() => printReceipt(detail, storeName)}
-                  className="rounded-xl px-4 py-2 text-sm font-bold text-white flex items-center gap-1.5 transition-all hover:opacity-90"
-                  style={{ background: "#e63946" }}>
-                  🖨️ Imprimir Recibo
-                </button>
-                <button onClick={() => setDetail(null)}
+              <div className="flex gap-2 items-center">
+                {!editMode ? (
+                  <>
+                    <button onClick={() => setEditMode(true)}
+                      className="rounded-xl px-4 py-2 text-sm font-bold flex items-center gap-1.5 transition-all hover:opacity-90"
+                      style={{ background: "#1f2937", color: "#e5e7eb" }}>
+                      ✏️ Editar
+                    </button>
+                    <button onClick={() => printReceipt(detail, storeName)}
+                      className="rounded-xl px-4 py-2 text-sm font-bold text-white flex items-center gap-1.5 transition-all hover:opacity-90"
+                      style={{ background: "#e63946" }}>
+                      🖨️ Recibo
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button onClick={saveEdit} disabled={savingEdit}
+                      className="rounded-xl px-4 py-2 text-sm font-bold text-white flex items-center gap-1.5 transition-all hover:opacity-90 disabled:opacity-50"
+                      style={{ background: "#10b981" }}>
+                      {savingEdit ? "Salvando…" : "✓ Salvar"}
+                    </button>
+                    <button onClick={() => setEditMode(false)}
+                      className="rounded-xl px-4 py-2 text-sm font-bold transition-all"
+                      style={{ background: "#1f2937", color: "#9ca3af" }}>
+                      Cancelar
+                    </button>
+                  </>
+                )}
+                <button onClick={() => { setDetail(null); setEditMode(false); }}
                   className="w-9 h-9 rounded-xl flex items-center justify-center text-gray-400 hover:text-white"
                   style={{ background: "#1f2937" }}>✕</button>
               </div>
@@ -616,7 +680,7 @@ export default function VendasPage() {
 
             <div className="px-6 py-5 space-y-5">
 
-              {/* Dados do Veículo */}
+              {/* Dados do Veículo — sempre somente leitura */}
               <div className="rounded-2xl p-4" style={{ background: "#0f172a", border: "1px solid #1f2937" }}>
                 <p className="text-xs font-bold uppercase tracking-wider mb-3" style={{ color: "#6b7280" }}>🚗 Dados do Veículo</p>
                 {detail.vehicle?.photos?.[0] && (
@@ -625,9 +689,9 @@ export default function VendasPage() {
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   {[
                     { label: "Marca / Modelo", value: detail.vehicle ? `${detail.vehicle.brand} ${detail.vehicle.model}` : "—" },
-                    { label: "Ano",    value: detail.vehicle?.year ?? "—" },
-                    { label: "Cor",    value: detail.vehicle?.color ?? "—" },
-                    { label: "Placa",  value: detail.vehicle?.plate ?? "—" },
+                    { label: "Ano",    value: detail.vehicle?.year   ?? "—" },
+                    { label: "Cor",    value: detail.vehicle?.color  ?? "—" },
+                    { label: "Placa",  value: detail.vehicle?.plate  ?? "—" },
                     { label: "KM",     value: detail.vehicle?.km != null ? detail.vehicle.km.toLocaleString("pt-BR") + " km" : "—" },
                     { label: "Chassi", value: detail.vehicle?.chassis ?? "—" },
                     { label: "RENAVAM",value: detail.vehicle?.renavam ?? "—" },
@@ -643,76 +707,162 @@ export default function VendasPage() {
               {/* Dados do Comprador */}
               <div className="rounded-2xl p-4" style={{ background: "#0f172a", border: "1px solid #1f2937" }}>
                 <p className="text-xs font-bold uppercase tracking-wider mb-3" style={{ color: "#6b7280" }}>👤 Comprador</p>
-                <div className="grid grid-cols-2 gap-3">
-                  {[
-                    { label: "Nome",      value: detail.buyer_name },
-                    { label: "CPF/CNPJ",  value: detail.buyer_cpf   ?? "—" },
-                    { label: "Telefone",  value: detail.buyer_phone  ?? "—" },
-                    { label: "Endereço",  value: detail.buyer_address ?? "—" },
-                  ].map(f => (
-                    <div key={f.label}>
-                      <p className="text-[10px] font-semibold mb-0.5" style={{ color: "#6b7280" }}>{f.label}</p>
-                      <p className="text-sm font-semibold text-white">{f.value}</p>
-                    </div>
-                  ))}
-                </div>
+                {editMode ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {([
+                      { key: "buyer_name",    label: "Nome *",     type: "text" },
+                      { key: "buyer_cpf",     label: "CPF/CNPJ",   type: "text" },
+                      { key: "buyer_phone",   label: "Telefone",   type: "text" },
+                      { key: "buyer_address", label: "Endereço",   type: "text" },
+                    ] as { key: keyof typeof editForm; label: string; type: string }[]).map(f => (
+                      <div key={f.key}>
+                        <label className="block text-[10px] font-semibold mb-1" style={{ color: "#6b7280" }}>{f.label}</label>
+                        <input type={f.type} value={String(editForm[f.key] ?? "")}
+                          onChange={e => setEditForm(prev => ({ ...prev, [f.key]: e.target.value }))}
+                          className="w-full rounded-xl px-3 py-2 text-sm text-white border focus:outline-none focus:border-red-500"
+                          style={{ background: "#111827", borderColor: "#374151" }} />
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      { label: "Nome",     value: detail.buyer_name },
+                      { label: "CPF/CNPJ",  value: detail.buyer_cpf    ?? "—" },
+                      { label: "Telefone",  value: detail.buyer_phone   ?? "—" },
+                      { label: "Endereço",  value: detail.buyer_address ?? "—" },
+                    ].map(f => (
+                      <div key={f.label}>
+                        <p className="text-[10px] font-semibold mb-0.5" style={{ color: "#6b7280" }}>{f.label}</p>
+                        <p className="text-sm font-semibold text-white">{f.value}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Pagamento */}
               <div className="rounded-2xl p-4" style={{ background: "#0f172a", border: "1px solid #1f2937" }}>
                 <p className="text-xs font-bold uppercase tracking-wider mb-3" style={{ color: "#6b7280" }}>💰 Pagamento</p>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
-                  {[
-                    { label: "Forma",        value: PAYMENT_LABEL[detail.payment_method] ?? detail.payment_method },
-                    { label: "Fechamento",   value: fmtDate(detail.closing_date) },
-                    { label: "Entrada",      value: detail.down_payment ? brl(Number(detail.down_payment)) : "—" },
-                    ...(detail.installments_count && detail.installments_count > 1 ? [
-                      { label: "Parcelas", value: `${detail.installments_count}x` },
-                      { label: "Valor/Parcela", value: detail.installment_value ? brl(Number(detail.installment_value)) : "—" },
-                      { label: "Saldo Devedor", value: brl(Number(detail.total_value) - Number(detail.down_payment ?? 0)) },
-                    ] : []),
-                  ].map(f => (
-                    <div key={f.label}>
-                      <p className="text-[10px] font-semibold mb-0.5" style={{ color: "#6b7280" }}>{f.label}</p>
-                      <p className="text-sm font-semibold text-white">{f.value}</p>
+                {editMode ? (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="block text-[10px] font-semibold mb-1" style={{ color: "#6b7280" }}>Forma de Pagamento</label>
+                        <select value={editForm.payment_method ?? "avista"}
+                          onChange={e => setEditForm(prev => ({ ...prev, payment_method: e.target.value }))}
+                          className="w-full rounded-xl px-3 py-2 text-sm text-white border focus:outline-none"
+                          style={{ background: "#111827", borderColor: "#374151" }}>
+                          <option value="avista">À Vista</option>
+                          <option value="financiado">Financiado</option>
+                          <option value="parcelado">Parcelado</option>
+                          <option value="troca">Troca</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-semibold mb-1" style={{ color: "#6b7280" }}>Data Fechamento</label>
+                        <input type="date" value={String(editForm.closing_date ?? "")}
+                          onChange={e => setEditForm(prev => ({ ...prev, closing_date: e.target.value }))}
+                          className="w-full rounded-xl px-3 py-2 text-sm text-white border focus:outline-none"
+                          style={{ background: "#111827", borderColor: "#374151" }} />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-semibold mb-1" style={{ color: "#6b7280" }}>Valor Total (R$)</label>
+                        <input type="number" min="0" step="0.01" value={String(editForm.total_value ?? "")}
+                          onChange={e => setEditForm(prev => ({ ...prev, total_value: Number(e.target.value) }))}
+                          className="w-full rounded-xl px-3 py-2 text-sm text-white border focus:outline-none"
+                          style={{ background: "#111827", borderColor: "#374151" }} />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-semibold mb-1" style={{ color: "#6b7280" }}>Entrada (R$)</label>
+                        <input type="number" min="0" step="0.01" value={String(editForm.down_payment ?? "")}
+                          onChange={e => setEditForm(prev => ({ ...prev, down_payment: Number(e.target.value) }))}
+                          className="w-full rounded-xl px-3 py-2 text-sm text-white border focus:outline-none"
+                          style={{ background: "#111827", borderColor: "#374151" }} />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-semibold mb-1" style={{ color: "#6b7280" }}>Nº Parcelas</label>
+                        <input type="number" min="1" value={String(editForm.installments_count ?? 1)}
+                          onChange={e => setEditForm(prev => ({ ...prev, installments_count: Number(e.target.value) }))}
+                          className="w-full rounded-xl px-3 py-2 text-sm text-white border focus:outline-none"
+                          style={{ background: "#111827", borderColor: "#374151" }} />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-semibold mb-1" style={{ color: "#6b7280" }}>Valor/Parcela (R$)</label>
+                        <input type="number" min="0" step="0.01" value={String(editForm.installment_value ?? "")}
+                          onChange={e => setEditForm(prev => ({ ...prev, installment_value: Number(e.target.value) }))}
+                          className="w-full rounded-xl px-3 py-2 text-sm text-white border focus:outline-none"
+                          style={{ background: "#111827", borderColor: "#374151" }} />
+                      </div>
                     </div>
-                  ))}
-                </div>
-
-                {/* Total destaque */}
-                <div className="flex items-center justify-between rounded-xl px-4 py-3"
-                  style={{ background: "#10b98115", border: "1px solid #10b98130" }}>
-                  <span className="text-sm font-bold text-white">Valor Total da Venda</span>
-                  <span className="text-xl font-black" style={{ color: "#10b981" }}>
-                    {brl(Number(detail.total_value))}
-                  </span>
-                </div>
-
-                {/* Status badge */}
-                <div className="mt-3 flex items-center gap-2">
-                  <span className="text-xs font-semibold" style={{ color: "#6b7280" }}>Status:</span>
-                  <span className="text-xs font-bold px-3 py-1 rounded-full"
-                    style={{ background: STATUS_CFG[detail.status]?.bg ?? "#6b728022", color: STATUS_CFG[detail.status]?.color ?? "#6b7280" }}>
-                    {STATUS_CFG[detail.status]?.label ?? detail.status}
-                  </span>
-                </div>
+                    <div>
+                      <label className="block text-[10px] font-semibold mb-1" style={{ color: "#6b7280" }}>Status</label>
+                      <select value={editForm.status ?? "pago"}
+                        onChange={e => setEditForm(prev => ({ ...prev, status: e.target.value }))}
+                        className="w-full rounded-xl px-3 py-2 text-sm text-white border focus:outline-none"
+                        style={{ background: "#111827", borderColor: "#374151" }}>
+                        <option value="pago">Pago</option>
+                        <option value="parcelado">Parcelado</option>
+                        <option value="pendente">Pendente</option>
+                      </select>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
+                      {[
+                        { label: "Forma",          value: PAYMENT_LABEL[detail.payment_method] ?? detail.payment_method },
+                        { label: "Fechamento",     value: fmtDate(detail.closing_date) },
+                        { label: "Entrada",        value: detail.down_payment ? brl(Number(detail.down_payment)) : "—" },
+                        ...(detail.installments_count && detail.installments_count > 1 ? [
+                          { label: "Parcelas",      value: `${detail.installments_count}x` },
+                          { label: "Valor/Parcela", value: detail.installment_value ? brl(Number(detail.installment_value)) : "—" },
+                          { label: "Saldo Devedor", value: brl(Number(detail.total_value) - Number(detail.down_payment ?? 0)) },
+                        ] : []),
+                      ].map(f => (
+                        <div key={f.label}>
+                          <p className="text-[10px] font-semibold mb-0.5" style={{ color: "#6b7280" }}>{f.label}</p>
+                          <p className="text-sm font-semibold text-white">{f.value}</p>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex items-center justify-between rounded-xl px-4 py-3"
+                      style={{ background: "#10b98115", border: "1px solid #10b98130" }}>
+                      <span className="text-sm font-bold text-white">Valor Total da Venda</span>
+                      <span className="text-xl font-black" style={{ color: "#10b981" }}>{brl(Number(detail.total_value))}</span>
+                    </div>
+                    <div className="mt-3 flex items-center gap-2">
+                      <span className="text-xs font-semibold" style={{ color: "#6b7280" }}>Status:</span>
+                      <span className="text-xs font-bold px-3 py-1 rounded-full"
+                        style={{ background: STATUS_CFG[detail.status]?.bg ?? "#6b728022", color: STATUS_CFG[detail.status]?.color ?? "#6b7280" }}>
+                        {STATUS_CFG[detail.status]?.label ?? detail.status}
+                      </span>
+                    </div>
+                  </>
+                )}
               </div>
 
               {/* Observações */}
-              {detail.notes && (
-                <div className="rounded-2xl p-4" style={{ background: "#0f172a", border: "1px solid #1f2937" }}>
-                  <p className="text-xs font-bold uppercase tracking-wider mb-2" style={{ color: "#6b7280" }}>📝 Observações</p>
-                  <p className="text-sm" style={{ color: "#9ca3af" }}>{detail.notes}</p>
-                </div>
-              )}
+              <div className="rounded-2xl p-4" style={{ background: "#0f172a", border: "1px solid #1f2937" }}>
+                <p className="text-xs font-bold uppercase tracking-wider mb-2" style={{ color: "#6b7280" }}>📝 Observações</p>
+                {editMode ? (
+                  <textarea rows={3} placeholder="Observações sobre a venda..."
+                    value={String(editForm.notes ?? "")}
+                    onChange={e => setEditForm(prev => ({ ...prev, notes: e.target.value }))}
+                    className="w-full rounded-xl px-3 py-2 text-sm text-white border focus:outline-none resize-none"
+                    style={{ background: "#111827", borderColor: "#374151" }} />
+                ) : (
+                  <p className="text-sm" style={{ color: "#9ca3af" }}>{detail.notes || "—"}</p>
+                )}
+              </div>
 
               {/* Histórico */}
               <div className="rounded-2xl p-4" style={{ background: "#0f172a", border: "1px solid #1f2937" }}>
                 <p className="text-xs font-bold uppercase tracking-wider mb-3" style={{ color: "#6b7280" }}>🕐 Histórico</p>
                 <div className="space-y-2">
                   {[
-                    { icon: "✅", label: "Venda registrada", date: detail.created_at },
-                    { icon: "🚗", label: "Veículo marcado como vendido", date: detail.closing_date },
+                    { icon: "✅", label: "Venda registrada",              date: detail.created_at },
+                    { icon: "🚗", label: "Veículo marcado como vendido",  date: detail.closing_date },
                   ].map((ev, i) => (
                     <div key={i} className="flex items-center gap-3 text-xs">
                       <span>{ev.icon}</span>
