@@ -36,7 +36,7 @@ type Sale = {
 };
 
 type StockVehicle = {
-  id: string; brand: string; model: string; year?: number; plate?: string;
+  id: string; brand: string; model: string; year?: number; plate?: string; status?: string;
 };
 
 /* ── Constants ─────────────────────────────────────────────────────── */
@@ -212,12 +212,13 @@ export default function VendasPage() {
     setLoading(false);
   }, []);
 
-  /* ── fetch stock (for new sale modal) ── */
+  /* ── fetch stock (for new sale modal) — inclui vendidos para cadastro retroativo ── */
   const fetchStock = useCallback(async () => {
     const res = await fetch("/api/inventory");
     if (res.ok) {
       const data = await res.json();
-      setStock(data.filter((v: StockVehicle & { status?: string }) => v.status !== "vendido"));
+      // Mostra TODOS os veículos; vendidos aparecem com indicador para cadastro retroativo
+      setStock(data);
     }
   }, []);
 
@@ -459,15 +460,15 @@ export default function VendasPage() {
                 <select required value={form.vehicle_id} onChange={e => setForm(f => ({ ...f, vehicle_id: e.target.value }))}
                   className="w-full rounded-xl px-4 py-2.5 text-sm text-white border focus:outline-none focus:border-red-500"
                   style={{ background: "#111827", borderColor: "#374151" }}>
-                  <option value="">Selecionar veículo do estoque...</option>
-                  {stock.map(v => (
+                  <option value="">Selecionar veículo...</option>
+                  {stock.map((v: StockVehicle & { status?: string }) => (
                     <option key={v.id} value={v.id}>
-                      {v.brand} {v.model}{v.year ? " " + v.year : ""}{v.plate ? " · " + v.plate : ""}
+                      {v.status === "vendido" ? "✅ " : ""}{v.brand} {v.model}{v.year ? " " + v.year : ""}{v.plate ? " · " + v.plate : ""}{v.status === "vendido" ? " (já vendido)" : ""}
                     </option>
                   ))}
                 </select>
                 {stock.length === 0 && (
-                  <p className="text-xs" style={{ color: "#f59e0b" }}>⚠️ Nenhum veículo disponível no estoque</p>
+                  <p className="text-xs" style={{ color: "#f59e0b" }}>⚠️ Nenhum veículo cadastrado no estoque</p>
                 )}
               </div>
 
