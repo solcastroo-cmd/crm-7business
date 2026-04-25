@@ -13,20 +13,26 @@ export async function GET(_req: NextRequest) {
 
   const { data: expenses, error: expError } = await supabaseAdmin
     .from("vehicle_expenses")
-    .select("vehicle_id,amount");
+    .select("id,vehicle_id,date,category,description,amount")
+    .order("date", { ascending: false });
 
   if (expError) {
     console.error("[financeiro] vehicle_expenses query error:", expError.message);
   }
 
   const expenseMap: Record<string, number> = {};
+  const expenseDetails: Record<string, typeof expenses> = {};
+
   for (const e of expenses ?? []) {
     expenseMap[e.vehicle_id] = (expenseMap[e.vehicle_id] ?? 0) + Number(e.amount);
+    if (!expenseDetails[e.vehicle_id]) expenseDetails[e.vehicle_id] = [];
+    expenseDetails[e.vehicle_id]!.push(e);
   }
 
   const result = (vehicles ?? []).map(v => ({
     ...v,
     total_expenses: expenseMap[v.id] ?? 0,
+    expenses:       expenseDetails[v.id] ?? [],
   }));
 
   return NextResponse.json(result);
