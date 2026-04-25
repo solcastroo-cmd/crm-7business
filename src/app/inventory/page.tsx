@@ -12,7 +12,7 @@ type Vehicle = {
 };
 
 const OPTIONALS = [
-  "Ar Condicionado","Direcao Hidraulica","Vidros Eletricos","Trava Eletrica",
+  "Ar Condicionado","Direcao Hidraulica","Direcao Eletrica","Vidros Eletricos","Trava Eletrica",
   "Airbag","ABS","Sensor de Re","Camera de Re","Central Multimidia",
   "Bluetooth","GPS","Teto Solar","Rodas de Liga","Bancos em Couro",
   "Alarme","Farol de Milha","Piloto Automatico","Park Assist",
@@ -171,7 +171,7 @@ export default function InventoryPage() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<"grid"|"list">("grid");
-  const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [filterStatus, setFilterStatus] = useState<string>("ativos");
   const [filterBrand, setFilterBrand] = useState<string>("");
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
@@ -196,7 +196,8 @@ export default function InventoryPage() {
   useEffect(() => { loadVehicles(); }, [loadVehicles]);
 
   const filtered = vehicles.filter(v => {
-    if (filterStatus !== "all" && v.status !== filterStatus) return false;
+    if (filterStatus === "ativos" && v.status === "vendido") return false;
+    if (filterStatus !== "all" && filterStatus !== "ativos" && v.status !== filterStatus) return false;
     if (filterBrand && v.brand !== filterBrand) return false;
     if (search) {
       const q = search.toLowerCase();
@@ -306,11 +307,17 @@ export default function InventoryPage() {
       {/* Filters */}
       <div className="flex flex-wrap gap-3 mb-5">
         <div className="flex gap-2">
-          {["all","disponivel","reservado","vendido"].map(s => (
-            <button key={s} onClick={() => setFilterStatus(s)}
+          {[
+            { key: "ativos",    label: "Em Estoque" },
+            { key: "disponivel",label: "Disponivel" },
+            { key: "reservado", label: "Reservado"  },
+            { key: "vendido",   label: "Vendidos"   },
+            { key: "all",       label: "Todos"      },
+          ].map(({ key, label }) => (
+            <button key={key} onClick={() => setFilterStatus(key)}
               className="px-3 py-1.5 rounded-xl text-xs font-bold transition-all"
-              style={{ background: filterStatus===s ? "#dc2626" : "#1a1a1a", color: filterStatus===s ? "#fff" : "#888", border: "1px solid #2e2e2e" }}>
-              {s === "all" ? "Todos" : STATUS_CONFIG[s]?.label ?? s}
+              style={{ background: filterStatus===key ? "#dc2626" : "#1a1a1a", color: filterStatus===key ? "#fff" : "#888", border: "1px solid #2e2e2e" }}>
+              {label}
             </button>
           ))}
         </div>
