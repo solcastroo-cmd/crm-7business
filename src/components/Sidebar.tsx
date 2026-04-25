@@ -17,8 +17,9 @@ const NAV = [
   { href: "/vendas",        icon: "🤝", label: "Vendas"         },
   { href: "/atendimentos",  icon: "💬", label: "Atendimentos"   },
   { href: "/inventory",     icon: "🚗", label: "Estoque"        },
-  { href: "/financeiro",    icon: "💰", label: "Financeiro"     },
-  { href: "/integrations",  icon: "🔗", label: "Integracoes"    },
+  { href: "/financeiro",      icon: "💰", label: "Financeiro"     },
+  { href: "/financeiro-loja", icon: "🏪", label: "Fin. da Loja"   },
+  { href: "/integrations",    icon: "🔗", label: "Integracoes"    },
   { href: "/settings",      icon: "⚙️", label: "Configuracoes"  },
 ];
 
