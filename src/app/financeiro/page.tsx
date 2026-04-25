@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { createClient } from "@supabase/supabase-js";
-import { Sidebar } from "@/components/Sidebar";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -133,12 +132,11 @@ export default function FinanceiroPage() {
 
   /* ── fetch vehicles ── */
   const fetchVehicles = useCallback(async () => {
-    if (!userId) return;
     setLoading(true);
-    const res = await fetch(`/api/financeiro?store_id=${userId}`);
+    const res = await fetch("/api/financeiro");
     if (res.ok) setVehicles(await res.json());
     setLoading(false);
-  }, [userId]);
+  }, []);
 
   useEffect(() => { fetchVehicles(); }, [fetchVehicles]);
 
@@ -356,11 +354,8 @@ export default function FinanceiroPage() {
      RENDER
   ════════════════════════════════════════════════════════ */
   return (
-    <div className="flex h-screen overflow-hidden" style={{ background: "#0f172a" }}>
-      <Sidebar />
-
-      <main className="flex-1 overflow-y-auto">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+    <main className="min-h-screen overflow-y-auto" style={{ background: "#0f172a" }}>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
 
           {/* ── Header ── */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -629,8 +624,7 @@ export default function FinanceiroPage() {
               </div>
             </div>
           )}
-        </div>
-      </main>
+      </div>
 
       {/* ════ MODAL DETALHES DO VEÍCULO ════ */}
       {modal && (
@@ -945,6 +939,6 @@ export default function FinanceiroPage() {
           </div>
         </div>
       )}
-    </div>
+    </main>
   );
 }
