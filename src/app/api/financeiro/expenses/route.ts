@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(req: NextRequest) {
   const vehicleId = req.nextUrl.searchParams.get("vehicle_id");
   if (!vehicleId) return NextResponse.json({ error: "vehicle_id required" }, { status: 400 });

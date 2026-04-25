@@ -169,7 +169,7 @@ export default function FinanceiroPage() {
   async function savePrices() {
     if (!modal) return;
     setSavingPrices(true);
-    await fetch("/api/financeiro/vehicle", {
+    const res = await fetch("/api/financeiro/vehicle", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -179,9 +179,13 @@ export default function FinanceiroPage() {
       }),
     });
     setSavingPrices(false);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: "Erro desconhecido" }));
+      alert(`Erro ao salvar valores: ${err.error ?? res.status}`);
+      return;
+    }
     setSavedPrices(true);
     setTimeout(() => setSavedPrices(false), 2000);
-    // update local state so card reflects change immediately
     const updated: VehicleFinancial = {
       ...modal,
       purchase_price:    purchaseInput ? parseFloat(purchaseInput) : undefined,
@@ -193,11 +197,15 @@ export default function FinanceiroPage() {
 
   /* ── save expense ── */
   async function saveExpense() {
-    if (!modal || !userId || !expForm.amount) return;
+    if (!modal || !expForm.amount) return;
+    if (!userId) {
+      alert("Sessão não carregada. Aguarde um momento e tente novamente.");
+      return;
+    }
     setSavingExp(true);
 
     if (editingId) {
-      await fetch("/api/financeiro/expenses", {
+      const res = await fetch("/api/financeiro/expenses", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -208,9 +216,15 @@ export default function FinanceiroPage() {
           amount:      parseFloat(expForm.amount),
         }),
       });
+      setSavingExp(false);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Erro desconhecido" }));
+        alert(`Erro ao atualizar despesa: ${err.error ?? res.status}`);
+        return;
+      }
       setEditingId(null);
     } else {
-      await fetch("/api/financeiro/expenses", {
+      const res = await fetch("/api/financeiro/expenses", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -222,13 +236,18 @@ export default function FinanceiroPage() {
           amount:      parseFloat(expForm.amount),
         }),
       });
+      setSavingExp(false);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Erro desconhecido" }));
+        alert(`Erro ao salvar despesa: ${err.error ?? res.status}`);
+        return;
+      }
     }
 
     setExpForm(emptyForm());
     setShowForm(false);
-    setSavingExp(false);
     await fetchExpenses(modal.id);
-    fetchVehicles(); // update total_expenses on cards
+    fetchVehicles();
   }
 
   async function deleteExpense(id: string) {
@@ -791,11 +810,11 @@ export default function FinanceiroPage() {
                     <div className="flex gap-2">
                       <button
                         onClick={saveExpense}
-                        disabled={savingExp || !expForm.amount}
+                        disabled={savingExp || !expForm.amount || !userId}
                         className="rounded-lg px-4 py-2 text-xs font-bold text-white transition-all hover:opacity-90 disabled:opacity-40"
                         style={{ background: "#e63946" }}
                       >
-                        {savingExp ? "Salvando…" : editingId ? "Atualizar" : "Adicionar"}
+                        {!userId ? "Aguardando sessão…" : savingExp ? "Salvando…" : editingId ? "Atualizar" : "Adicionar"}
                       </button>
                       <button
                         onClick={() => { setShowForm(false); setEditingId(null); setExpForm(emptyForm()); }}

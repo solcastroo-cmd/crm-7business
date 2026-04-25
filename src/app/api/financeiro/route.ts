@@ -11,9 +11,13 @@ export async function GET(_req: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  const { data: expenses } = await supabaseAdmin
+  const { data: expenses, error: expError } = await supabaseAdmin
     .from("vehicle_expenses")
     .select("vehicle_id,amount");
+
+  if (expError) {
+    console.error("[financeiro] vehicle_expenses query error:", expError.message);
+  }
 
   const expenseMap: Record<string, number> = {};
   for (const e of expenses ?? []) {
