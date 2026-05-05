@@ -103,16 +103,16 @@ export async function POST(req: NextRequest) {
   return new Response("OK", { status: 200 });
 }
 
-/** Salva mensagem com upsert — external_id previne duplicatas no banco (BUG-04 fix) */
+/** Salva mensagem — external_id previne duplicatas via índice único parcial no Postgres */
 async function saveMessage(leadId: string, text: string, fromMe: boolean, externalId?: string) {
   const row: Record<string, unknown> = { lead_id: leadId, text, from_me: fromMe };
   if (externalId) row.external_id = externalId;
-  const q = externalId
-    ? supabaseAdmin.from("messages").upsert(row, { onConflict: "external_id", ignoreDuplicates: true })
-    : supabaseAdmin.from("messages").insert(row);
-  await q.then(({ error }) => {
-    if (error && !error.message.includes("duplicate")) console.error("[Messages] Erro:", error.message);
-  });
+  await supabaseAdmin.from("messages").insert(row)
+    .then(({ error }) => {
+      if (error && !error.message.includes("duplicate") && !error.message.includes("unique")) {
+        console.error("[Messages] Erro:", error.message);
+      }
+    });
 }
 
 /** Envia texto via Evolution API */

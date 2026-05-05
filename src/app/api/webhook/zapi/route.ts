@@ -195,6 +195,9 @@ async function sendVehiclePhotos(
 }
 
 // ── Salva mensagem no banco ───────────────────────────────────────────────────
+// Usa INSERT simples — o índice único parcial em external_id (WHERE IS NOT NULL)
+// garante que duplicatas sejam rejeitadas pelo Postgres. O upsert com onConflict
+// não funciona com índice parcial (PostgREST exige constraint completa).
 async function saveMessage(
   leadId: string,
   text: string,
@@ -203,12 +206,12 @@ async function saveMessage(
 ): Promise<void> {
   const row: Record<string, unknown> = { lead_id: leadId, text, from_me: fromMe };
   if (externalId) row.external_id = externalId;
-  const q = externalId
-    ? supabaseAdmin.from("messages").upsert(row, { onConflict: "external_id", ignoreDuplicates: true })
-    : supabaseAdmin.from("messages").insert(row);
-  await q.then(({ error }) => {
-    if (error && !error.message.includes("duplicate")) console.error("[ZAPI] Erro salvar msg:", error.message);
-  });
+  await supabaseAdmin.from("messages").insert(row)
+    .then(({ error }) => {
+      if (error && !error.message.includes("duplicate") && !error.message.includes("unique")) {
+        console.error("[ZAPI] Erro salvar msg:", error.message);
+      }
+    });
 }
 
 // ── Deduplicação ──────────────────────────────────────────────────────────────
