@@ -203,8 +203,14 @@ async function saveMessage(
   text: string,
   fromMe: boolean,
   externalId?: string,
+  sender?: "client" | "ai" | "human",
 ): Promise<void> {
-  const row: Record<string, unknown> = { lead_id: leadId, text, from_me: fromMe };
+  const row: Record<string, unknown> = {
+    lead_id: leadId,
+    text,
+    from_me: fromMe,
+    sender: sender ?? (fromMe ? "human" : "client"),
+  };
   if (externalId) row.external_id = externalId;
   await supabaseAdmin.from("messages").insert(row)
     .then(({ error }) => {
@@ -336,7 +342,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       console.log("[ZAPI] Lead para handoff:", lead?.id ?? "NÃO ENCONTRADO", "| phones:", phones);
 
       if (lead) {
-        await saveMessage(lead.id, message, true, messageId);
+        await saveMessage(lead.id, message, true, messageId, "human");
         if (lead.ai_enabled !== false) {
           await supabaseAdmin.from("leads").update({ ai_enabled: false }).eq("id", lead.id);
           console.log(`[ZAPI] Handoff OK → Lead ${lead.id} (${clientPhone}) — Paulo pausado`);
@@ -429,7 +435,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   // ── 4. Salva mensagem do cliente ──────────────────────────────────────────
-  await saveMessage(leadId, message, false, msgId);
+  await saveMessage(leadId, message, false, msgId, "client");
 
   // ── 5. Checa IA global (settings da loja) ─────────────────────────────────
   if (store?.ai_enabled !== true) {
@@ -480,7 +486,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     // ── 9. Salva resposta da IA com external_id — SentCallback detecta e ignora ─
-    await saveMessage(leadId, cleanReply, true, sentMsgId ?? undefined);
+    await saveMessage(leadId, cleanReply, true, sentMsgId ?? undefined, "ai");
 
     // ── 10. Notifica vendedor se lead Quente ──────────────────────────────
     const notifyPhone = store.notify_phone ?? "";

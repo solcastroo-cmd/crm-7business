@@ -14,6 +14,7 @@ type Message = {
   lead_id: string;
   text: string;
   from_me: boolean;
+  sender: "client" | "ai" | "human" | null;
   created_at: string;
 };
 
@@ -56,7 +57,7 @@ export default function AtendimentosPage() {
 
         const { data: msgs } = await supabase
           .from("messages")
-          .select("id,lead_id,text,from_me,created_at")
+          .select("id,lead_id,text,from_me,sender,created_at")
           .in("lead_id", leads.map(l => l.id))
           .order("created_at", { ascending: false });
 
@@ -90,7 +91,7 @@ export default function AtendimentosPage() {
     setLoadingMsgs(true);
     const { data } = await supabase
       .from("messages")
-      .select("id,lead_id,text,from_me,created_at")
+      .select("id,lead_id,text,from_me,sender,created_at")
       .eq("lead_id", c.lead_id)
       .order("created_at", { ascending: true });
     setMessages((data as Message[]) ?? []);
@@ -211,31 +212,65 @@ export default function AtendimentosPage() {
               {!loadingMsgs && messages.length === 0 && (
                 <p style={{ color: "#555", fontSize: "13px", textAlign: "center" }}>Nenhuma mensagem registrada.</p>
               )}
-              {messages.map(m => (
-                <div
-                  key={m.id}
-                  style={{
-                    display: "flex",
-                    justifyContent: m.from_me ? "flex-end" : "flex-start",
-                  }}
-                >
-                  <div style={{
-                    maxWidth: "68%",
-                    background: m.from_me ? "#005c4b" : "#232323",
-                    color: "#fff",
-                    padding: "8px 12px",
-                    borderRadius: m.from_me ? "12px 12px 2px 12px" : "12px 12px 12px 2px",
-                    fontSize: "13px",
-                    lineHeight: "1.5",
-                    wordBreak: "break-word",
-                  }}>
-                    <p style={{ margin: 0 }}>{m.text}</p>
-                    <p style={{ margin: "4px 0 0", fontSize: "10px", color: m.from_me ? "#7ecbb5" : "#555", textAlign: "right" }}>
-                      {fmtTime(m.created_at)}
-                    </p>
+              {messages.map((m, i) => {
+                const prev = messages[i - 1];
+                const isTransition =
+                  i > 0 &&
+                  prev.from_me &&
+                  m.from_me &&
+                  (prev.sender === "ai" && m.sender === "human");
+
+                const bubbleBg =
+                  m.sender === "ai"    ? "#1a3a4a" :
+                  m.sender === "human" ? "#005c4b" :
+                  "#232323";
+
+                const timeColor =
+                  m.sender === "ai"    ? "#5ba8c4" :
+                  m.sender === "human" ? "#7ecbb5" :
+                  "#555";
+
+                return (
+                  <div key={m.id}>
+                    {isTransition && (
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px", margin: "8px 0" }}>
+                        <div style={{ flex: 1, height: "1px", background: "#2a2a2a" }} />
+                        <span style={{ color: "#6b7280", fontSize: "11px", whiteSpace: "nowrap" }}>
+                          👤 Vendedor assumiu — {fmtTime(m.created_at)}
+                        </span>
+                        <div style={{ flex: 1, height: "1px", background: "#2a2a2a" }} />
+                      </div>
+                    )}
+                    <div style={{ display: "flex", justifyContent: m.from_me ? "flex-end" : "flex-start" }}>
+                      <div style={{
+                        maxWidth: "68%",
+                        background: bubbleBg,
+                        color: "#fff",
+                        padding: "8px 12px",
+                        borderRadius: m.from_me ? "12px 12px 2px 12px" : "12px 12px 12px 2px",
+                        fontSize: "13px",
+                        lineHeight: "1.5",
+                        wordBreak: "break-word",
+                      }}>
+                        {m.sender === "ai" && (
+                          <p style={{ margin: "0 0 4px", fontSize: "10px", color: "#5ba8c4", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                            🤖 IA
+                          </p>
+                        )}
+                        {m.sender === "human" && m.from_me && (
+                          <p style={{ margin: "0 0 4px", fontSize: "10px", color: "#7ecbb5", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                            👤 Vendedor
+                          </p>
+                        )}
+                        <p style={{ margin: 0 }}>{m.text}</p>
+                        <p style={{ margin: "4px 0 0", fontSize: "10px", color: timeColor, textAlign: "right" }}>
+                          {fmtTime(m.created_at)}
+                        </p>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
               <div ref={bottomRef} />
             </div>
           </>

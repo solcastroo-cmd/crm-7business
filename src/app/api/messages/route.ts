@@ -70,7 +70,7 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await supabaseAdmin
     .from("messages")
-    .select("id, text, from_me, created_at")
+    .select("id, text, from_me, sender, created_at")
     .eq("lead_id", leadId)
     .order("created_at", { ascending: true })
     .limit(50);
@@ -114,11 +114,11 @@ export async function POST(req: NextRequest) {
     console.log(`[Handoff] Lead ${leadId} → Paulo desativado (vendedor assumiu)`);
   }
 
-  // 3. Salva mensagem no banco (from_me = true → enviada pela loja/vendedor)
+  // 3. Salva mensagem no banco (from_me = true, sender = 'human' → enviada pelo vendedor)
   const { data: msg, error: msgErr } = await supabaseAdmin
     .from("messages")
-    .insert({ lead_id: leadId, text: text.trim(), from_me: true })
-    .select("id, text, from_me, created_at")
+    .insert({ lead_id: leadId, text: text.trim(), from_me: true, sender: "human" })
+    .select("id, text, from_me, sender, created_at")
     .maybeSingle();
 
   if (msgErr) return NextResponse.json({ error: msgErr.message }, { status: 500 });
