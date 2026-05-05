@@ -1,13 +1,14 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { createClient } from "@supabase/supabase-js";
-import { useUserId } from "@/hooks/useUserId";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
+
+const STORE_ID = process.env.NEXT_PUBLIC_STORE_ID ?? "";
 
 type Message = {
   id: string;
@@ -24,7 +25,6 @@ type Contact = {
   phone: string;
   last_msg: string;
   last_at: string;
-  unread: number;
 };
 
 function fmtTime(iso: string) {
@@ -42,65 +42,155 @@ export default function AtendimentosPage() {
   const [loading, setLoading]         = useState(true);
   const [loadingMsgs, setLoadingMsgs] = useState(false);
   const [search, setSearch]           = useState("");
+  const [inputText, setInputText]     = useState("");
+  const [sending, setSending]         = useState(false);
+  const [error, setError]             = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const { userId } = useUserId();
 
-  useEffect(() => {
-    if (!userId) return;
+  const loadContacts = useCallback(async () => {
+    setLoading(true);
+    setError(null);
 
-    supabase
+    const storeId = STORE_ID || (await supabase.auth.getUser()).data?.user?.id;
+    if (!storeId) {
+      setError("Loja não identificada. Configure NEXT_PUBLIC_STORE_ID.");
+      setLoading(false);
+      return;
+    }
+
+    const { data: leads, error: leadsErr } = await supabase
       .from("leads")
       .select("id,name,phone")
-      .eq("store_id", userId)
-      .then(async ({ data: leads }) => {
-        if (!leads?.length) { setLoading(false); return; }
+      .eq("store_id", storeId)
+      .order("created_at", { ascending: false });
 
-        const { data: msgs } = await supabase
-          .from("messages")
-          .select("id,lead_id,text,from_me,sender,created_at")
-          .in("lead_id", leads.map(l => l.id))
-          .order("created_at", { ascending: false });
+    if (leadsErr) {
+      setError("Erro ao carregar contatos: " + leadsErr.message);
+      setLoading(false);
+      return;
+    }
 
-        if (!msgs?.length) { setLoading(false); return; }
+    if (!leads?.length) {
+      setLoading(false);
+      return;
+    }
 
-        // Agrupa última mensagem por lead
-        const byLead: Record<string, Message> = {};
-        for (const m of msgs) {
-          if (!byLead[m.lead_id]) byLead[m.lead_id] = m;
-        }
+    // Busca última mensagem de cada lead (paginado em lotes para evitar URL longa)
+    const BATCH = 50;
+    const byLead: Record<string, Message> = {};
 
-        const contactList: Contact[] = leads
-          .filter(l => byLead[l.id])
-          .map(l => ({
-            lead_id: l.id,
-            name:    l.name,
-            phone:   l.phone,
-            last_msg: byLead[l.id].text ?? "",
-            last_at:  byLead[l.id].created_at,
-            unread:   0,
-          }))
-          .sort((a, b) => new Date(b.last_at).getTime() - new Date(a.last_at).getTime());
+    for (let i = 0; i < leads.length; i += BATCH) {
+      const batch = leads.slice(i, i + BATCH).map(l => l.id);
+      const { data: msgs } = await supabase
+        .from("messages")
+        .select("id,lead_id,text,from_me,sender,created_at")
+        .in("lead_id", batch)
+        .order("created_at", { ascending: false });
 
-        setContacts(contactList);
-        setLoading(false);
-      });
-  }, [userId]);
+      for (const m of msgs ?? []) {
+        if (!byLead[m.lead_id]) byLead[m.lead_id] = m;
+      }
+    }
+
+    const contactList: Contact[] = leads
+      .filter(l => byLead[l.id])
+      .map(l => ({
+        lead_id:  l.id,
+        name:     l.name,
+        phone:    l.phone,
+        last_msg: byLead[l.id].text ?? "",
+        last_at:  byLead[l.id].created_at,
+      }))
+      .sort((a, b) => new Date(b.last_at).getTime() - new Date(a.last_at).getTime());
+
+    setContacts(contactList);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { loadContacts(); }, [loadContacts]);
 
   async function selectContact(c: Contact) {
     setSelected(c);
+    setMessages([]);
     setLoadingMsgs(true);
-    const { data } = await supabase
+    const { data, error: e } = await supabase
       .from("messages")
       .select("id,lead_id,text,from_me,sender,created_at")
       .eq("lead_id", c.lead_id)
       .order("created_at", { ascending: true });
+    if (e) console.error("[Atendimentos] Erro msgs:", e.message);
     setMessages((data as Message[]) ?? []);
     setLoadingMsgs(false);
+  }
+
+  async function sendMessage() {
+    if (!selected || !inputText.trim() || sending) return;
+    setSending(true);
+    const text = inputText.trim();
+    setInputText("");
+
+    // Otimista: adiciona mensagem localmente imediatamente
+    const optimistic: Message = {
+      id: `tmp-${Date.now()}`,
+      lead_id: selected.lead_id,
+      text,
+      from_me: true,
+      sender: "human",
+      created_at: new Date().toISOString(),
+    };
+    setMessages(prev => [...prev, optimistic]);
+
+    try {
+      const res = await fetch("/api/messages", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ leadId: selected.lead_id, text }),
+      });
+      const json = await res.json();
+      if (res.ok && json.message) {
+        // Substitui otimista pelo real
+        setMessages(prev => prev.map(m => m.id === optimistic.id ? { ...json.message, sender: "human" } : m));
+        // Atualiza last_msg na sidebar
+        setContacts(prev => prev.map(c =>
+          c.lead_id === selected.lead_id
+            ? { ...c, last_msg: text, last_at: optimistic.created_at }
+            : c
+        ));
+      }
+    } catch (e) {
+      console.error("[Atendimentos] Erro envio:", e);
+    }
+    setSending(false);
   }
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Realtime: novas mensagens do lead selecionado
+  useEffect(() => {
+    if (!selected) return;
+    const ch = supabase
+      .channel(`msgs:${selected.lead_id}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "messages", filter: `lead_id=eq.${selected.lead_id}` },
+        (payload) => {
+          const m = payload.new as Message;
+          setMessages(prev => {
+            if (prev.some(x => x.id === m.id)) return prev;
+            return [...prev, m];
+          });
+          setContacts(prev => prev.map(c =>
+            c.lead_id === m.lead_id
+              ? { ...c, last_msg: m.text ?? "", last_at: m.created_at }
+              : c
+          ));
+        }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [selected?.lead_id]);
 
   const filtered = contacts.filter(c =>
     !search.trim() ||
@@ -113,7 +203,6 @@ export default function AtendimentosPage() {
 
       {/* ── Sidebar contatos ── */}
       <div style={{ width: "300px", flexShrink: 0, borderRight: "1px solid #2a2a2a", display: "flex", flexDirection: "column" }}>
-        {/* Header */}
         <div style={{ padding: "20px 16px 12px", borderBottom: "1px solid #2a2a2a" }}>
           <h1 style={{ color: "#fff", fontSize: "17px", fontWeight: 800, margin: "0 0 12px" }}>💬 Atendimentos</h1>
           <input
@@ -129,12 +218,14 @@ export default function AtendimentosPage() {
           />
         </div>
 
-        {/* Lista */}
         <div style={{ flex: 1, overflowY: "auto" }}>
           {loading && (
             <p style={{ color: "#555", fontSize: "13px", textAlign: "center", padding: "24px" }}>Carregando...</p>
           )}
-          {!loading && filtered.length === 0 && (
+          {error && (
+            <p style={{ color: "#e63946", fontSize: "12px", textAlign: "center", padding: "16px" }}>{error}</p>
+          )}
+          {!loading && !error && filtered.length === 0 && (
             <p style={{ color: "#555", fontSize: "13px", textAlign: "center", padding: "24px" }}>
               {search ? "Nenhum contato encontrado." : "Nenhum atendimento registrado."}
             </p>
@@ -216,9 +307,10 @@ export default function AtendimentosPage() {
                 const prev = messages[i - 1];
                 const isTransition =
                   i > 0 &&
-                  prev.from_me &&
+                  prev?.from_me &&
                   m.from_me &&
-                  (prev.sender === "ai" && m.sender === "human");
+                  prev?.sender === "ai" &&
+                  m.sender === "human";
 
                 const bubbleBg =
                   m.sender === "ai"    ? "#1a3a4a" :
@@ -253,12 +345,12 @@ export default function AtendimentosPage() {
                         wordBreak: "break-word",
                       }}>
                         {m.sender === "ai" && (
-                          <p style={{ margin: "0 0 4px", fontSize: "10px", color: "#5ba8c4", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                          <p style={{ margin: "0 0 4px", fontSize: "10px", color: "#5ba8c4", fontWeight: 700, letterSpacing: "0.5px" }}>
                             🤖 IA
                           </p>
                         )}
                         {m.sender === "human" && m.from_me && (
-                          <p style={{ margin: "0 0 4px", fontSize: "10px", color: "#7ecbb5", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                          <p style={{ margin: "0 0 4px", fontSize: "10px", color: "#7ecbb5", fontWeight: 700, letterSpacing: "0.5px" }}>
                             👤 Vendedor
                           </p>
                         )}
@@ -272,6 +364,38 @@ export default function AtendimentosPage() {
                 );
               })}
               <div ref={bottomRef} />
+            </div>
+
+            {/* Input de envio */}
+            <div style={{ padding: "12px 20px", borderTop: "1px solid #2a2a2a", background: "#1e1e1e", display: "flex", gap: "8px" }}>
+              <input
+                type="text"
+                placeholder="Digite uma mensagem..."
+                value={inputText}
+                onChange={e => setInputText(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
+                disabled={sending}
+                style={{
+                  flex: 1, padding: "10px 14px",
+                  background: "#232323", border: "1px solid #333", borderRadius: "8px",
+                  color: "#fff", fontSize: "13px", outline: "none",
+                  opacity: sending ? 0.6 : 1,
+                }}
+              />
+              <button
+                onClick={sendMessage}
+                disabled={sending || !inputText.trim()}
+                style={{
+                  background: "#e63946", color: "#fff",
+                  border: "none", borderRadius: "8px",
+                  padding: "10px 18px", fontSize: "13px", fontWeight: 700,
+                  cursor: sending || !inputText.trim() ? "not-allowed" : "pointer",
+                  opacity: sending || !inputText.trim() ? 0.5 : 1,
+                  flexShrink: 0,
+                }}
+              >
+                {sending ? "..." : "Enviar"}
+              </button>
             </div>
           </>
         )}
