@@ -23,6 +23,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { getAIReply, qualifyLead, extractLeadData, parseVehicleTag } from "@/lib/ai";
+import { sendCAPILeadEvent } from "@/lib/capi";
 
 export const dynamic = "force-dynamic";
 
@@ -202,6 +203,12 @@ async function saveMessage(
 // ── Deduplicação ──────────────────────────────────────────────────────────────
 const _recentIds = new Map<string, number>();
 
+// ── CAPI: leads que já receberam evento QualifiedLead (dedup em memória) ──────
+// Persiste durante o ciclo de vida do processo — previne duplo disparo na sessão.
+// Para persistência cross-deploy, rodar SQL:
+//   ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS capi_sent_at timestamptz;
+const _capiSentLeads = new Set<string>();
+
 function isMemDup(id: string): boolean {
   const now = Date.now();
   for (const [k, ts] of _recentIds) { if (now - ts > 5 * 60_000) _recentIds.delete(k); }
@@ -380,6 +387,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   if (!leadId) return NextResponse.json({ ok: false, error: "leadId vazio" });
+
+  // ── CAPI: dispara QualifiedLead quando lead é "quente" ───────────────────
+  // Não-bloqueante (sem await) — não atrasa resposta ao cliente.
+  // Deduplicado por leadId: apenas 1 evento por lead por ciclo do processo.
+  if (qualification === "quente" && !_capiSentLeads.has(leadId)) {
+    _capiSentLeads.add(leadId);
+    sendCAPILeadEvent(phone, leadId).catch((e) =>
+      console.error("[CAPI] Erro assíncrono:", e),
+    );
+    console.log(`[CAPI] 🔥 QualifiedLead disparado — lead:${leadId} phone:${phone}`);
+  }
 
   // Dedup nível 3 (banco 30s por texto)
   if (await isDbDup(leadId, message)) {
