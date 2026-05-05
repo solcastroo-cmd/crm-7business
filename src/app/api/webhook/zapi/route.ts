@@ -55,10 +55,10 @@ type StoreSettings = {
   notify_phone:        string | null;
 };
 
-// ── Cache de settings (5 min) ─────────────────────────────────────────────────
+// ── Cache de settings (30s) ───────────────────────────────────────────────────
 let _settingsCache: StoreSettings | null = null;
 let _settingsCacheAt = 0;
-const SETTINGS_TTL = 5 * 60 * 1000;
+const SETTINGS_TTL = 30 * 1000; // 30s: mudanças no painel propagam rápido
 const ENV_STORE_ID = process.env.STORE_ID ?? "";
 
 async function loadSettings(
@@ -122,21 +122,28 @@ function formatPhoneForSend(phone: string): string {
   return digits.length <= 11 ? `55${digits}` : digits;
 }
 
-// ── Envia texto via Z-API ─────────────────────────────────────────────────────
+// ── Envia texto via Z-API (retorna messageId para dedup do SentCallback) ──────
 async function sendText(
   instance: string,
   token: string,
   clientToken: string,
   to: string,
   message: string,
-): Promise<void> {
+): Promise<string | null> {
   const number = formatPhoneForSend(to);
-  await fetch(`https://api.z-api.io/instances/${instance}/token/${token}/send-text`, {
-    method:  "POST",
-    headers: { "Content-Type": "application/json", "Client-Token": clientToken },
-    body:    JSON.stringify({ phone: number, message }),
-    signal:  AbortSignal.timeout(10_000),
-  }).catch((e) => console.error("[ZAPI] Erro texto:", e.message));
+  try {
+    const res = await fetch(`https://api.z-api.io/instances/${instance}/token/${token}/send-text`, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json", "Client-Token": clientToken },
+      body:    JSON.stringify({ phone: number, message }),
+      signal:  AbortSignal.timeout(10_000),
+    });
+    const data = await res.json().catch(() => null);
+    return (data?.messageId as string) ?? null;
+  } catch (e) {
+    console.error("[ZAPI] Erro texto:", (e as Error).message);
+    return null;
+  }
 }
 
 // ── Envia imagem via Z-API ────────────────────────────────────────────────────
@@ -196,8 +203,12 @@ async function saveMessage(
 ): Promise<void> {
   const row: Record<string, unknown> = { lead_id: leadId, text, from_me: fromMe };
   if (externalId) row.external_id = externalId;
-  await supabaseAdmin.from("messages").insert(row)
-    .then(({ error }) => { if (error) console.error("[ZAPI] Erro salvar msg:", error.message); });
+  const q = externalId
+    ? supabaseAdmin.from("messages").upsert(row, { onConflict: "external_id", ignoreDuplicates: true })
+    : supabaseAdmin.from("messages").insert(row);
+  await q.then(({ error }) => {
+    if (error && !error.message.includes("duplicate")) console.error("[ZAPI] Erro salvar msg:", error.message);
+  });
 }
 
 // ── Deduplicação ──────────────────────────────────────────────────────────────
@@ -289,9 +300,18 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   // ── ⚡ HANDOFF via WhatsApp físico (SentCallback / fromMe=true) ───────────
   // Dispara quando o VENDEDOR envia mensagem pelo celular ou WhatsApp Web.
+  // ⚠️ Z-API também dispara SentCallback para mensagens enviadas pela IA via API.
+  //    Para não auto-desativar a IA, verificamos se o messageId já está no banco
+  //    (salvo pela própria IA no fluxo normal) antes de processar o handoff.
   if (fromMe) {
     const clientPhone = normalizePhone(rawPhone);
     console.log("[ZAPI] fromMe=true | clientPhone:", clientPhone, "| msg:", message.slice(0, 60));
+
+    // Verifica se é SentCallback de mensagem enviada pela IA (já existe no banco)
+    if (messageId && await isExternalIdDup(messageId)) {
+      console.log("[ZAPI] SentCallback ignorado — mensagem já salva pela IA:", messageId);
+      return NextResponse.json({ ok: true, skipped: "ai_sent_callback" });
+    }
 
     if (clientPhone && message) {
       const store   = await loadSettings(instanceId, searchParams.get("storeId"));
@@ -448,16 +468,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // ── 8. Processa tag [VEICULO:uuid] ────────────────────────────────────
     const { message: cleanReply, vehicleId } = parseVehicleTag(rawReply);
 
-    // Envia texto
-    await sendText(store.zapi_instance, store.zapi_token, store.zapi_client_token, phone, cleanReply);
+    // Envia texto — captura messageId para salvar como external_id (previne SentCallback dup)
+    const sentMsgId = await sendText(store.zapi_instance, store.zapi_token, store.zapi_client_token, phone, cleanReply);
 
     // Envia fotos se Paulo indicou veículo
     if (vehicleId) {
       await sendVehiclePhotos(store.zapi_instance, store.zapi_token, store.zapi_client_token, phone, vehicleId);
     }
 
-    // ── 9. Salva resposta da IA ───────────────────────────────────────────
-    await saveMessage(leadId, cleanReply, true);
+    // ── 9. Salva resposta da IA com external_id — SentCallback detecta e ignora ─
+    await saveMessage(leadId, cleanReply, true, sentMsgId ?? undefined);
 
     // ── 10. Notifica vendedor se lead Quente ──────────────────────────────
     const notifyPhone = store.notify_phone ?? "";
