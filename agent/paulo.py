@@ -1,10 +1,14 @@
 """
-paulo.py — Agente Paulo: loop agentico com tool calling nativo do Claude.
+paulo.py — Agente Paulo: loop agentico com tool calling.
+
+Providers (em ordem de preferência):
+  1. Groq  (GROQ_API_KEY)  → llama-3.3-70b-versatile — tool calling via OpenAI SDK
+  2. Anthropic (ANTHROPIC_API_KEY) → claude-sonnet-4-6 — tool calling nativo
 
 Fluxo por mensagem:
-  1. Monta system prompt com estoque disponível
+  1. Monta system prompt com estoque disponível + veículo de interesse do lead
   2. Carrega histórico da conversa (Supabase)
-  3. Entra no loop: Claude → tool_use → executa → devolve resultado → repete
+  3. Loop: LLM → tool_use → executa tool → devolve resultado → repete
   4. Retorna resposta final de texto para envio ao cliente
 """
 
@@ -15,15 +19,11 @@ import logging
 import os
 from typing import Any
 
-import anthropic
-
 from crm import CRMClient
 from tools import TOOLS
 
-logger = logging.getLogger(__name__)
-
-MODEL   = "claude-sonnet-4-6"
-MAX_ITER = 10  # teto de segurança para o loop agentico
+logger  = logging.getLogger(__name__)
+MAX_ITER = 10
 
 PAULO_SYSTEM = """Você é Paulo, vendedor da PH Autoscar, atendendo pelo WhatsApp.
 
@@ -44,7 +44,7 @@ FLUXO DE ATENDIMENTO (SPIN Selling):
 2. USO: dia a dia, trabalho ou família?
 3. FORMA DE PAGAMENTO: financiar, à vista ou consórcio?
 4. ENTRADA: tem valor de entrada?
-5. APRESENTAR VEÍCULO do estoque via buscar_estoque + enviar_fotos_veiculo
+5. APRESENTAR VEÍCULO via buscar_estoque + enviar_fotos_veiculo
 6. FECHAR: agendar visita ou resolver online?
 
 AÇÕES AUTOMÁTICAS (use as tools SEMPRE que aplicável):
@@ -64,11 +64,11 @@ Me passa seu CPF ou CNH para rodar a simulação?"
 
 CONSÓRCIO:
 "Trabalhamos com consórcio sim! Você já tem carta contemplada?"
-- SIM: "Carta contemplada funciona como pagamento à vista — facilita muito!"
+- SIM: "Carta contemplada funciona como pagamento à vista!"
 - NÃO: "Posso te indicar um consultor de consórcio 😊"
 
 TROCA:
-"Claro! Trabalhamos com troca sim. Qual é seu carro atual? Marca, modelo e ano?"
+"Claro! Trabalhamos com troca. Qual é seu carro atual? Marca, modelo e ano?"
 
 REGRAS ABSOLUTAS:
 - NUNCA diga "sou IA", "sou robô", "sou assistente virtual"
@@ -78,57 +78,6 @@ REGRAS ABSOLUTAS:
 - Responda SEMPRE em português do Brasil
 - Áudio recebido: "Recebi seu áudio! Prefiro responder por texto para ficar registrado 😊 Me conta o que precisa?"
 - Imagem de carro: "Que modelo bacana! 👀 É exatamente esse que você procura?\""""
-
-
-# ── Execução das tools ─────────────────────────────────────────────────────────
-
-def execute_tool(name: str, inputs: dict[str, Any], crm: CRMClient) -> Any:
-    logger.info("[TOOL] %s(%s)", name, json.dumps(inputs, ensure_ascii=False)[:120])
-
-    if name == "buscar_estoque":
-        veiculos = crm.buscar_estoque(
-            marca     = inputs.get("marca"),
-            modelo    = inputs.get("modelo"),
-            preco_max = inputs.get("preco_max"),
-            cambio    = inputs.get("cambio"),
-        )
-        resumo = []
-        for v in veiculos:
-            has_photos = bool(v.get("photos"))
-            resumo.append({
-                "id":          v["id"],
-                "descricao":   f"{v['brand']} {v['model']} {v.get('year','')}",
-                "cor":         v.get("color", ""),
-                "km":          v.get("km"),
-                "combustivel": v.get("fuel", ""),
-                "cambio":      v.get("transmission", ""),
-                "preco":       v.get("price"),
-                "fotos":       has_photos,
-                "status":      v.get("status", ""),
-            })
-        return {"total": len(resumo), "veiculos": resumo}
-
-    if name == "enviar_fotos_veiculo":
-        ok = crm.enviar_fotos_veiculo(inputs["vehicle_id"])
-        return {"enviado": ok, "vehicle_id": inputs["vehicle_id"]}
-
-    if name == "mover_lead":
-        crm.mover_lead(inputs["stage"])
-        return {"ok": True, "stage": inputs["stage"]}
-
-    if name == "classificar_lead":
-        crm.classificar_lead(inputs["qualification"])
-        return {"ok": True, "qualification": inputs["qualification"]}
-
-    if name == "registrar_interesse_veiculo":
-        crm.registrar_interesse_veiculo(inputs["vehicle_id"])
-        return {"ok": True, "vehicle_id": inputs["vehicle_id"]}
-
-    if name == "adicionar_nota":
-        crm.adicionar_nota(inputs["nota"])
-        return {"ok": True}
-
-    return {"erro": f"Tool desconhecida: {name}"}
 
 
 # ── Contexto do veículo de interesse ──────────────────────────────────────────
@@ -152,17 +101,14 @@ def _vehicle_interest_ctx(crm: CRMClient, vehicle_id: str) -> str:
     ]))
     ctx = (
         f"\n\n--- VEÍCULO DE INTERESSE DO LEAD ---\n"
-        f"ATENÇÃO: Este lead demonstrou interesse ESPECÍFICO neste veículo. "
-        f"Na primeira mensagem (sem histórico), apresente-o diretamente — NÃO pergunte qual carro procura.\n"
-        f"{partes}\n"
-        f"ID para enviar fotos: {v['id']}"
+        f"ATENÇÃO: Lead demonstrou interesse ESPECÍFICO. Na primeira mensagem (sem histórico), "
+        f"apresente este carro diretamente — NÃO pergunte qual modelo o cliente procura.\n"
+        f"{partes}\nID para fotos: {v['id']}"
     )
     if not disponivel:
         ctx += f"\n⚠️ Veículo {v.get('status','').upper()} — informe e ofereça alternativas."
     return ctx
 
-
-# ── Inventário resumido ────────────────────────────────────────────────────────
 
 def _inventory_ctx(crm: CRMClient) -> str:
     veiculos = crm.buscar_estoque()
@@ -170,75 +116,148 @@ def _inventory_ctx(crm: CRMClient) -> str:
         return "\n\n--- ESTOQUE ---\nNenhum veículo disponível no momento."
     lines = []
     for v in veiculos:
-        has_photos = bool(v.get("photos"))
-        km  = f"{int(v['km']):,}km".replace(",", ".") if v.get("km") else "?"
+        km    = f"{int(v['km']):,}km".replace(",", ".") if v.get("km") else "?"
         preco = f"R${int(v['price']):,}".replace(",", ".") if v.get("price") else "?"
+        fotos = "[fotos]" if v.get("photos") else "[sem fotos]"
         lines.append(
             f"• ID:{v['id']} | {v['brand']} {v['model']} {v.get('year','')} | "
             f"{v.get('color','')} | {km} | {v.get('fuel','')} | {v.get('transmission','')} | "
-            f"{preco}" + (" [fotos]" if has_photos else " [sem fotos]")
+            f"{preco} {fotos}"
         )
     return (
         f"\n\n--- ESTOQUE DISPONÍVEL ({len(veiculos)} veículos) ---\n"
-        "Use buscar_estoque para filtrar e enviar_fotos_veiculo para enviar fotos ao cliente.\n\n"
+        "Use buscar_estoque para filtrar e enviar_fotos_veiculo para enviar fotos.\n\n"
         + "\n".join(lines)
     )
 
 
-# ── Agente principal ───────────────────────────────────────────────────────────
+# ── Execução das tools ─────────────────────────────────────────────────────────
 
-def run_agent(
-    message: str,
-    crm: CRMClient,
-    lead_record: dict,
-    custom_personality: str | None = None,
-    agent_name: str = "Paulo",
-) -> str:
-    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+def execute_tool(name: str, inputs: dict[str, Any], crm: CRMClient) -> Any:
+    logger.info("[TOOL] %s(%s)", name, json.dumps(inputs, ensure_ascii=False, default=str)[:120])
 
-    # System prompt
-    base = custom_personality.strip() if custom_personality and custom_personality.strip() else PAULO_SYSTEM
-    if custom_personality and "paulo" not in base.lower() and "você é" not in base.lower():
-        base = f"Você é {agent_name}, vendedor da PH Autoscar.\n\n{base}"
+    if name == "buscar_estoque":
+        veiculos = crm.buscar_estoque(
+            marca=inputs.get("marca"), modelo=inputs.get("modelo"),
+            preco_max=inputs.get("preco_max"), cambio=inputs.get("cambio"),
+        )
+        resumo = [{
+            "id":          v["id"],
+            "descricao":   f"{v['brand']} {v['model']} {v.get('year','')}",
+            "cor":         v.get("color", ""),
+            "km":          v.get("km"),
+            "combustivel": v.get("fuel", ""),
+            "cambio":      v.get("transmission", ""),
+            "preco":       v.get("price"),
+            "fotos":       bool(v.get("photos")),
+        } for v in veiculos]
+        return {"total": len(resumo), "veiculos": resumo}
 
-    system = base
+    if name == "enviar_fotos_veiculo":
+        ok = crm.enviar_fotos_veiculo(inputs["vehicle_id"])
+        return {"enviado": ok}
 
-    # Contexto: veículo de interesse + estoque
-    veiculo_id = lead_record.get("veiculo_interesse_id")
-    if veiculo_id:
-        system += _vehicle_interest_ctx(crm, veiculo_id)
-    system += _inventory_ctx(crm)
+    if name == "mover_lead":
+        crm.mover_lead(inputs["stage"])
+        return {"ok": True, "stage": inputs["stage"]}
 
-    # Histórico da conversa + mensagem atual
-    history  = crm.load_history()
-    messages = history + [{"role": "user", "content": message}]
+    if name == "classificar_lead":
+        crm.classificar_lead(inputs["qualification"])
+        return {"ok": True}
 
-    provider = "anthropic" if os.getenv("ANTHROPIC_API_KEY") else "none"
-    logger.info("[PAULO] lead:%s | history:%d | provider:%s", crm.lead_id, len(history), provider)
+    if name == "registrar_interesse_veiculo":
+        crm.registrar_interesse_veiculo(inputs["vehicle_id"])
+        return {"ok": True}
 
-    if provider == "none":
-        return f"Olá! 😊 Aqui é o {agent_name} da PH Autoscar. Como posso ajudar?"
+    if name == "adicionar_nota":
+        crm.adicionar_nota(inputs["nota"])
+        return {"ok": True}
 
-    # ── Loop agentico ─────────────────────────────────────────────────────────
+    return {"erro": f"Tool desconhecida: {name}"}
+
+
+# ── Provider: Groq (OpenAI-compatible, tool calling nativo) ───────────────────
+
+def _groq_tools() -> list[dict]:
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name":        t["name"],
+                "description": t["description"],
+                "parameters":  t["input_schema"],
+            },
+        }
+        for t in TOOLS
+    ]
+
+
+def _run_groq(system: str, messages: list[dict], crm: CRMClient) -> str:
+    from openai import OpenAI
+
+    client  = OpenAI(api_key=os.environ["GROQ_API_KEY"], base_url="https://api.groq.com/openai/v1")
+    history = [{"role": "system", "content": system}] + messages
+
+    for iteration in range(MAX_ITER):
+        response = client.chat.completions.create(
+            model       = "llama-3.3-70b-versatile",
+            max_tokens  = 1024,
+            temperature = 0.65,
+            tools       = _groq_tools(),
+            tool_choice = "auto",
+            messages    = history,
+        )
+
+        choice = response.choices[0]
+        logger.info("[GROQ] iter=%d finish_reason=%s", iteration, choice.finish_reason)
+
+        if choice.finish_reason == "stop":
+            return (choice.message.content or "").strip()
+
+        if choice.finish_reason == "tool_calls":
+            history.append(choice.message)  # assistant message com tool_calls
+            tool_msgs = []
+            for tc in (choice.message.tool_calls or []):
+                inputs = json.loads(tc.function.arguments)
+                result = execute_tool(tc.function.name, inputs, crm)
+                tool_msgs.append({
+                    "role":         "tool",
+                    "tool_call_id": tc.id,
+                    "content":      json.dumps(result, ensure_ascii=False, default=str),
+                })
+            history.extend(tool_msgs)
+            continue
+
+        # fallback: retorna texto se houver
+        return (choice.message.content or "").strip()
+
+    return ""
+
+
+# ── Provider: Anthropic (claude-sonnet-4-6, tool calling nativo) ──────────────
+
+def _run_anthropic(system: str, messages: list[dict], crm: CRMClient) -> str:
+    import anthropic as _anthropic
+
+    client = _anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+
     for iteration in range(MAX_ITER):
         response = client.messages.create(
-            model      = MODEL,
+            model      = "claude-sonnet-4-6",
             max_tokens = 1024,
             system     = system,
             tools      = TOOLS,
             messages   = messages,
         )
 
-        logger.info("[PAULO] iter=%d stop_reason=%s", iteration, response.stop_reason)
+        logger.info("[ANTHROPIC] iter=%d stop_reason=%s", iteration, response.stop_reason)
 
-        # Resposta final de texto
         if response.stop_reason == "end_turn":
             for block in response.content:
                 if block.type == "text":
                     return block.text.strip()
             return ""
 
-        # Executa tool_use
         if response.stop_reason == "tool_use":
             tool_results = []
             for block in response.content:
@@ -249,16 +268,73 @@ def run_agent(
                         "tool_use_id": block.id,
                         "content":     json.dumps(result, ensure_ascii=False, default=str),
                     })
-
             messages.append({"role": "assistant", "content": response.content})
             messages.append({"role": "user",      "content": tool_results})
             continue
 
-        # Qualquer outro stop_reason — extrai texto se houver
         for block in response.content:
             if hasattr(block, "text"):
                 return block.text.strip()
         break
 
-    logger.warning("[PAULO] Loop encerrado sem resposta final após %d iterações", MAX_ITER)
-    return f"Olá! 😊 Aqui é o {agent_name} da PH Autoscar. Um momento, estou verificando as informações."
+    return ""
+
+
+# ── Agente principal ───────────────────────────────────────────────────────────
+
+def run_agent(
+    message:            str,
+    crm:                CRMClient,
+    lead_record:        dict,
+    custom_personality: str | None = None,
+    agent_name:         str        = "Paulo",
+) -> str:
+    fallback = f"Olá! 😊 Aqui é o {agent_name} da PH Autoscar. Como posso ajudar você a encontrar o veículo ideal?"
+
+    groq_key      = os.getenv("GROQ_API_KEY")
+    anthropic_key = os.getenv("ANTHROPIC_API_KEY")
+
+    if not groq_key and not anthropic_key:
+        logger.error("[PAULO] Nenhuma API key configurada (GROQ_API_KEY ou ANTHROPIC_API_KEY)")
+        return fallback
+
+    # System prompt
+    base = (custom_personality or "").strip()
+    if not base:
+        base = PAULO_SYSTEM
+    elif "paulo" not in base.lower() and "você é" not in base.lower():
+        base = f"Você é {agent_name}, vendedor da PH Autoscar.\n\n{base}"
+
+    system = base
+    veiculo_id = lead_record.get("veiculo_interesse_id")
+    if veiculo_id:
+        system += _vehicle_interest_ctx(crm, veiculo_id)
+    system += _inventory_ctx(crm)
+
+    history  = crm.load_history()
+    messages = history + [{"role": "user", "content": message}]
+
+    provider = "groq" if groq_key else "anthropic"
+    logger.info("[PAULO] lead:%s | history:%d | provider:%s", crm.lead_id, len(history), provider)
+
+    try:
+        if groq_key:
+            reply = _run_groq(system, messages, crm)
+            if reply:
+                return reply
+        if anthropic_key:
+            reply = _run_anthropic(system, messages, crm)
+            if reply:
+                return reply
+    except Exception:
+        logger.exception("[PAULO] Erro no agente")
+        # Tenta o outro provider
+        try:
+            if provider == "groq" and anthropic_key:
+                return _run_anthropic(system, messages, crm)
+            if provider == "anthropic" and groq_key:
+                return _run_groq(system, messages, crm)
+        except Exception:
+            logger.exception("[PAULO] Fallback também falhou")
+
+    return fallback
