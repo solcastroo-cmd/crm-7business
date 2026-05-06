@@ -40,23 +40,37 @@ def fmt_phone(phone: str) -> str:
 
 # ── Store settings ─────────────────────────────────────────────────────────────
 
+def _extract_data(r: object) -> dict | None:
+    """Normaliza resposta do supabase-py: pode ser APIResponse(.data), dict direto, ou None."""
+    if r is None:
+        return None
+    if isinstance(r, dict):
+        return r
+    data = getattr(r, "data", None)
+    if isinstance(data, dict):
+        return data
+    return None
+
+
 def load_store(instance_id: str | None = None) -> dict | None:
     sb   = _sb()
     cols = "id,ai_enabled,ai_name,ai_personality,zapi_instance,zapi_token,zapi_client_token,notify_phone"
 
     if instance_id:
         try:
-            r = sb.from_("users").select(cols).eq("zapi_instance", instance_id).maybe_single().execute()
-            if r and r.data:
-                return r.data
+            r    = sb.from_("users").select(cols).eq("zapi_instance", instance_id).maybe_single().execute()
+            data = _extract_data(r)
+            if data:
+                return data
         except Exception as e:
             logger.warning("[CRM] load_store instance_id error: %s", e)
 
     if STORE_ID:
         try:
-            r = sb.from_("users").select(cols).eq("id", STORE_ID).maybe_single().execute()
-            if r and r.data:
-                return r.data
+            r    = sb.from_("users").select(cols).eq("id", STORE_ID).maybe_single().execute()
+            data = _extract_data(r)
+            if data:
+                return data
         except Exception as e:
             logger.error("[CRM] load_store STORE_ID error: %s", e)
 
