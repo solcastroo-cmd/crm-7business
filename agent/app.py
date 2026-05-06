@@ -92,7 +92,7 @@ def process_message(
             if upd:
                 sb.from_("leads").update(upd).eq("id", lead_id).execute()
         else:
-            r       = sb.from_("leads").insert({
+            r    = sb.from_("leads").insert({
                 "phone":    phone,
                 "name":     sender_name or None,
                 "source":   "whatsapp",
@@ -101,11 +101,26 @@ def process_message(
             }).execute()
             rows    = getattr(r, "data", r) or []
             lead_id = rows[0]["id"] if rows else None
+
             if not lead_id:
-                logger.error("[WEBHOOK] Falha ao criar lead para %s", phone)
-                return
-            r2   = sb.from_("leads").select("*").eq("id", lead_id).maybe_single().execute()
-            lead = _extract_data(r2) or {}
+                # Race condition: outro request criou o lead ao mesmo tempo
+                err = str(getattr(r, "error", "") or "")
+                if "duplicate" in err.lower() or "unique" in err.lower() or "23505" in err:
+                    logger.warning("[WEBHOOK] Race condition — buscando lead existente: %s", phone)
+                    for ph in phones_to_try:
+                        r2   = sb.from_("leads").select("*").eq("phone", ph).eq("store_id", store_id).maybe_single().execute()
+                        race = _extract_data(r2)
+                        if race:
+                            lead    = race
+                            lead_id = race["id"]
+                            break
+                if not lead_id:
+                    logger.error("[WEBHOOK] Falha ao criar lead para %s", phone)
+                    return
+
+            if not lead:
+                r2   = sb.from_("leads").select("*").eq("id", lead_id).maybe_single().execute()
+                lead = _extract_data(r2) or {}
 
         # ── Verifica handoff (vendedor assumiu) ────────────────────────────
         if lead.get("ai_enabled") is False:

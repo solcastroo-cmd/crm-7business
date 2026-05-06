@@ -377,9 +377,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const qualification = qualifyLead(message);
 
   // ── 3. Upsert lead ────────────────────────────────────────────────────────
-  let q = supabaseAdmin.from("leads").select("*").eq("phone", phone);
-  if (storeId) q = q.eq("store_id", storeId);
-  const { data: existing } = await q.maybeSingle();
+  // .limit(1) + order evita erro "multiple rows" do maybeSingle() caso existam
+  // leads duplicados legados — sempre retorna o mais antigo (o com histórico real).
+  const buildLeadQuery = () => {
+    let q = supabaseAdmin.from("leads").select("*").eq("phone", phone);
+    if (storeId) q = q.eq("store_id", storeId);
+    return q;
+  };
+  const { data: existing } = await buildLeadQuery()
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
 
   let leadId: string;
   let leadRecord: Record<string, unknown> = existing ?? {};
@@ -403,10 +411,21 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       payment: extracted.payment ?? null,
     };
     if (storeId) row.store_id = storeId;
-    const { data: nl } = await supabaseAdmin.from("leads").insert(row).select("*").single();
-    leadId = nl?.id ?? "";
-    const { data: fresh } = await supabaseAdmin.from("leads").select("*").eq("id", leadId).maybeSingle();
-    leadRecord = (fresh as Record<string, unknown>) ?? row;
+    const { data: nl, error: insertErr } = await supabaseAdmin.from("leads").insert(row).select("*").single();
+
+    if (insertErr && (insertErr.code === "23505" || insertErr.message.includes("duplicate") || insertErr.message.includes("unique"))) {
+      // Race condition: outro request criou o lead ao mesmo tempo — busca o existente
+      console.warn("[ZAPI] Race condition em lead — buscando existente:", phone);
+      const { data: raceEx } = await buildLeadQuery()
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      leadId = raceEx?.id ?? "";
+      leadRecord = (raceEx as Record<string, unknown>) ?? {};
+    } else {
+      leadId = nl?.id ?? "";
+      leadRecord = (nl as Record<string, unknown>) ?? row;
+    }
   }
 
   if (!leadId) return NextResponse.json({ ok: false, error: "leadId vazio" });
