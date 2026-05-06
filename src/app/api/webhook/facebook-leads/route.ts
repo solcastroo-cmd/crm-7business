@@ -89,14 +89,16 @@ export async function POST(req: NextRequest) {
       const leadgenId = change.value?.leadgen_id;
       if (!leadgenId || !user.fb_page_access_token) continue;
 
-      // Busca os dados completos do lead na Graph API
+      // Busca os dados completos do lead na Graph API (inclui ad_name para identificar veículo)
       try {
         const leadRes = await fetch(
-          `https://graph.facebook.com/v19.0/${leadgenId}?fields=field_data,created_time&access_token=${user.fb_page_access_token}`,
+          `https://graph.facebook.com/v19.0/${leadgenId}?fields=field_data,created_time,ad_name,ad_id&access_token=${user.fb_page_access_token}`,
           { signal: AbortSignal.timeout(10_000) }
         );
         const leadData = await leadRes.json() as {
           field_data?: Array<{ name: string; values: string[] }>;
+          ad_name?:   string;
+          ad_id?:     string;
           error?: Record<string, unknown>;
         };
 
@@ -122,22 +124,52 @@ export async function POST(req: NextRequest) {
         }
 
         const cleanPhone = phone.replace(/\D/g, "");
-        const notes = email ? `E-mail: ${email} | Facebook Lead Ads` : "Facebook Lead Ads";
+        const adName = leadData.ad_name ?? "";
+        const noteParts = [
+          email ? `E-mail: ${email}` : null,
+          adName ? `Anúncio: ${adName}` : null,
+          "Facebook Lead Ads",
+        ].filter(Boolean);
+        const notes = noteParts.join(" | ");
+
+        // Tenta identificar o veículo pelo nome do anúncio (ex: "LEADS CIVIC", "LEADS STRADA")
+        let vehicleInterestId: string | null = null;
+        if (adName) {
+          const skipWords = new Set(["leads", "lead", "carrosel", "carousel", "anuncio", "anúncio",
+            "novo", "copia", "cópia", "fortaleza", "qualificados", "engajamento", "de", "da", "do"]);
+          const candidates = adName.toLowerCase().split(/[\s_\-|]+/)
+            .filter(w => w.length > 2 && !skipWords.has(w));
+
+          for (const word of candidates) {
+            const { data: match } = await supabaseAdmin
+              .from("vehicles")
+              .select("id")
+              .eq("status", "disponivel")
+              .or(`brand.ilike.%${word}%,model.ilike.%${word}%`)
+              .limit(1)
+              .maybeSingle();
+            if (match) { vehicleInterestId = match.id; break; }
+          }
+          if (vehicleInterestId) {
+            console.log(`[FB Leads] Veículo identificado pelo anúncio "${adName}" → id:${vehicleInterestId}`);
+          }
+        }
 
         const { error: insertErr } = await supabaseAdmin.from("leads").insert({
           phone:   cleanPhone,
           name:    name,
           source:  "facebook",
           stage:   "Novo Lead",
-          budget:  notes,
+          notes:   notes,
           user_id: user.id,
+          ...(vehicleInterestId ? { veiculo_interesse_id: vehicleInterestId } : {}),
         });
 
         if (insertErr) {
           console.error("[FB Leads] Erro ao inserir lead:", insertErr.message);
         } else {
           leadsCreated++;
-          console.log(`[FB Leads] Lead criado — ${name} | ${cleanPhone}`);
+          console.log(`[FB Leads] Lead criado — ${name} | ${cleanPhone}${vehicleInterestId ? ` | veículo:${vehicleInterestId}` : ""}`);
         }
       } catch (err) {
         console.error("[FB Leads] Erro ao processar leadgen_id:", leadgenId, err);
