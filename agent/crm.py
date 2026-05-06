@@ -124,7 +124,8 @@ class CRMClient:
             q = q.ilike("transmission", f"%{cambio}%")
 
         r = q.order("created_at", desc=True).limit(15).execute()
-        return r.data or []
+        raw = getattr(r, "data", r)
+        return raw if isinstance(raw, list) else []
 
     def buscar_veiculo(self, vehicle_id: str) -> dict | None:
         r = (
@@ -134,7 +135,7 @@ class CRMClient:
             .maybe_single()
             .execute()
         )
-        return r.data
+        return _extract_data(r)
 
     # ── Lead ──────────────────────────────────────────────────────────────────
 
@@ -150,8 +151,8 @@ class CRMClient:
         self._sb.from_("leads").update({"veiculo_interesse_id": vehicle_id}).eq("id", self.lead_id).execute()
 
     def adicionar_nota(self, nota: str) -> None:
-        r = self._sb.from_("leads").select("notes").eq("id", self.lead_id).maybe_single().execute()
-        existing = (r.data or {}).get("notes") or ""
+        r        = self._sb.from_("leads").select("notes").eq("id", self.lead_id).maybe_single().execute()
+        existing = (_extract_data(r) or {}).get("notes") or ""
         ts       = datetime.now().strftime("%d/%m %H:%M")
         new_notes = f"{existing}\n[{ts}] {nota}".strip()
         self._sb.from_("leads").update({"notes": new_notes}).eq("id", self.lead_id).execute()
@@ -168,7 +169,8 @@ class CRMClient:
             .execute()
         )
         msgs = []
-        for m in (r.data or []):
+        raw = getattr(r, "data", r)
+        for m in (raw if isinstance(raw, list) else []):
             text = (m.get("text") or "").strip()
             if text:
                 msgs.append({"role": "assistant" if m["from_me"] else "user", "content": text})

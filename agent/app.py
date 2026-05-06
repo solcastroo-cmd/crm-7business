@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 
 from flask import Flask, jsonify, request
 
-from crm import CRMClient, load_store, normalize_phone
+from crm import CRMClient, load_store, normalize_phone, _extract_data
 from paulo import run_agent
 
 logging.basicConfig(
@@ -78,9 +78,10 @@ def process_message(
 
         lead = None
         for ph in phones_to_try:
-            r = sb.from_("leads").select("*").eq("phone", ph).eq("store_id", store_id).maybe_single().execute()
-            if r.data:
-                lead = r.data
+            r    = sb.from_("leads").select("*").eq("phone", ph).eq("store_id", store_id).maybe_single().execute()
+            data = _extract_data(r)
+            if data:
+                lead = data
                 break
 
         if lead:
@@ -91,16 +92,20 @@ def process_message(
             if upd:
                 sb.from_("leads").update(upd).eq("id", lead_id).execute()
         else:
-            r = sb.from_("leads").insert({
+            r       = sb.from_("leads").insert({
                 "phone":    phone,
                 "name":     sender_name or None,
                 "source":   "whatsapp",
                 "stage":    "Novo Lead",
                 "store_id": store_id,
             }).execute()
-            lead_id = r.data[0]["id"]
-            r2 = sb.from_("leads").select("*").eq("id", lead_id).maybe_single().execute()
-            lead = r2.data or {}
+            rows    = getattr(r, "data", r) or []
+            lead_id = rows[0]["id"] if rows else None
+            if not lead_id:
+                logger.error("[WEBHOOK] Falha ao criar lead para %s", phone)
+                return
+            r2   = sb.from_("leads").select("*").eq("id", lead_id).maybe_single().execute()
+            lead = _extract_data(r2) or {}
 
         # ── Verifica handoff (vendedor assumiu) ────────────────────────────
         if lead.get("ai_enabled") is False:
@@ -168,9 +173,9 @@ def process_sent_by_seller(
             phones_to_try.append(f"55{phone}")
 
         for ph in phones_to_try:
-            r = sb.from_("leads").select("id,ai_enabled").eq("phone", ph).eq("store_id", store_id).maybe_single().execute()
-            if r.data:
-                lead = r.data
+            r    = sb.from_("leads").select("id,ai_enabled").eq("phone", ph).eq("store_id", store_id).maybe_single().execute()
+            lead = _extract_data(r)
+            if lead:
                 # Salva msg do vendedor
                 crm = CRMClient(lead_id=lead["id"], phone=ph, store_id=store_id,
                                  zapi_instance=store["zapi_instance"], zapi_token=store["zapi_token"],
