@@ -41,19 +41,25 @@ def fmt_phone(phone: str) -> str:
 # ── Store settings ─────────────────────────────────────────────────────────────
 
 def load_store(instance_id: str | None = None) -> dict | None:
-    sb = _sb()
+    sb   = _sb()
+    cols = "id,ai_enabled,ai_name,ai_personality,zapi_instance,zapi_token,zapi_client_token,notify_phone"
+
     if instance_id:
-        r = sb.from_("users").select(
-            "id,ai_enabled,ai_name,ai_personality,zapi_instance,zapi_token,zapi_client_token,notify_phone"
-        ).eq("zapi_instance", instance_id).maybe_single().execute()
-        if r.data:
-            return r.data
+        try:
+            r = sb.from_("users").select(cols).eq("zapi_instance", instance_id).maybe_single().execute()
+            if r and r.data:
+                return r.data
+        except Exception as e:
+            logger.warning("[CRM] load_store instance_id error: %s", e)
 
     if STORE_ID:
-        r = sb.from_("users").select(
-            "id,ai_enabled,ai_name,ai_personality,zapi_instance,zapi_token,zapi_client_token,notify_phone"
-        ).eq("id", STORE_ID).maybe_single().execute()
-        return r.data
+        try:
+            r = sb.from_("users").select(cols).eq("id", STORE_ID).maybe_single().execute()
+            if r and r.data:
+                return r.data
+        except Exception as e:
+            logger.error("[CRM] load_store STORE_ID error: %s", e)
+
     return None
 
 
