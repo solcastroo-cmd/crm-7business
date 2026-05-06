@@ -452,11 +452,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // ── 7. IA responde com memória de conversa ────────────────────────────────
   try {
     const leadCtx = {
-      id:      leadId,
-      name:    (leadRecord.name    as string | null) ?? senderName ?? null,
-      budget:  (leadRecord.budget  as string | null) ?? extracted.budget  ?? null,
-      type:    (leadRecord.type    as string | null) ?? extracted.type    ?? null,
-      payment: (leadRecord.payment as string | null) ?? extracted.payment ?? null,
+      id:                   leadId,
+      name:                 (leadRecord.name    as string | null) ?? senderName ?? null,
+      budget:               (leadRecord.budget  as string | null) ?? extracted.budget  ?? null,
+      type:                 (leadRecord.type    as string | null) ?? extracted.type    ?? null,
+      payment:              (leadRecord.payment as string | null) ?? extracted.payment ?? null,
+      veiculo_interesse_id: (leadRecord.veiculo_interesse_id as string | null) ?? null,
     };
 
     const rawReply = await getAIReply(

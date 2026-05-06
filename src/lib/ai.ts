@@ -14,11 +14,12 @@
  */
 
 export type LeadContext = {
-  id?:     string | null;
-  name:    string | null;
-  budget:  string | null;
-  type:    string | null;
-  payment: string | null;
+  id?:                   string | null;
+  name:                  string | null;
+  budget:                string | null;
+  type:                  string | null;
+  payment:               string | null;
+  veiculo_interesse_id?: string | null;
 };
 
 export type Qualification = "quente" | "morno" | "frio";
@@ -157,6 +158,48 @@ export function parseVehicleTag(reply: string): { message: string; vehicleId: st
   return { message, vehicleId };
 }
 
+// ─── Busca veículo de interesse específico do lead ───────────────────────────
+async function getVehicleOfInterestContext(vehicleId: string): Promise<string> {
+  try {
+    const { supabaseAdmin } = await import("@/lib/supabaseAdmin");
+    const { data: v } = await supabaseAdmin
+      .from("vehicles")
+      .select("id,brand,model,year,price,color,km,fuel,transmission,description,status,photos")
+      .eq("id", vehicleId)
+      .maybeSingle();
+
+    if (!v) return "";
+
+    const hasPhotos = Array.isArray(v.photos) && v.photos.length > 0;
+    const disponivel = v.status === "disponivel";
+    const statusLabel = disponivel ? "DISPONÍVEL" : (v.status ?? "indisponível").toUpperCase();
+
+    const partes = [
+      `${v.brand} ${v.model}`,
+      v.year         ? String(v.year)                                     : null,
+      v.color        ? v.color                                             : null,
+      v.km           ? `${Number(v.km).toLocaleString("pt-BR")}km`        : null,
+      v.fuel         ? v.fuel                                              : null,
+      v.transmission ? v.transmission                                      : null,
+      v.price        ? `R$${Number(v.price).toLocaleString("pt-BR")}`     : null,
+      statusLabel,
+      hasPhotos      ? `${v.photos.length} foto(s)`                       : "sem fotos",
+    ].filter(Boolean).join(" | ");
+
+    return (
+      `\n\n--- VEÍCULO DE INTERESSE DO LEAD ---\n` +
+      `ATENÇÃO: Este lead demonstrou interesse ESPECÍFICO neste veículo. ` +
+      `Se for a primeira mensagem (sem histórico anterior), apresente este carro diretamente — ` +
+      `NÃO pergunte qual modelo o cliente procura.\n` +
+      `${partes}\n` +
+      `ID para envio de fotos: [VEICULO:${v.id}]` +
+      (!disponivel ? `\n⚠️ Veículo ${statusLabel} — informe o cliente e ofereça alternativas do estoque.` : "")
+    );
+  } catch {
+    return "";
+  }
+}
+
 // ─── Monta system prompt completo ────────────────────────────────────────────
 async function buildSystemPrompt(baseSystem: string, lead: LeadContext): Promise<string> {
   const leadCtx: string[] = [];
@@ -165,12 +208,16 @@ async function buildSystemPrompt(baseSystem: string, lead: LeadContext): Promise
   if (lead.type)    leadCtx.push(`Tipo de veículo desejado: ${lead.type}`);
   if (lead.payment) leadCtx.push(`Forma de pagamento: ${lead.payment}`);
 
-  const inventory = await getInventoryContext();
+  const [vehicleOfInterest, inventory] = await Promise.all([
+    lead.veiculo_interesse_id ? getVehicleOfInterestContext(lead.veiculo_interesse_id) : Promise.resolve(""),
+    getInventoryContext(),
+  ]);
 
   let system = baseSystem;
   if (leadCtx.length > 0) {
     system += `\n\n--- PERFIL DO CLIENTE (use para personalizar) ---\n${leadCtx.join("\n")}`;
   }
+  if (vehicleOfInterest) system += vehicleOfInterest;
   system += inventory;
   return system;
 }
