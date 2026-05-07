@@ -240,12 +240,27 @@ async function processMessage(body: unknown) {
       const lead = await upsertLead(`wa:${from}`, name, "whatsapp", extractedSafe, store.userId);
       waDebug("Lead upsert concluído", { leadId: lead.id, stage: lead.stage });
 
+      // ── Salva mensagem recebida do cliente ───────────────────────────────
+      await supabaseAdmin.from("messages").insert({
+        lead_id:  lead.id,
+        text,
+        from_me:  false,
+        wamid:    wamid ?? null,
+      });
+
       // ── IA responde ───────────────────────────────────────────────────────
       const reply = await getAIReply(text, lead);
       waDebug("Resposta gerada pela IA", { preview: reply.substring(0, 100) });
 
       // ── Envia resposta via token DA loja ──────────────────────────────────
       await sendMessage(store, from, reply);
+
+      // ── Salva resposta da IA no histórico ─────────────────────────────────
+      await supabaseAdmin.from("messages").insert({
+        lead_id: lead.id,
+        text:    reply,
+        from_me: true,
+      });
 
       waInfo("Ciclo completo ✅", { userId: store.userId, from, leadId: lead.id });
     }
