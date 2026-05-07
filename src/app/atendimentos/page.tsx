@@ -12,9 +12,11 @@ const supabase = createClient(
 type Message = {
   id: string;
   lead_id: string;
-  text: string;
+  text: string | null;
   from_me: boolean;
   created_at: string;
+  type?: string | null;
+  media_url?: string | null;
 };
 
 type Contact = {
@@ -56,7 +58,7 @@ export default function AtendimentosPage() {
 
         const { data: msgs } = await supabase
           .from("messages")
-          .select("id,lead_id,text,from_me,created_at")
+          .select("id,lead_id,text,from_me,created_at,type,media_url")
           .in("lead_id", leads.map(l => l.id))
           .order("created_at", { ascending: false });
 
@@ -74,7 +76,7 @@ export default function AtendimentosPage() {
             lead_id: l.id,
             name:    l.name,
             phone:   l.phone,
-            last_msg: byLead[l.id].text ?? "",
+            last_msg: byLead[l.id].type === "image" ? "📷 Foto" : (byLead[l.id].text ?? ""),
             last_at:  byLead[l.id].created_at,
             unread:   0,
           }))
@@ -90,7 +92,7 @@ export default function AtendimentosPage() {
     setLoadingMsgs(true);
     const { data } = await supabase
       .from("messages")
-      .select("id,lead_id,text,from_me,created_at")
+      .select("id,lead_id,text,from_me,created_at,type,media_url")
       .eq("lead_id", c.lead_id)
       .order("created_at", { ascending: true });
     setMessages((data as Message[]) ?? []);
@@ -223,14 +225,36 @@ export default function AtendimentosPage() {
                     maxWidth: "68%",
                     background: m.from_me ? "#005c4b" : "#232323",
                     color: "#fff",
-                    padding: "8px 12px",
+                    padding: m.type === "image" ? "4px" : "8px 12px",
                     borderRadius: m.from_me ? "12px 12px 2px 12px" : "12px 12px 12px 2px",
                     fontSize: "13px",
                     lineHeight: "1.5",
                     wordBreak: "break-word",
+                    overflow: "hidden",
                   }}>
-                    <p style={{ margin: 0 }}>{m.text}</p>
-                    <p style={{ margin: "4px 0 0", fontSize: "10px", color: m.from_me ? "#7ecbb5" : "#555", textAlign: "right" }}>
+                    {m.type === "image" && m.media_url ? (
+                      <div>
+                        <img
+                          src={m.media_url}
+                          alt="foto veículo"
+                          onClick={() => window.open(m.media_url!, "_blank")}
+                          style={{
+                            display: "block",
+                            maxWidth: "220px",
+                            maxHeight: "200px",
+                            objectFit: "cover",
+                            borderRadius: "8px",
+                            cursor: "pointer",
+                          }}
+                        />
+                        {m.text && (
+                          <p style={{ margin: "6px 8px 2px", fontSize: "12px", color: "#ccc" }}>{m.text}</p>
+                        )}
+                      </div>
+                    ) : (
+                      <p style={{ margin: 0 }}>{m.text}</p>
+                    )}
+                    <p style={{ margin: "4px 4px 2px", fontSize: "10px", color: m.from_me ? "#7ecbb5" : "#555", textAlign: "right" }}>
                       {fmtTime(m.created_at)}
                     </p>
                   </div>

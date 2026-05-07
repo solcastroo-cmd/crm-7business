@@ -235,7 +235,21 @@ class CRMClient:
 
         import time
         for i, url in enumerate(photos):
-            self.send_image(url, caption if i == 0 else "")
+            msg_caption = caption if i == 0 else ""
+            self.send_image(url, msg_caption)
+
+            # Salva a foto no histórico para aparecer no módulo Atendimentos
+            try:
+                self._sb.from_("messages").insert({
+                    "lead_id":   self.lead_id,
+                    "type":      "image",
+                    "from_me":   True,
+                    "media_url": url,
+                    "text":      msg_caption,
+                }).execute()
+            except Exception as e:
+                logger.warning("[CRM] Erro ao salvar foto no histórico: %s", e)
+
             if i < len(photos) - 1:
                 time.sleep(0.7)
 
