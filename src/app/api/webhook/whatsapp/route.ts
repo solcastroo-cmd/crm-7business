@@ -176,6 +176,43 @@ async function sendMessage(store: StoreConfig, to: string, text: string) {
   }
 }
 
+// ── Tenta identificar veículo no texto da mensagem ───────────────────────────
+const SKIP_WORDS = new Set([
+  "oi", "olá", "ola", "bom", "dia", "tarde", "noite", "tudo", "bem", "sim",
+  "não", "nao", "quero", "queria", "gostaria", "preciso", "tenho", "tenha",
+  "vim", "vi", "ver", "vendo", "vender", "comprar", "compra", "carro", "caro",
+  "caro", "carro", "veículo", "veiculo", "anuncio", "anúncio", "para", "pelo",
+  "pela", "por", "com", "sem", "seu", "sua", "meu", "minha", "um", "uma",
+  "mais", "menos", "esse", "essa", "este", "esta", "aquele", "aquela",
+  "favor", "obrigado", "obrigada", "boa", "bora", "pode", "como", "qual",
+]);
+
+async function matchVehicleFromText(text: string, storeId: string): Promise<string | null> {
+  try {
+    const words = text.toLowerCase()
+      .replace(/[^a-záàâãéêíóôõúüç\s]/gi, " ")
+      .split(/\s+/)
+      .filter(w => w.length > 2 && !SKIP_WORDS.has(w));
+
+    if (words.length === 0) return null;
+
+    for (const word of words) {
+      const { data } = await supabaseAdmin
+        .from("vehicles")
+        .select("id")
+        .eq("status", "disponivel")
+        .eq("store_id", storeId)
+        .or(`brand.ilike.%${word}%,model.ilike.%${word}%`)
+        .limit(1)
+        .maybeSingle();
+      if (data) return data.id;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 // ── Processa mensagem ─────────────────────────────────────────────────────────
 async function processMessage(body: unknown) {
   try {
@@ -237,30 +274,43 @@ async function processMessage(body: unknown) {
 
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { id: _id, ...extractedSafe } = extracted;
-      const lead = await upsertLead(`wa:${from}`, name, "whatsapp", extractedSafe, store.userId);
+      let lead = await upsertLead(`wa:${from}`, name, "whatsapp", extractedSafe, store.userId);
       waDebug("Lead upsert concluído", { leadId: lead.id, stage: lead.stage });
 
-      // ── Salva mensagem recebida do cliente ───────────────────────────────
-      await supabaseAdmin.from("messages").insert({
-        lead_id:  lead.id,
-        text,
-        from_me:  false,
-        wamid:    wamid ?? null,
-      });
+      // ── Identifica veículo do texto se lead ainda não tem interesse ───────
+      if (!lead.veiculo_interesse_id) {
+        const vehicleId = await matchVehicleFromText(text, store.userId);
+        if (vehicleId) {
+          await supabaseAdmin
+            .from("leads")
+            .update({ veiculo_interesse_id: vehicleId })
+            .eq("id", lead.id);
+          lead = { ...lead, veiculo_interesse_id: vehicleId };
+          waInfo("Veículo identificado pelo texto da mensagem", { vehicleId, leadId: lead.id });
+        }
+      }
 
-      // ── IA responde ───────────────────────────────────────────────────────
+      // ── IA responde (ANTES de salvar — evita duplicar mensagem no histórico)
       const reply = await getAIReply(text, lead);
       waDebug("Resposta gerada pela IA", { preview: reply.substring(0, 100) });
 
       // ── Envia resposta via token DA loja ──────────────────────────────────
       await sendMessage(store, from, reply);
 
-      // ── Salva resposta da IA no histórico ─────────────────────────────────
-      await supabaseAdmin.from("messages").insert({
-        lead_id: lead.id,
-        text:    reply,
-        from_me: true,
-      });
+      // ── Salva mensagem recebida + resposta da IA (depois de processar) ────
+      await Promise.all([
+        supabaseAdmin.from("messages").insert({
+          lead_id: lead.id,
+          text,
+          from_me: false,
+          wamid:   wamid ?? null,
+        }),
+        supabaseAdmin.from("messages").insert({
+          lead_id: lead.id,
+          text:    reply,
+          from_me: true,
+        }),
+      ]);
 
       waInfo("Ciclo completo ✅", { userId: store.userId, from, leadId: lead.id });
     }
