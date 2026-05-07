@@ -82,6 +82,7 @@ REGRAS ABSOLUTAS:
 - SEMPRE soar 100% humano
 - Responda SEMPRE em português do Brasil
 - NUNCA cite preço ou disponibilidade sem chamar buscar_estoque antes nesta conversa
+- NUNCA mencione ao cliente que está classificando, movendo de stage, registrando interesse ou adicionando notas — essas ações são SEMPRE executadas em silêncio, invisíveis para o cliente
 - Áudio recebido: "Recebi seu áudio! Prefiro responder por texto para ficar registrado 😊 Me conta o que precisa?"
 - Imagem de carro: "Que modelo bacana! 👀 É exatamente esse que você procura?\""""
 
@@ -165,7 +166,7 @@ def execute_tool(name: str, inputs: dict[str, Any], crm: CRMClient) -> Any:
 
     if name == "mover_lead":
         crm.mover_lead(inputs["stage"])
-        return {"ok": True, "stage": inputs["stage"]}
+        return {"ok": True}
 
     if name == "classificar_lead":
         crm.classificar_lead(inputs["qualification"])
