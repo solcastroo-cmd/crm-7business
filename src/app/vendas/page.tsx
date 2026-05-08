@@ -278,7 +278,7 @@ export default function VendasPage() {
   /* ── nova venda ── */
   function openDetail(sale: Sale) {
     setDetail(sale);
-    setEditMode(false);
+    setEditMode(true);
     setEditForm({
       buyer_name: sale.buyer_name,
       buyer_cpf: sale.buyer_cpf ?? "",
@@ -314,7 +314,6 @@ export default function VendasPage() {
     const updatedWithVehicle: Sale = { ...updated, vehicle: detail.vehicle };
     setDetail(updatedWithVehicle);
     setSales(prev => prev.map(s => s.id === detail.id ? updatedWithVehicle : s));
-    setEditMode(false);
   }
 
   async function handleNewSale(e: React.FormEvent) {
@@ -657,33 +656,16 @@ export default function VendasPage() {
                 </p>
               </div>
               <div className="flex gap-2 items-center">
-                {!editMode ? (
-                  <>
-                    <button onClick={() => setEditMode(true)}
-                      className="rounded-xl px-4 py-2 text-sm font-bold flex items-center gap-1.5 transition-all hover:opacity-90"
-                      style={{ background: "#1f2937", color: "#e5e7eb" }}>
-                      ✏️ Editar
-                    </button>
-                    <button onClick={() => printReceipt(detail, storeName)}
-                      className="rounded-xl px-4 py-2 text-sm font-bold text-white flex items-center gap-1.5 transition-all hover:opacity-90"
-                      style={{ background: "#e63946" }}>
-                      🖨️ Recibo
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <button onClick={saveEdit} disabled={savingEdit}
-                      className="rounded-xl px-4 py-2 text-sm font-bold text-white flex items-center gap-1.5 transition-all hover:opacity-90 disabled:opacity-50"
-                      style={{ background: "#10b981" }}>
-                      {savingEdit ? "Salvando…" : "✓ Salvar"}
-                    </button>
-                    <button onClick={() => setEditMode(false)}
-                      className="rounded-xl px-4 py-2 text-sm font-bold transition-all"
-                      style={{ background: "#1f2937", color: "#9ca3af" }}>
-                      Cancelar
-                    </button>
-                  </>
-                )}
+                <button onClick={saveEdit} disabled={savingEdit}
+                  className="rounded-xl px-4 py-2 text-sm font-bold text-white flex items-center gap-1.5 transition-all hover:opacity-90 disabled:opacity-50"
+                  style={{ background: "#10b981" }}>
+                  {savingEdit ? "Salvando…" : "✓ Salvar"}
+                </button>
+                <button onClick={() => printReceipt(detail, storeName)}
+                  className="rounded-xl px-4 py-2 text-sm font-bold text-white flex items-center gap-1.5 transition-all hover:opacity-90"
+                  style={{ background: "#e63946" }}>
+                  🖨️ Recibo
+                </button>
                 <button onClick={() => { setDetail(null); setEditMode(false); }}
                   className="w-9 h-9 rounded-xl flex items-center justify-center text-gray-400 hover:text-white"
                   style={{ background: "#1f2937" }}>✕</button>
