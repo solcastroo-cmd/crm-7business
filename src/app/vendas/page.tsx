@@ -41,10 +41,16 @@ type StockVehicle = {
 
 /* ── Constants ─────────────────────────────────────────────────────── */
 const PAYMENT_LABEL: Record<string, string> = {
-  avista:     "À Vista",
-  financiado: "Financiado",
-  parcelado:  "Parcelado",
-  troca:      "Troca",
+  avista:              "À Vista",
+  financiado:          "Financiado",
+  consorcio:           "Consórcio",
+  leasing:             "Leasing",
+  parcelado:           "Parcelado",
+  cartao_credito:      "Cartão de Crédito",
+  troca:               "Permuta / Troca",
+  troca_financiado:    "Permuta + Financiamento",
+  troca_consorcio:     "Permuta + Consórcio",
+  outros:              "Outros",
 };
 
 const STATUS_CFG: Record<string, { label: string; color: string; bg: string }> = {
@@ -549,8 +555,14 @@ export default function VendasPage() {
                       style={{ background: "#111827", borderColor: "#374151" }}>
                       <option value="avista">À Vista</option>
                       <option value="financiado">Financiado</option>
+                      <option value="consorcio">Consórcio</option>
+                      <option value="leasing">Leasing</option>
                       <option value="parcelado">Parcelado</option>
-                      <option value="troca">Troca</option>
+                      <option value="cartao_credito">Cartão de Crédito</option>
+                      <option value="troca">Permuta / Troca</option>
+                      <option value="troca_financiado">Permuta + Financiamento</option>
+                      <option value="troca_consorcio">Permuta + Consórcio</option>
+                      <option value="outros">Outros</option>
                     </select>
                   </div>
                   <div>
@@ -567,7 +579,7 @@ export default function VendasPage() {
                       className="w-full rounded-xl px-3 py-2 text-sm text-white border focus:outline-none"
                       style={{ background: "#111827", borderColor: "#374151" }} />
                   </div>
-                  {(form.payment_method === "parcelado" || form.payment_method === "financiado") && <>
+                  {(["parcelado", "financiado", "consorcio", "leasing", "troca_financiado", "troca_consorcio"].includes(form.payment_method)) && <>
                     <div>
                       <label className="block text-[10px] font-semibold mb-1" style={{ color: "#6b7280" }}>Nº Parcelas</label>
                       <input type="number" min="1" value={form.installments_count}
@@ -755,8 +767,14 @@ export default function VendasPage() {
                           style={{ background: "#111827", borderColor: "#374151" }}>
                           <option value="avista">À Vista</option>
                           <option value="financiado">Financiado</option>
+                          <option value="consorcio">Consórcio</option>
+                          <option value="leasing">Leasing</option>
                           <option value="parcelado">Parcelado</option>
-                          <option value="troca">Troca</option>
+                          <option value="cartao_credito">Cartão de Crédito</option>
+                          <option value="troca">Permuta / Troca</option>
+                          <option value="troca_financiado">Permuta + Financiamento</option>
+                          <option value="troca_consorcio">Permuta + Consórcio</option>
+                          <option value="outros">Outros</option>
                         </select>
                       </div>
                       <div>
