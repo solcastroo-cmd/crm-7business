@@ -12,7 +12,6 @@ const supabase = createClient(
 
 const NAV = [
   { href: "/",              icon: "⚡", label: "Funil de Leads" },
-  { href: "/dashboard",     icon: "📊", label: "Dashboard"      },
   { href: "/gestao",        icon: "📈", label: "Gestao"         },
   { href: "/vendas",        icon: "🤝", label: "Vendas"         },
   { href: "/atendimentos",  icon: "💬", label: "Atendimentos"   },
