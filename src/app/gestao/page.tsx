@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
@@ -23,6 +23,19 @@ type Vehicle = {
   id: string; brand: string | null; model: string | null; year: number | null;
   price: number | null; status: string; created_at: string; updated_at: string;
 };
+type Sale = {
+  id: string; vehicle_id: string | null; buyer_name: string | null;
+  payment_method: string | null; total_value: number | null;
+  down_payment: number | null; status: string | null;
+  closing_date: string | null; created_at: string;
+};
+type StoreExpense = {
+  id: string; amount: number | null; date: string | null;
+  category: string | null; status: string | null;
+};
+type VehicleExpense = {
+  id: string; vehicle_id: string; amount: number | null; date: string | null;
+};
 
 const STAGES = ["Novo Lead","Contato Inicial","Interesse","Proposta","Negociação","VENDIDO!","Perdido"];
 const STAGE_COLORS: Record<string,string> = {
@@ -32,12 +45,21 @@ const STAGE_COLORS: Record<string,string> = {
 const PIE_COLORS = ["#ef4444","#f59e0b","#3b82f6","#6b7280"];
 const TABS = ["Visão Geral","Funil","Vendas","Vendedores","Leads","Veículos","Origens","Relatório"];
 
+const PAYMENT_LABELS: Record<string, string> = {
+  avista: "À Vista", financiado: "Financiado", consorcio: "Consórcio",
+  leasing: "Leasing", parcelado: "Parcelado", cartao_credito: "Cartão",
+  troca: "Troca", troca_financiado: "Troca+Fin.", troca_consorcio: "Troca+Con.", outros: "Outros",
+};
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
 const pct = (a: number, b: number) => b === 0 ? "—" : `${Math.round((a / b) * 100)}%`;
 
 function daysAgo(days: number) {
   return new Date(Date.now() - days * 86_400_000).toISOString();
+}
+function daysAgoDate(days: number) {
+  return new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
 }
 
 function monthKey(iso: string) {
@@ -72,15 +94,29 @@ function KpiCard({ label, value, sub, accent }: { label: string; value: string; 
 }
 
 // ── ABA 1: Visão Geral ────────────────────────────────────────────────────────
-function TabVisaoGeral({ leads }: { leads: Lead[] }) {
+function TabVisaoGeral({
+  leads, sales, storeExpenses, vehicleExpenses,
+}: {
+  leads: Lead[]; sales: Sale[];
+  storeExpenses: StoreExpense[]; vehicleExpenses: VehicleExpense[];
+}) {
   const [range, setRange] = useState<7|30|90>(30);
-  const since = daysAgo(range);
-  const filtered = leads.filter(l => l.created_at >= since);
-  const vendidos = filtered.filter(l => l.stage === "VENDIDO!");
+  const since    = daysAgo(range);
+  const sinceDate = daysAgoDate(range);
+
+  const filtered  = leads.filter(l => l.created_at >= since);
   const propostas = filtered.filter(l => l.stage === "Proposta" || l.stage === "Negociação");
-  const budgets = vendidos.map(l => l.budget ?? 0).filter(b => b > 0);
-  const faturamento = budgets.reduce((s, b) => s + b, 0);
-  const ticket = budgets.length ? Math.round(faturamento / budgets.length) : 0;
+
+  // Faturamento real (tabela sales)
+  const salesInRange = sales.filter(s => (s.closing_date ?? s.created_at.slice(0,10)) >= sinceDate);
+  const faturamento  = salesInRange.reduce((s, v) => s + (v.total_value ?? 0), 0);
+  const ticket       = salesInRange.length ? Math.round(faturamento / salesInRange.length) : 0;
+
+  // Despesas no período
+  const storeExp   = storeExpenses.filter(e => (e.date ?? "") >= sinceDate).reduce((s, e) => s + (e.amount ?? 0), 0);
+  const vehicleExp = vehicleExpenses.filter(e => (e.date ?? "") >= sinceDate).reduce((s, e) => s + (e.amount ?? 0), 0);
+  const totalExp   = storeExp + vehicleExp;
+  const lucro      = faturamento - totalExp;
 
   // Leads por dia
   const dayMap: Record<string, number> = {};
@@ -103,9 +139,11 @@ function TabVisaoGeral({ leads }: { leads: Lead[] }) {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: "16px", marginBottom: "28px" }}>
         <KpiCard label="Total Leads"    value={String(filtered.length)} sub={`últimos ${range} dias`} />
         <KpiCard label="Em Proposta"    value={String(propostas.length)} />
-        <KpiCard label="Vendas"         value={String(vendidos.length)} accent />
-        <KpiCard label="Ticket Médio"   value={ticket ? brl(ticket) : "—"} />
+        <KpiCard label="Vendas"         value={String(salesInRange.length)} accent />
+        <KpiCard label="Ticket Médio"   value={ticket ? brl(ticket) : "—"} sub="valor real de venda" />
         <KpiCard label="Faturamento"    value={faturamento ? brl(faturamento) : "—"} accent />
+        <KpiCard label="Despesas"       value={totalExp ? brl(totalExp) : "—"} sub={`loja ${brl(storeExp)} · veíc. ${brl(vehicleExp)}`} />
+        <KpiCard label="Lucro Líquido"  value={faturamento || totalExp ? brl(lucro) : "—"} sub="fat. − despesas" accent={lucro > 0} />
       </div>
 
       {/* Gráfico */}
@@ -135,7 +173,6 @@ function TabFunil({ leads }: { leads: Lead[] }) {
   const counts = STAGES.map(s => ({ stage: s, count: leads.filter(l => l.stage === s).length }));
   const total = leads.length;
 
-  // Maior gargalo
   let maxDrop = 0; let gargaloA = ""; let gargaloB = ""; let gargaloN = 0;
   for (let i = 0; i < counts.length - 1; i++) {
     const a = counts[i].count; const b = counts[i+1].count;
@@ -188,54 +225,100 @@ function TabFunil({ leads }: { leads: Lead[] }) {
 }
 
 // ── ABA 3: Vendas ─────────────────────────────────────────────────────────────
-function TabVendas({ leads }: { leads: Lead[] }) {
-  const vendidos = leads.filter(l => l.stage === "VENDIDO!");
-  const budgets = vendidos.map(l => l.budget ?? 0).filter(b => b > 0);
-  const faturamento = budgets.reduce((s,b)=>s+b,0);
-  const ticket = budgets.length ? Math.round(faturamento/budgets.length) : 0;
+function TabVendas({ sales, leads }: { sales: Sale[]; leads: Lead[] }) {
+  const faturamento = sales.reduce((s, v) => s + (v.total_value ?? 0), 0);
+  const ticket      = sales.length ? Math.round(faturamento / sales.length) : 0;
 
-  // Por mês (últimos 6 meses)
-  const monthMap: Record<string,{ count:number; fat:number }> = {};
-  vendidos.forEach(l => {
-    const m = monthKey(l.updated_at);
-    if (!monthMap[m]) monthMap[m] = { count:0, fat:0 };
+  // Por mês (últimos 6 meses) — usa closing_date ou created_at
+  const monthMap: Record<string, { count: number; fat: number }> = {};
+  sales.forEach(s => {
+    const m = monthKey(s.closing_date ?? s.created_at.slice(0, 10));
+    if (!monthMap[m]) monthMap[m] = { count: 0, fat: 0 };
     monthMap[m].count++;
-    monthMap[m].fat += l.budget ?? 0;
+    monthMap[m].fat += s.total_value ?? 0;
   });
   const monthData = Object.entries(monthMap).sort(([a],[b])=>a.localeCompare(b)).slice(-6)
     .map(([month,v]) => ({ month: month.slice(5), vendas: v.count, faturamento: v.fat }));
 
+  // Forma de pagamento
+  const pmMap: Record<string, number> = {};
+  sales.forEach(s => {
+    const pm = PAYMENT_LABELS[s.payment_method ?? ""] ?? (s.payment_method ?? "Outros");
+    pmMap[pm] = (pmMap[pm] ?? 0) + 1;
+  });
+  const pmData = Object.entries(pmMap).sort((a,b) => b[1]-a[1]).map(([name,value]) => ({ name, value }));
+
+  // Status de pagamento
+  const pagas     = sales.filter(s => s.status === "pago").length;
+  const parceladas = sales.filter(s => s.status === "parcelado").length;
+  const pendentes  = sales.filter(s => s.status === "pendente").length;
+
+  // Valor a receber (pendente + parcelado)
+  const aReceber = sales
+    .filter(s => s.status !== "pago")
+    .reduce((sum, s) => sum + (s.total_value ?? 0), 0);
+
+  // Fallback: leads VENDIDO! sem vendas registradas
+  const leadsVendidos = leads.filter(l => l.stage === "VENDIDO!").length;
+
   return (
     <div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: "16px", marginBottom: "28px" }}>
-        <KpiCard label="Faturamento Total" value={faturamento ? brl(faturamento) : "—"} accent />
+        <KpiCard label="Faturamento Total" value={faturamento ? brl(faturamento) : "—"} accent sub="valor real das vendas" />
         <KpiCard label="Ticket Médio"      value={ticket ? brl(ticket) : "—"} />
-        <KpiCard label="Total Vendidos"    value={String(vendidos.length)} />
+        <KpiCard label="Total Vendas"      value={String(sales.length)} sub={`${leadsVendidos} leads VENDIDO!`} />
+        <KpiCard label="Pagas"             value={String(pagas)} sub="status: pago" />
+        <KpiCard label="Parceladas"        value={String(parceladas)} />
+        <KpiCard label="Pendentes"         value={String(pendentes)} />
+        <KpiCard label="A Receber"         value={aReceber ? brl(aReceber) : "—"} sub="pendente + parcelado" accent />
       </div>
 
-      <div style={{ ...S.card, padding: "24px", marginBottom: "24px" }}>
-        <p style={{ ...S.label, marginBottom: "16px" }}>Vendas por mês (últimos 6 meses)</p>
-        <ResponsiveContainer width="100%" height={220}>
-          <BarChart data={monthData}>
-            <XAxis dataKey="month" tick={{ fill: "#555", fontSize: 11 }} />
-            <YAxis tick={{ fill: "#555", fontSize: 11 }} />
-            <Tooltip contentStyle={{ background: "#1e1e1e", border: "1px solid #333", color: "#fff" }} />
-            <Bar dataKey="vendas" fill="#e63946" name="Vendas" radius={[4,4,0,0]} />
-          </BarChart>
-        </ResponsiveContainer>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "24px" }}>
+        <div style={{ ...S.card, padding: "24px" }}>
+          <p style={{ ...S.label, marginBottom: "16px" }}>Vendas por mês</p>
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={monthData}>
+              <XAxis dataKey="month" tick={{ fill: "#555", fontSize: 11 }} />
+              <YAxis tick={{ fill: "#555", fontSize: 11 }} />
+              <Tooltip contentStyle={{ background: "#1e1e1e", border: "1px solid #333", color: "#fff" }} />
+              <Bar dataKey="vendas" fill="#e63946" name="Vendas" radius={[4,4,0,0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div style={{ ...S.card, padding: "24px" }}>
+          <p style={{ ...S.label, marginBottom: "16px" }}>Faturamento por mês</p>
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={monthData}>
+              <XAxis dataKey="month" tick={{ fill: "#555", fontSize: 11 }} />
+              <YAxis tick={{ fill: "#555", fontSize: 11 }} tickFormatter={v => `R$${(v/1000).toFixed(0)}k`} />
+              <Tooltip contentStyle={{ background: "#1e1e1e", border: "1px solid #333", color: "#fff" }} formatter={(v: unknown) => brl(Number(v))} />
+              <Bar dataKey="faturamento" fill="#22c55e" name="Faturamento" radius={[4,4,0,0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
       </div>
 
-      <div style={{ ...S.card, padding: "24px" }}>
-        <p style={{ ...S.label, marginBottom: "16px" }}>Faturamento por mês</p>
-        <ResponsiveContainer width="100%" height={200}>
-          <BarChart data={monthData}>
-            <XAxis dataKey="month" tick={{ fill: "#555", fontSize: 11 }} />
-            <YAxis tick={{ fill: "#555", fontSize: 11 }} tickFormatter={v => `R$${(v/1000).toFixed(0)}k`} />
-            <Tooltip contentStyle={{ background: "#1e1e1e", border: "1px solid #333", color: "#fff" }} formatter={(v: unknown) => brl(Number(v))} />
-            <Bar dataKey="faturamento" fill="#22c55e" name="Faturamento" radius={[4,4,0,0]} />
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
+      {pmData.length > 0 && (
+        <div style={{ ...S.card, padding: "24px" }}>
+          <p style={{ ...S.label, marginBottom: "16px" }}>Forma de pagamento</p>
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart layout="vertical" data={pmData} margin={{ left: 20 }}>
+              <XAxis type="number" tick={{ fill: "#555", fontSize: 11 }} />
+              <YAxis type="category" dataKey="name" tick={{ fill: "#9ca3af", fontSize: 12 }} width={110} />
+              <Tooltip contentStyle={{ background: "#1e1e1e", border: "1px solid #333", color: "#fff" }} />
+              <Bar dataKey="value" name="Vendas" fill="#6366f1" radius={[0,4,4,0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {sales.length === 0 && (
+        <div style={{ ...S.card, padding: "20px", textAlign: "center" }}>
+          <p style={{ color: "#555", fontSize: "13px" }}>Nenhuma venda registrada no módulo Vendas ainda.</p>
+          <p style={{ color: "#444", fontSize: "12px", marginTop: "6px" }}>Registre vendas no módulo Vendas para ver dados reais aqui.</p>
+        </div>
+      )}
     </div>
   );
 }
@@ -298,7 +381,6 @@ function TabLeads({ leads }: { leads: Lead[] }) {
     { name:"Sem qual.",value:semQ, color:"#6b7280" },
   ].filter(d=>d.value>0);
 
-  // Tempo médio de resposta (leads que saíram de Novo Lead)
   const movidos = leads.filter(l=>l.stage!=="Novo Lead");
   const tempos = movidos.map(l=>diffDays(l.created_at, l.updated_at)).filter(d=>d>0&&d<180);
   const tmedio = tempos.length ? (tempos.reduce((s,d)=>s+d,0)/tempos.length).toFixed(1) : "—";
@@ -427,18 +509,31 @@ function TabOrigens({ leads }: { leads: Lead[] }) {
 }
 
 // ── ABA 8: Relatório PDF ──────────────────────────────────────────────────────
-function TabRelatorio({ leads, vehicles }: { leads: Lead[]; vehicles: Vehicle[] }) {
+function TabRelatorio({
+  leads, vehicles, sales, storeExpenses, vehicleExpenses,
+}: {
+  leads: Lead[]; vehicles: Vehicle[]; sales: Sale[];
+  storeExpenses: StoreExpense[]; vehicleExpenses: VehicleExpense[];
+}) {
   const now = new Date();
   const mesAtual    = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
   const mesAnterior = (() => { const d=new Date(now); d.setMonth(d.getMonth()-1); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; })();
 
   const leadsDoMes  = leads.filter(l=>monthKey(l.created_at)===mesAtual);
   const leadsAntes  = leads.filter(l=>monthKey(l.created_at)===mesAnterior);
-  const vendidosMes = leadsDoMes.filter(l=>l.stage==="VENDIDO!");
-  const fat         = vendidosMes.map(l=>l.budget??0).filter(b=>b>0).reduce((s,b)=>s+b,0);
-  const ticket      = vendidosMes.length && fat ? Math.round(fat/vendidosMes.length) : 0;
   const emEstoque   = vehicles.filter(v=>v.status==="disponivel").length;
   const emProposta  = leadsDoMes.filter(l=>l.stage==="Proposta"||l.stage==="Negociação").length;
+
+  // Vendas reais do mês
+  const salesDoMes  = sales.filter(s => monthKey(s.closing_date ?? s.created_at.slice(0,10)) === mesAtual);
+  const fat         = salesDoMes.reduce((s,v) => s + (v.total_value ?? 0), 0);
+  const ticket      = salesDoMes.length && fat ? Math.round(fat / salesDoMes.length) : 0;
+
+  // Despesas do mês
+  const storeExpMes   = storeExpenses.filter(e => (e.date ?? "").startsWith(mesAtual)).reduce((s,e) => s + (e.amount ?? 0), 0);
+  const vehicleExpMes = vehicleExpenses.filter(e => (e.date ?? "").startsWith(mesAtual)).reduce((s,e) => s + (e.amount ?? 0), 0);
+  const totalExpMes   = storeExpMes + vehicleExpMes;
+  const lucroMes      = fat - totalExpMes;
 
   // Gargalo
   const stageCounts = STAGES.map(s=>({ stage:s, count:leads.filter(l=>l.stage===s).length }));
@@ -448,9 +543,9 @@ function TabRelatorio({ leads, vehicles }: { leads: Lead[]; vehicles: Vehicle[] 
     if(drop>gargaloN){ gargaloN=drop; gargalo=`${stageCounts[i].stage} → ${stageCounts[i+1].stage}`; }
   }
 
-  // Vendedor destaque
+  // Vendedor destaque (pelo funil de leads)
   const sellerMap: Record<string,number> = {};
-  vendidosMes.forEach(l=>{ if(l.seller) sellerMap[l.seller]=(sellerMap[l.seller]??0)+1; });
+  leads.filter(l=>l.stage==="VENDIDO!"&&monthKey(l.updated_at)===mesAtual).forEach(l=>{ if(l.seller) sellerMap[l.seller]=(sellerMap[l.seller]??0)+1; });
   const topSeller = Object.entries(sellerMap).sort((a,b)=>b[1]-a[1])[0];
 
   // Melhor canal
@@ -463,21 +558,23 @@ function TabRelatorio({ leads, vehicles }: { leads: Lead[]; vehicles: Vehicle[] 
     gargalo ? `Maior gargalo do funil: ${gargaloN} leads perdidos em ${gargalo}` : "Funil sem gargalos criticos identificados",
     topSeller ? `Vendedor destaque: ${topSeller[0]} com ${topSeller[1]} venda(s) no mes` : "Nenhuma venda registrada com vendedor no mes",
     topCanal ? `Canal com melhor conversao: ${topCanal[0]} (${Math.round((topCanal[1].conv/topCanal[1].total)*100)}% de taxa)` : "Dados de canal insuficientes para analise",
+    totalExpMes > 0 ? `Despesas do mes: ${brl(totalExpMes)} (loja: ${brl(storeExpMes)} + veiculos: ${brl(vehicleExpMes)})` : "Sem despesas registradas no mes",
+    fat > 0 ? `Lucro liquido estimado: ${brl(lucroMes)} (fat. ${brl(fat)} − desp. ${brl(totalExpMes)})` : "Sem faturamento registrado no mes",
   ];
 
   const kpis = [
     { l:"Leads no Mes",    v:String(leadsDoMes.length) },
-    { l:"Vendas",          v:String(vendidosMes.length) },
+    { l:"Vendas",          v:String(salesDoMes.length) },
     { l:"Faturamento",     v:fat?brl(fat):"—" },
     { l:"Ticket Medio",    v:ticket?brl(ticket):"—" },
+    { l:"Despesas",        v:totalExpMes?brl(totalExpMes):"—" },
+    { l:"Lucro Liquido",   v:(fat||totalExpMes)?brl(lucroMes):"—" },
     { l:"Em Estoque",      v:String(emEstoque) },
     { l:"Em Proposta",     v:String(emProposta) },
   ];
 
-  // Funil para o relatório
   const funnelRows = stageCounts.map(({stage,count})=>({ stage, count, pct: leads.length?Math.round((count/leads.length)*100):0 }));
 
-  // Gera HTML em nova janela e imprime
   function handlePrint() {
     const mesLabel = now.toLocaleDateString("pt-BR",{ month:"long", year:"numeric" });
     const dataLabel = now.toLocaleDateString("pt-BR");
@@ -522,7 +619,7 @@ function TabRelatorio({ leads, vehicles }: { leads: Lead[]; vehicles: Vehicle[] 
     h2 { font-size: 16px; font-weight: 700; color: #1a1a1a; margin: 28px 0 12px; border-bottom: 2px solid #e63946; padding-bottom: 6px; }
     .header { text-align: center; margin-bottom: 36px; padding-bottom: 24px; border-bottom: 1px solid #eee; }
     .badge { display: inline-block; width: 56px; height: 56px; background: #e63946; border-radius: 14px; font-size: 26px; font-weight: 900; color: #fff; line-height: 56px; text-align: center; margin-bottom: 12px; }
-    .kpis { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; margin-bottom: 28px; }
+    .kpis { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; margin-bottom: 28px; }
     table { width: 100%; border-collapse: collapse; font-size: 13px; }
     th { background: #f0f0f0; padding: 10px 12px; text-align: left; font-size: 11px; text-transform: uppercase; color: #666; }
     @media print { body { padding: 20px; } }
@@ -562,7 +659,6 @@ function TabRelatorio({ leads, vehicles }: { leads: Lead[]; vehicles: Vehicle[] 
     win.onload = () => { win.print(); };
   }
 
-  // Preview na tela
   return (
     <div>
       <button onClick={handlePrint} style={{
@@ -573,7 +669,6 @@ function TabRelatorio({ leads, vehicles }: { leads: Lead[]; vehicles: Vehicle[] 
         🖨️ Gerar Relatório do Mês (PDF)
       </button>
 
-      {/* Preview */}
       <div style={{ ...S.card, padding:"32px", maxWidth:"720px" }}>
         <div style={{ textAlign:"center", marginBottom:"24px", borderBottom:"1px solid #333", paddingBottom:"20px" }}>
           <div style={{ width:"48px", height:"48px", background:"#e63946", borderRadius:"12px", display:"inline-flex", alignItems:"center", justifyContent:"center", fontSize:"22px", fontWeight:900, color:"#fff", marginBottom:"12px" }}>7</div>
@@ -582,11 +677,11 @@ function TabRelatorio({ leads, vehicles }: { leads: Lead[]; vehicles: Vehicle[] 
         </div>
 
         <p style={{ ...S.label, marginBottom:"12px" }}>Resumo do mês</p>
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:"10px", marginBottom:"24px" }}>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:"10px", marginBottom:"24px" }}>
           {kpis.map(({l,v})=>(
             <div key={l} style={{ background:"#1e1e1e", borderRadius:"8px", padding:"12px" }}>
               <p style={S.label}>{l}</p>
-              <p style={{ color:"#fff", fontSize:"18px", fontWeight:800, marginTop:"4px" }}>{v}</p>
+              <p style={{ color:"#fff", fontSize:"16px", fontWeight:800, marginTop:"4px" }}>{v}</p>
             </div>
           ))}
         </div>
@@ -607,20 +702,44 @@ function TabRelatorio({ leads, vehicles }: { leads: Lead[]; vehicles: Vehicle[] 
 // ── Página principal ──────────────────────────────────────────────────────────
 export default function GestaoPage() {
   const { userId, loading: userLoading } = useUserId();
-  const [leads, setLeads]       = useState<Lead[]>([]);
-  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [leads,           setLeads]          = useState<Lead[]>([]);
+  const [vehicles,        setVehicles]        = useState<Vehicle[]>([]);
+  const [sales,           setSales]           = useState<Sale[]>([]);
+  const [storeExpenses,   setStoreExpenses]   = useState<StoreExpense[]>([]);
+  const [vehicleExpenses, setVehicleExpenses] = useState<VehicleExpense[]>([]);
   const [loading, setLoading]   = useState(true);
   const [activeTab, setActiveTab] = useState(0);
 
   useEffect(() => {
     if (!userId) return;
     setLoading(true);
+
     Promise.all([
       supabase.from("leads").select("id,name,phone,stage,source,seller,qualification,budget,created_at,updated_at").eq("store_id", userId),
       supabase.from("vehicles").select("id,brand,model,year,price,status,created_at,updated_at").eq("store_id", userId),
-    ]).then(([{ data: l }, { data: v }]) => {
-      setLeads((l as Lead[]) ?? []);
-      setVehicles((v as Vehicle[]) ?? []);
+      supabase.from("sales").select("id,vehicle_id,buyer_name,payment_method,total_value,down_payment,status,closing_date,created_at").eq("store_id", userId),
+      supabase.from("store_expenses").select("id,amount,date,category,status").eq("store_id", userId),
+    ]).then(async ([{ data: l }, { data: v }, { data: s }, { data: se }]) => {
+      const leadsData    = (l as Lead[])         ?? [];
+      const vehiclesData = (v as Vehicle[])       ?? [];
+      const salesData    = (s as Sale[])          ?? [];
+      const storeExpData = (se as StoreExpense[]) ?? [];
+
+      setLeads(leadsData);
+      setVehicles(vehiclesData);
+      setSales(salesData);
+      setStoreExpenses(storeExpData);
+
+      // vehicle_expenses filtrado pelos veículos desta loja
+      const vehicleIds = vehiclesData.map(vv => vv.id);
+      if (vehicleIds.length > 0) {
+        const { data: ve } = await supabase
+          .from("vehicle_expenses")
+          .select("id,vehicle_id,amount,date")
+          .in("vehicle_id", vehicleIds);
+        setVehicleExpenses((ve as VehicleExpense[]) ?? []);
+      }
+
       setLoading(false);
     });
   }, [userId]);
@@ -633,15 +752,13 @@ export default function GestaoPage() {
 
   return (
     <main style={{ minHeight:"100vh", background:"#1a1a1a", padding:"28px 24px", fontFamily:"Segoe UI,sans-serif" }}>
-      {/* Header */}
       <div style={{ marginBottom:"28px" }}>
         <h1 style={{ color:"#fff", fontSize:"22px", fontWeight:800, margin:0 }}>📈 Gestão</h1>
         <p style={{ color:"#6b7280", fontSize:"13px", marginTop:"4px" }}>
-          {leads.length} leads · {vehicles.length} veículos
+          {leads.length} leads · {vehicles.length} veículos · {sales.length} vendas registradas
         </p>
       </div>
 
-      {/* Tabs */}
       <div style={{ display:"flex", gap:"4px", marginBottom:"28px", overflowX:"auto", paddingBottom:"4px" }}>
         {TABS.map((tab,i) => (
           <button key={tab} onClick={() => setActiveTab(i)} style={{
@@ -654,15 +771,14 @@ export default function GestaoPage() {
         ))}
       </div>
 
-      {/* Tab content */}
-      {activeTab===0 && <TabVisaoGeral  leads={leads} />}
+      {activeTab===0 && <TabVisaoGeral leads={leads} sales={sales} storeExpenses={storeExpenses} vehicleExpenses={vehicleExpenses} />}
       {activeTab===1 && <TabFunil       leads={leads} />}
-      {activeTab===2 && <TabVendas      leads={leads} />}
+      {activeTab===2 && <TabVendas      sales={sales} leads={leads} />}
       {activeTab===3 && <TabVendedores  leads={leads} />}
       {activeTab===4 && <TabLeads       leads={leads} />}
       {activeTab===5 && <TabVeiculos    vehicles={vehicles} />}
       {activeTab===6 && <TabOrigens     leads={leads} />}
-      {activeTab===7 && <TabRelatorio   leads={leads} vehicles={vehicles} />}
+      {activeTab===7 && <TabRelatorio   leads={leads} vehicles={vehicles} sales={sales} storeExpenses={storeExpenses} vehicleExpenses={vehicleExpenses} />}
     </main>
   );
 }
