@@ -647,7 +647,13 @@ export default function Home() {
   const clearFilters   = () => { setSearchTerm(""); setQualificationFilter("Todos"); setSellerFilter("Todos"); };
 
   const leadsByStage = (stage: string) =>
-    filteredLeads.filter((l) => l.stage === stage).sort((a, b) => a.position - b.position);
+    filteredLeads
+      .filter((l) => {
+        const s = l.stage?.trim() ?? "";
+        const normalized = STAGES.includes(s) ? s : "Novo Lead";
+        return normalized === stage;
+      })
+      .sort((a, b) => a.position - b.position);
 
   // ── Delete lead ──
   const handleDeleteLead = useCallback(async (id: string) => {
