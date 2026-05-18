@@ -1,18 +1,25 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { Suspense } from "react";
+import { Suspense, useState, useEffect } from "react";
+import { createClient } from "@supabase/supabase-js";
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 const WHATSAPP_VENDAS = "5585992041818";
-const PRECO_MENSAL = "R$ 197";
-const PRECO_ANUAL  = "R$ 1.697";
+const PRECO_MENSAL    = "R$ 197";
+const PRECO_ANUAL     = "R$ 1.697";
 
 const FEATURES = [
   "Funil de leads ilimitado (Kanban)",
-  "Integração WhatsApp (Z-API / Evolution)",
-  "IA para qualificação automática de leads",
-  "Gestão de estoque de veículos",
+  "Agente Paulo — IA respondendo 24/7 no WhatsApp",
+  "Qualificação automática de leads",
+  "Gestão de estoque de veículos com fotos",
   "Dashboard com analytics em tempo real",
+  "Follow-up automático (30min → 3h → 24h → 72h)",
   "Integração OLX, Webmotors, iCarros",
   "Integração Facebook Lead Ads",
   "Múltiplos vendedores",
@@ -20,137 +27,187 @@ const FEATURES = [
 ];
 
 function PricingContent() {
-  const params = useSearchParams();
-  const expired = params.get("expired") === "1";
+  const params  = useSearchParams();
+  const expired  = params.get("expired")  === "1";
+  const success  = params.get("success")  === "1";
+  const canceled = params.get("canceled") === "1";
+
+  const [userId,    setUserId]    = useState<string | null>(null);
+  const [loading,   setLoading]   = useState(false);
+  const [hasPlan,   setHasPlan]   = useState(false);
+  const [portalLoading, setPortalLoading] = useState(false);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(async ({ data }) => {
+      if (!data?.user) return;
+      setUserId(data.user.id);
+      const r = await fetch(`/api/trial?userId=${data.user.id}`);
+      if (r.ok) {
+        const d = await r.json();
+        setHasPlan(d.status === "active");
+      }
+    });
+  }, []);
+
+  async function handleCheckout() {
+    if (!userId) { window.location.href = "/login"; return; }
+    setLoading(true);
+    try {
+      const r = await fetch("/api/stripe/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId }),
+      });
+      const d = await r.json();
+      if (d.url) window.location.href = d.url;
+      else alert(d.error ?? "Erro ao iniciar pagamento");
+    } catch { alert("Erro de rede. Tente novamente."); }
+    finally { setLoading(false); }
+  }
+
+  async function handlePortal() {
+    if (!userId) return;
+    setPortalLoading(true);
+    try {
+      const r = await fetch("/api/stripe/portal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId }),
+      });
+      const d = await r.json();
+      if (d.url) window.location.href = d.url;
+      else alert(d.error ?? "Erro ao abrir portal");
+    } catch { alert("Erro de rede."); }
+    finally { setPortalLoading(false); }
+  }
 
   const waLink = `https://wa.me/${WHATSAPP_VENDAS}?text=Olá!%20Quero%20assinar%20o%20CRM%207Business%20(Plano%20Pro).`;
 
   return (
     <div style={{
-      minHeight: "100vh",
-      background: "#1a1a1a",
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      justifyContent: "center",
-      fontFamily: "Segoe UI, sans-serif",
-      padding: "40px 20px",
+      minHeight: "100vh", background: "#1a1a1a",
+      display: "flex", flexDirection: "column",
+      alignItems: "center", justifyContent: "center",
+      fontFamily: "Segoe UI, sans-serif", padding: "40px 20px",
     }}>
-      {/* Expirado */}
+
+      {/* Alertas de estado */}
       {expired && (
-        <div style={{
-          background: "#2a0a0a",
-          border: "1px solid #e63946",
-          color: "#fca5a5",
-          borderRadius: "12px",
-          padding: "16px 24px",
-          marginBottom: "32px",
-          fontSize: "15px",
-          textAlign: "center",
-          maxWidth: "480px",
-          width: "100%",
-        }}>
+        <div style={{ background: "#2a0a0a", border: "1px solid #e63946", color: "#fca5a5",
+          borderRadius: 12, padding: "16px 24px", marginBottom: 32, fontSize: 15,
+          textAlign: "center", maxWidth: 480, width: "100%" }}>
           ⏰ <strong>Seu período de teste encerrou.</strong><br />
           Assine o plano Pro para continuar usando o CRM 7Business.
         </div>
       )}
+      {success && (
+        <div style={{ background: "#022c22", border: "1px solid #10b981", color: "#6ee7b7",
+          borderRadius: 12, padding: "16px 24px", marginBottom: 32, fontSize: 15,
+          textAlign: "center", maxWidth: 480, width: "100%" }}>
+          🎉 <strong>Pagamento confirmado!</strong> Seu plano Pro está ativo.<br />
+          <a href="/" style={{ color: "#10b981", fontWeight: 700 }}>Ir para o CRM →</a>
+        </div>
+      )}
+      {canceled && (
+        <div style={{ background: "#1c1917", border: "1px solid #78350f", color: "#fbbf24",
+          borderRadius: 12, padding: "16px 24px", marginBottom: 32, fontSize: 15,
+          textAlign: "center", maxWidth: 480, width: "100%" }}>
+          ⚠️ Pagamento cancelado. Você pode tentar novamente quando quiser.
+        </div>
+      )}
 
       {/* Header */}
-      <div style={{ textAlign: "center", marginBottom: "40px" }}>
-        <div style={{
-          width: "56px", height: "56px",
-          background: "#e63946",
-          borderRadius: "14px",
-          margin: "0 auto 16px",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          fontSize: "26px", fontWeight: 900, color: "#fff",
-        }}>7</div>
-        <h1 style={{ color: "#fff", fontSize: "28px", fontWeight: 800, margin: "0 0 8px" }}>
+      <div style={{ textAlign: "center", marginBottom: 40 }}>
+        <div style={{ width: 56, height: 56, background: "#e63946", borderRadius: 14,
+          margin: "0 auto 16px", display: "flex", alignItems: "center",
+          justifyContent: "center", fontSize: 26, fontWeight: 900, color: "#fff" }}>7</div>
+        <h1 style={{ color: "#fff", fontSize: 28, fontWeight: 800, margin: "0 0 8px" }}>
           CRM 7Business — Plano Pro
         </h1>
-        <p style={{ color: "#888", fontSize: "15px", margin: 0 }}>
+        <p style={{ color: "#888", fontSize: 15, margin: 0 }}>
           Tudo que sua loja de veículos precisa para vender mais.
         </p>
       </div>
 
       {/* Card */}
-      <div style={{
-        background: "#232323",
-        border: "2px solid #e63946",
-        borderRadius: "20px",
-        padding: "40px",
-        width: "100%",
-        maxWidth: "440px",
-        boxShadow: "0 30px 80px rgba(230,57,70,0.15)",
-      }}>
+      <div style={{ background: "#232323", border: "2px solid #e63946", borderRadius: 20,
+        padding: "40px", width: "100%", maxWidth: 440,
+        boxShadow: "0 30px 80px rgba(230,57,70,0.15)" }}>
+
         {/* Preço */}
-        <div style={{ textAlign: "center", marginBottom: "32px" }}>
-          <div style={{ color: "#888", fontSize: "13px", fontWeight: 600, marginBottom: "4px" }}>
-            PLANO PRO
+        <div style={{ textAlign: "center", marginBottom: 32 }}>
+          <div style={{ color: "#888", fontSize: 13, fontWeight: 600, marginBottom: 4 }}>PLANO PRO</div>
+          <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "center", gap: 4 }}>
+            <span style={{ color: "#fff", fontSize: 48, fontWeight: 800, lineHeight: 1 }}>{PRECO_MENSAL}</span>
+            <span style={{ color: "#888", fontSize: 14, marginBottom: 8 }}>/mês</span>
           </div>
-          <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "center", gap: "4px" }}>
-            <span style={{ color: "#fff", fontSize: "48px", fontWeight: 800, lineHeight: 1 }}>
-              {PRECO_MENSAL}
-            </span>
-            <span style={{ color: "#888", fontSize: "14px", marginBottom: "8px" }}>/mês</span>
-          </div>
-          <div style={{ color: "#10b981", fontSize: "13px", marginTop: "6px" }}>
+          <div style={{ color: "#10b981", fontSize: 13, marginTop: 6 }}>
             ou {PRECO_ANUAL}/ano (2 meses grátis)
+          </div>
+          <div style={{ color: "#6366f1", fontSize: 12, marginTop: 4, fontWeight: 600 }}>
+            ✦ 7 dias de trial grátis — cancele quando quiser
           </div>
         </div>
 
         {/* Features */}
         <ul style={{ listStyle: "none", padding: 0, margin: "0 0 32px" }}>
           {FEATURES.map(f => (
-            <li key={f} style={{
-              display: "flex", alignItems: "center", gap: "10px",
-              color: "#d1d5db", fontSize: "14px",
-              padding: "8px 0",
-              borderBottom: "1px solid #333",
-            }}>
+            <li key={f} style={{ display: "flex", alignItems: "center", gap: 10,
+              color: "#d1d5db", fontSize: 14, padding: "8px 0",
+              borderBottom: "1px solid #333" }}>
               <span style={{ color: "#10b981", fontWeight: 700, flexShrink: 0 }}>✓</span>
               {f}
             </li>
           ))}
         </ul>
 
-        {/* CTA WhatsApp */}
-        <a
-          href={waLink}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: "10px",
-            width: "100%",
-            padding: "14px",
-            background: "#25d366",
-            color: "#fff",
-            borderRadius: "12px",
-            fontWeight: 700,
-            fontSize: "16px",
-            textDecoration: "none",
-            marginBottom: "12px",
-          }}
-        >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
-          </svg>
-          Contratar via WhatsApp
-        </a>
+        {/* CTAs */}
+        {hasPlan ? (
+          /* Já assinante — portal de gerenciamento */
+          <div style={{ textAlign: "center" }}>
+            <p style={{ color: "#10b981", fontWeight: 700, fontSize: 15, marginBottom: 16 }}>
+              ✅ Plano Pro ativo
+            </p>
+            <button onClick={handlePortal} disabled={portalLoading}
+              style={{ width: "100%", padding: 14, background: "#1f2937",
+                color: "#fff", border: "1px solid #374151", borderRadius: 12,
+                fontWeight: 700, fontSize: 15, cursor: "pointer", marginBottom: 12 }}>
+              {portalLoading ? "Abrindo portal..." : "⚙️ Gerenciar assinatura"}
+            </button>
+          </div>
+        ) : (
+          <>
+            {/* Stripe Checkout */}
+            <button onClick={handleCheckout} disabled={loading}
+              style={{ display: "flex", alignItems: "center", justifyContent: "center",
+                gap: 10, width: "100%", padding: 14,
+                background: loading ? "#444" : "#e63946", color: "#fff",
+                border: "none", borderRadius: 12, fontWeight: 700, fontSize: 16,
+                cursor: loading ? "not-allowed" : "pointer", marginBottom: 10,
+                transition: "opacity .2s" }}>
+              {loading ? "Aguarde..." : "💳 Assinar com cartão"}
+            </button>
 
-        <p style={{ color: "#555", fontSize: "12px", textAlign: "center", margin: 0 }}>
-          Pagamento via PIX ou cartão de crédito • Sem taxa de setup
+            {/* WhatsApp fallback */}
+            <a href={waLink} target="_blank" rel="noopener noreferrer"
+              style={{ display: "flex", alignItems: "center", justifyContent: "center",
+                gap: 8, width: "100%", padding: 12, background: "transparent",
+                color: "#25d366", border: "1px solid #25d366", borderRadius: 12,
+                fontWeight: 600, fontSize: 14, textDecoration: "none", marginBottom: 12 }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+              </svg>
+              Contratar via WhatsApp
+            </a>
+          </>
+        )}
+
+        <p style={{ color: "#555", fontSize: 12, textAlign: "center", margin: 0 }}>
+          Pagamento seguro via Stripe • Cancele a qualquer momento
         </p>
       </div>
 
-      {/* Voltar */}
-      <a
-        href="/dashboard"
-        style={{ color: "#555", fontSize: "13px", marginTop: "24px", textDecoration: "none" }}
-      >
+      <a href="/" style={{ color: "#555", fontSize: 13, marginTop: 24, textDecoration: "none" }}>
         ← Voltar ao dashboard
       </a>
     </div>
