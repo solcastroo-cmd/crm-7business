@@ -48,8 +48,11 @@ export default function LoginPage() {
         trial_ends_at: trialEndsAt,
         plan_status: "trial",
       });
+      // Redireciona para onboarding após cadastro
+      window.location.href = "/onboarding";
+      return;
     }
-    setMessage("✅ Conta criada! Você tem 7 dias de trial gratuito. Verifique seu e-mail para confirmar.");
+    setMessage("✅ Conta criada! Verifique seu e-mail para confirmar.");
     setLoading(false);
   }
 
