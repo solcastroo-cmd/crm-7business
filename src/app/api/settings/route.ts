@@ -15,7 +15,7 @@ const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 const SELECT_FIELDS = [
   "id","email","business_name","notify_phone","sellers",
   "cnpj","store_phone","address","plan",
-  "ai_enabled","ai_name","ai_personality",
+  "ai_enabled","ai_name","ai_personality","is_admin",
 ].join(", ");
 
 // GET /api/settings?userId=xxx

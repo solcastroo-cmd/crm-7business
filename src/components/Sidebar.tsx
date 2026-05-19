@@ -28,6 +28,7 @@ export function Sidebar() {
   const [open, setOpen]           = useState(false);
   const [storeName, setStoreName] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin]     = useState(false);
 
   useEffect(() => { setOpen(false); }, [pathname]);
 
@@ -37,7 +38,10 @@ export function Sidebar() {
       setUserEmail(data.user.email ?? null);
       fetch(`/api/settings?userId=${data.user.id}`)
         .then(r => r.ok ? r.json() : null)
-        .then(d => { if (d?.business_name) setStoreName(d.business_name); })
+        .then(d => {
+          if (d?.business_name) setStoreName(d.business_name);
+          if (d?.is_admin) setIsAdmin(true);
+        })
         .catch(() => {});
     });
   }, []);
@@ -68,7 +72,7 @@ export function Sidebar() {
       </div>
 
       <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
-        {NAV.map(({ href, icon, label }) => {
+        {[...NAV, ...(isAdmin ? [{ href: "/admin", icon: "👑", label: "Admin" }] : [])].map(({ href, icon, label }) => {
           const active = isActive(href);
           return (
             <Link key={href} href={href}
