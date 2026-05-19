@@ -1,15 +1,20 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { createBrowserClient } from "@supabase/ssr";
+import { useSearchParams } from "next/navigation";
+import { Suspense } from "react";
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-export default function LoginPage() {
-  const [tab,         setTab]         = useState<"login" | "register">("login");
+function LoginContent() {
+  const params = useSearchParams();
+  const [tab, setTab] = useState<"login" | "register">(
+    params.get("tab") === "register" ? "register" : "login"
+  );
   const [email,       setEmail]       = useState("");
   const [password,    setPassword]    = useState("");
   const [name,        setName]        = useState("");
@@ -219,6 +224,16 @@ export default function LoginPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginContent />
+    </Suspense>
   );
 }
 
