@@ -227,8 +227,6 @@ function LoginContent() {
   );
 }
 
-}
-
 export default function LoginPage() {
   return (
     <Suspense>
