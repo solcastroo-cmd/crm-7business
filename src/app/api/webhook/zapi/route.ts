@@ -55,26 +55,31 @@ type StoreSettings = {
   notify_phone:        string | null;
 };
 
-// ── Cache de settings (30s) ───────────────────────────────────────────────────
-let _settingsCache: StoreSettings | null = null;
-let _settingsCacheAt = 0;
-const SETTINGS_TTL = 30 * 1000; // 30s: mudanças no painel propagam rápido
+// ── Cache de settings por loja (30s TTL) — multi-tenant safe ─────────────────
+const SETTINGS_TTL = 30 * 1000;
 const ENV_STORE_ID = process.env.STORE_ID ?? "";
+
+type CacheEntry = { store: StoreSettings; cachedAt: number };
+const _settingsCache = new Map<string, CacheEntry>();
 
 async function loadSettings(
   instanceId?: string | null,
   storeIdParam?: string | null,
 ): Promise<StoreSettings | null> {
-  const now = Date.now();
-  if (_settingsCache && now - _settingsCacheAt < SETTINGS_TTL) return _settingsCache;
+  const now    = Date.now();
+  const cacheKey = instanceId ?? storeIdParam ?? ENV_STORE_ID;
 
+  // Verifica cache pela chave da loja
+  const cached = cacheKey ? _settingsCache.get(cacheKey) : undefined;
+  if (cached && now - cached.cachedAt < SETTINGS_TTL) return cached.store;
+
+  const FIELDS = "id, ai_enabled, ai_name, ai_personality, zapi_instance, zapi_token, zapi_client_token, notify_phone";
   let store: StoreSettings | null = null;
 
   // 1ª tentativa: busca pelo instanceId enviado no body do webhook
   if (instanceId) {
     const { data } = await supabaseAdmin
-      .from("users")
-      .select("id, ai_enabled, ai_name, ai_personality, zapi_instance, zapi_token, zapi_client_token, notify_phone")
+      .from("users").select(FIELDS)
       .eq("zapi_instance", instanceId)
       .maybeSingle<StoreSettings>();
     store = data ?? null;
@@ -83,27 +88,24 @@ async function loadSettings(
   // 2ª tentativa: query param ?storeId= na URL do webhook
   if (!store && storeIdParam) {
     const { data } = await supabaseAdmin
-      .from("users")
-      .select("id, ai_enabled, ai_name, ai_personality, zapi_instance, zapi_token, zapi_client_token, notify_phone")
+      .from("users").select(FIELDS)
       .eq("id", storeIdParam)
       .maybeSingle<StoreSettings>();
     store = data ?? null;
   }
 
-  // 3ª tentativa: STORE_ID da variável de ambiente (fallback garantido)
+  // 3ª tentativa: STORE_ID da variável de ambiente (fallback PH Autoscar)
   if (!store && ENV_STORE_ID) {
     const { data } = await supabaseAdmin
-      .from("users")
-      .select("id, ai_enabled, ai_name, ai_personality, zapi_instance, zapi_token, zapi_client_token, notify_phone")
+      .from("users").select(FIELDS)
       .eq("id", ENV_STORE_ID)
       .maybeSingle<StoreSettings>();
     store = data ?? null;
-    if (store) console.log("[ZAPI] Settings carregadas via ENV_STORE_ID (fallback)");
+    if (store) console.log("[ZAPI] Settings via ENV_STORE_ID (fallback)");
   }
 
-  if (store) {
-    _settingsCache   = store;
-    _settingsCacheAt = now;
+  if (store && cacheKey) {
+    _settingsCache.set(cacheKey, { store, cachedAt: now });
   }
   return store;
 }
