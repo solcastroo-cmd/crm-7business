@@ -6,9 +6,9 @@
  */
 
 import { useState } from "react";
-import { createClient } from "@supabase/supabase-js";
+import { createBrowserClient } from "@supabase/ssr";
 
-const supabase = createClient(
+const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
@@ -28,8 +28,7 @@ export default function LoginPage() {
     setError(null);
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) { setError("E-mail ou senha incorretos."); setLoading(false); return; }
-    const userId = data.user?.id;
-    window.location.href = `/dashboard${userId ? `?storeId=${userId}` : ""}`;
+    window.location.href = "/";
   }
 
   async function handleRegister(e: React.FormEvent) {

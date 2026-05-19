@@ -1,16 +1,13 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseBrowser } from "@/lib/supabaseBrowser";
 import { useUserId } from "@/hooks/useUserId";
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, Tooltip, ResponsiveContainer, Legend
 } from "recharts";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+const supabase = getSupabaseBrowser();
 
 type Lead = { id: string; status: string; created_at: string; origin?: string; seller?: string; };
 type Vehicle = { id: string; status: string; brand?: string; price?: number; };

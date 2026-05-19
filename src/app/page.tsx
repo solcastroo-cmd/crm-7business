@@ -14,16 +14,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseBrowser } from "@/lib/supabaseBrowser";
 import { LeadModal, type Lead } from "@/components/LeadModal";
 import { DashboardCharts } from "@/components/DashboardCharts";
 import { useUserId } from "@/hooks/useUserId";
 
 // ── Supabase client (browser) ────────────────────────────────────────────────
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+const supabase = getSupabaseBrowser();
 
 // ── Stage config ─────────────────────────────────────────────────────────────
 const STAGES = [
