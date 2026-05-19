@@ -41,8 +41,9 @@ export default function OnboardingPage() {
   const [saving, setSaving]   = useState(false);
 
   /* step 1 */
-  const [bizName,  setBizName]  = useState("");
-  const [notifyPh, setNotifyPh] = useState("");
+  const [bizName,   setBizName]   = useState("");
+  const [notifyPh,  setNotifyPh]  = useState("");
+  const [agentName, setAgentName] = useState("Paulo");
 
   /* step 2 — Z-API */
   const [zapiInst,   setZapiInst]   = useState("");
@@ -115,7 +116,7 @@ export default function OnboardingPage() {
     const r = await fetch("/api/settings", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId, business_name: bizName.trim(), notify_phone: notifyPh.trim() || null }),
+      body: JSON.stringify({ userId, business_name: bizName.trim(), notify_phone: notifyPh.trim() || null, ai_name: agentName.trim() || "Paulo" }),
     });
     setSaving(false);
     if (!r.ok) { const d = await r.json(); setErr(d.error); return; }
@@ -199,6 +200,14 @@ export default function OnboardingPage() {
                 <label style={label}>Nome da loja *</label>
                 <input value={bizName} onChange={e => setBizName(e.target.value)}
                   placeholder="Ex: Auto Prime Fortaleza" style={inp} required />
+              </div>
+              <div style={{ marginBottom: 16 }}>
+                <label style={label}>Nome do seu Agente IA</label>
+                <input value={agentName} onChange={e => setAgentName(e.target.value)}
+                  placeholder="Ex: Paulo, Carlos, Ana..." style={inp} />
+                <p style={{ color: "#555", fontSize: 11, marginTop: 6 }}>
+                  É o nome que aparecerá nas mensagens automáticas do WhatsApp.
+                </p>
               </div>
               <div style={{ marginBottom: 24 }}>
                 <label style={label}>Celular para alertas de lead quente</label>
