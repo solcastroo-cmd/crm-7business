@@ -229,6 +229,196 @@ function ZapiSection({ userId }: { userId: string }) {
   );
 }
 
+/* ── Meta WhatsApp section ────────────────────────────────────────── */
+function MetaApiSection({ userId }: { userId: string }) {
+  type MetaStatus = "idle" | "loading" | "connected" | "disconnected" | "error";
+  const [status,       setStatus]       = useState<MetaStatus>("idle");
+  const [step,         setStep]         = useState<1 | 2>(1);
+  const [token,        setToken]        = useState("");
+  const [displayPhone, setDisplayPhone] = useState<string | null>(null);
+  const [bizName,      setBizName]      = useState<string | null>(null);
+  const [daysLeft,     setDaysLeft]     = useState<number | null>(null);
+  const [err,          setErr]          = useState<string | null>(null);
+  const [connecting,   setConnecting]   = useState(false);
+
+  const checkStatus = useCallback(async () => {
+    setStatus("loading");
+    try {
+      const r = await fetch(`/api/integrations?userId=${userId}`);
+      const d = await r.json();
+      const wa = d?.whatsapp ?? d?.meta ?? null;
+      if (wa?.connected || wa?.active) {
+        setStatus("connected");
+        setDisplayPhone(wa.displayPhone ?? wa.display_phone ?? null);
+        setBizName(wa.businessName ?? wa.business_name ?? null);
+        setDaysLeft(typeof wa.daysLeft === "number" ? wa.daysLeft : null);
+      } else {
+        setStatus("disconnected");
+      }
+    } catch {
+      setStatus("disconnected");
+    }
+  }, [userId]);
+
+  useEffect(() => { checkStatus(); }, [checkStatus]);
+
+  async function handleConnect() {
+    if (!token.trim() || token.trim().length < 20) {
+      setErr("Cole o token permanente gerado no Meta for Developers."); return;
+    }
+    setConnecting(true); setErr(null);
+    try {
+      const r = await fetch("/api/integrations/whatsapp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, token: token.trim() }),
+      });
+      const d = await r.json();
+      if (!r.ok) { setErr(d.error ?? "Erro ao conectar. Verifique o token."); setConnecting(false); return; }
+      setDisplayPhone(d.displayPhone ?? d.display_phone ?? null);
+      setBizName(d.businessName ?? d.business_name ?? null);
+      setStatus("connected");
+      setDaysLeft(null);
+    } catch {
+      setErr("Erro de rede. Tente novamente.");
+    }
+    setConnecting(false);
+  }
+
+  async function handleDisconnect() {
+    if (!confirm("Desconectar WhatsApp Meta? O agente vai parar de responder por este canal.")) return;
+    await fetch(`/api/integrations/whatsapp?userId=${userId}`, { method: "DELETE" });
+    setStatus("disconnected");
+    setDisplayPhone(null); setBizName(null); setDaysLeft(null);
+    setToken(""); setStep(1); setErr(null);
+  }
+
+  const expirationWarning = daysLeft !== null && daysLeft <= 7;
+
+  return (
+    <div style={card}>
+      <p style={sectionTitle}>WhatsApp — Meta API Oficial</p>
+
+      {/* ── Conectado ── */}
+      {status === "connected" && (
+        <>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+            <span style={{ width: 10, height: 10, borderRadius: "50%", flexShrink: 0,
+              background: expirationWarning ? "#f59e0b" : "#22c55e" }} />
+            <div>
+              <p style={{ color: "#fff", fontSize: 14, fontWeight: 600, margin: 0 }}>
+                {displayPhone ? `Conectado — ${displayPhone}` : "Conectado"}
+              </p>
+              {bizName && <p style={{ color: "#555", fontSize: 11, margin: "2px 0 0" }}>{bizName}</p>}
+            </div>
+          </div>
+
+          {expirationWarning && (
+            <div style={{ background: "#1c1a00", border: "1px solid #713f12", borderRadius: 10,
+              padding: "10px 14px", marginBottom: 14 }}>
+              <p style={{ color: "#fbbf24", fontSize: 12, margin: 0 }}>
+                {daysLeft === 0
+                  ? "⚠️ Token expirado. Reconecte para o agente continuar respondendo."
+                  : `⚠️ Token expira em ${daysLeft} dia${daysLeft === 1 ? "" : "s"}. Gere um novo antes que o agente pare.`}
+              </p>
+            </div>
+          )}
+
+          <div style={{ display: "flex", gap: 8 }}>
+            <Btn variant="ghost" onClick={() => { setStatus("disconnected"); setStep(2); }}>
+              🔄 Trocar token
+            </Btn>
+            <Btn variant="danger" onClick={handleDisconnect}>Desconectar</Btn>
+          </div>
+        </>
+      )}
+
+      {/* ── Carregando ── */}
+      {status === "loading" && (
+        <p style={{ color: "#555", fontSize: 13 }}>Verificando conexão...</p>
+      )}
+
+      {/* ── Desconectado — Passo 1: Intro ── */}
+      {(status === "disconnected" || status === "error") && step === 1 && (
+        <>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+            <span style={{ width: 10, height: 10, borderRadius: "50%", flexShrink: 0, background: "#3a3a3a" }} />
+            <p style={{ color: "#888", fontSize: 14, fontWeight: 600, margin: 0 }}>Desconectado</p>
+          </div>
+
+          <div style={{ background: "#111", border: "1px solid #2e2e2e", borderRadius: 12, padding: "16px 18px", marginBottom: 18 }}>
+            <p style={{ color: "#fff", fontSize: 14, fontWeight: 700, margin: "0 0 10px" }}>
+              Conecte seu WhatsApp aos servidores da Meta
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+              {[
+                "Canal oficial — sem risco de bloqueio",
+                "Até 1.000 conversas grátis por mês",
+                "Histórico e qualidade de entrega garantidos pela Meta",
+              ].map(t => (
+                <p key={t} style={{ color: "#aaa", fontSize: 12, margin: 0 }}>
+                  <span style={{ color: "#22c55e", marginRight: 8 }}>✓</span>{t}
+                </p>
+              ))}
+            </div>
+          </div>
+
+          <Btn onClick={() => setStep(2)}>Começar conexão →</Btn>
+        </>
+      )}
+
+      {/* ── Desconectado — Passo 2: Token ── */}
+      {(status === "disconnected" || status === "error") && step === 2 && (
+        <>
+          <button type="button" onClick={() => { setStep(1); setErr(null); }}
+            style={{ background: "none", border: "none", color: "#555", fontSize: 12,
+              cursor: "pointer", padding: "0 0 14px", display: "flex", alignItems: "center", gap: 4 }}>
+            ← Voltar
+          </button>
+
+          <div style={{ background: "#111", border: "1px solid #2e2e2e", borderRadius: 12,
+            padding: "14px 16px", marginBottom: 16 }}>
+            <p style={{ color: "#aaa", fontSize: 12, margin: "0 0 6px", fontWeight: 700 }}>
+              Como obter o token:
+            </p>
+            {[
+              "1. Acesse developers.facebook.com",
+              "2. Abra seu app → WhatsApp → Configuração da API",
+              "3. Gere um token permanente (System User com permissões)",
+              "4. Cole abaixo",
+            ].map(t => (
+              <p key={t} style={{ color: "#666", fontSize: 11, margin: "3px 0" }}>{t}</p>
+            ))}
+          </div>
+
+          <div style={{ marginBottom: 14 }}>
+            <label style={lbl}>Token permanente da Meta</label>
+            <input
+              value={token}
+              onChange={e => { setToken(e.target.value); setErr(null); }}
+              placeholder="EAAxxxxxxxxxxxxxxxxxxxxxxxx..."
+              style={inp}
+            />
+          </div>
+
+          {err && (
+            <p style={{ color: "#f87171", fontSize: 13, marginBottom: 12 }}>{err}</p>
+          )}
+
+          <div style={{ display: "flex", gap: 8 }}>
+            <Btn onClick={handleConnect} disabled={connecting}>
+              {connecting ? "Conectando..." : "Conectar WhatsApp"}
+            </Btn>
+            <Btn variant="ghost" onClick={() => { setStep(1); setToken(""); setErr(null); }}>
+              Cancelar
+            </Btn>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 /* ══════════════════════════════════════════════════════════════════ */
 export default function SettingsPage() {
   const [userId,  setUserId]  = useState<string|null>(null);
@@ -425,6 +615,9 @@ export default function SettingsPage() {
 
         {/* ── WhatsApp Z-API (fora do form) ── */}
         {userId && <ZapiSection userId={userId} />}
+
+        {/* ── WhatsApp Meta API Oficial (fora do form) ── */}
+        {userId && <MetaApiSection userId={userId} />}
 
         {/* ── Conta ── */}
         <div style={card}>
