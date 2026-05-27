@@ -1,5 +1,5 @@
 """
-crm.py — Operações com Supabase e Z-API para o agente Paulo.
+crm.py — Operações com Supabase e Evolution API para o agente Paulo.
 Cada instância é criada por requisição (lead + credenciais da loja).
 """
 
@@ -19,7 +19,8 @@ SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
 STORE_ID     = os.getenv("STORE_ID", "")
 
-ZAPI_BASE = "https://api.z-api.io/instances"
+EVO_BASE = os.getenv("EVOLUTION_API_URL", "").rstrip("/")
+EVO_KEY  = os.getenv("EVOLUTION_API_KEY", "")
 
 
 def _sb() -> Client:
@@ -54,16 +55,16 @@ def _extract_data(r: object) -> dict | None:
 
 def load_store(instance_id: str | None = None) -> dict | None:
     sb   = _sb()
-    cols = "id,ai_enabled,ai_name,ai_personality,zapi_instance,zapi_token,zapi_client_token,notify_phone"
+    cols = "id,ai_enabled,ai_name,ai_personality,evo_instance,notify_phone"
 
     if instance_id:
         try:
-            r    = sb.from_("users").select(cols).eq("zapi_instance", instance_id).maybe_single().execute()
+            r    = sb.from_("users").select(cols).eq("evo_instance", instance_id).maybe_single().execute()
             data = _extract_data(r)
             if data:
                 return data
         except Exception as e:
-            logger.warning("[CRM] load_store instance_id error: %s", e)
+            logger.warning("[CRM] load_store evo_instance error: %s", e)
 
     if STORE_ID:
         try:
@@ -87,17 +88,13 @@ class CRMClient:
         lead_id: str,
         phone: str,
         store_id: str,
-        zapi_instance: str,
-        zapi_token: str,
-        zapi_client_token: str,
+        evo_instance: str,
     ):
-        self.lead_id           = lead_id
-        self.phone             = phone
-        self.store_id          = store_id
-        self.zapi_instance     = zapi_instance
-        self.zapi_token        = zapi_token
-        self.zapi_client_token = zapi_client_token
-        self._sb               = _sb()
+        self.lead_id     = lead_id
+        self.phone       = phone
+        self.store_id    = store_id
+        self.evo_instance = evo_instance
+        self._sb         = _sb()
 
     # ── Estoque ──────────────────────────────────────────────────────────────
 
@@ -195,34 +192,40 @@ class CRMClient:
         )
         return (r.count or 0) > 0
 
-    # ── Z-API envios ──────────────────────────────────────────────────────────
+    # ── Evolution API envios ───────────────────────────────────────────────────
 
-    def _zapi_headers(self) -> dict:
-        return {"Content-Type": "application/json", "Client-Token": self.zapi_client_token}
+    def _evo_headers(self) -> dict:
+        return {"Content-Type": "application/json", "apikey": EVO_KEY}
 
     def send_text(self, message: str) -> str | None:
         try:
             r = requests.post(
-                f"{ZAPI_BASE}/{self.zapi_instance}/token/{self.zapi_token}/send-text",
-                json={"phone": fmt_phone(self.phone), "message": message},
-                headers=self._zapi_headers(),
+                f"{EVO_BASE}/message/sendText/{self.evo_instance}",
+                json={"number": fmt_phone(self.phone), "text": message},
+                headers=self._evo_headers(),
                 timeout=10,
             )
-            return r.json().get("messageId")
+            data = r.json()
+            return (data.get("key") or {}).get("id")
         except Exception as e:
-            logger.error("[ZAPI] Erro texto: %s", e)
+            logger.error("[EVO] Erro texto: %s", e)
             return None
 
     def send_image(self, image_url: str, caption: str = "") -> None:
         try:
             requests.post(
-                f"{ZAPI_BASE}/{self.zapi_instance}/token/{self.zapi_token}/send-image",
-                json={"phone": fmt_phone(self.phone), "image": image_url, "caption": caption},
-                headers=self._zapi_headers(),
+                f"{EVO_BASE}/message/sendMedia/{self.evo_instance}",
+                json={
+                    "number":    fmt_phone(self.phone),
+                    "mediatype": "image",
+                    "media":     image_url,
+                    "caption":   caption,
+                },
+                headers=self._evo_headers(),
                 timeout=15,
             )
         except Exception as e:
-            logger.error("[ZAPI] Erro imagem: %s", e)
+            logger.error("[EVO] Erro imagem: %s", e)
 
     def enviar_fotos_veiculo(self, vehicle_id: str) -> bool:
         v = self.buscar_veiculo(vehicle_id)
@@ -238,7 +241,6 @@ class CRMClient:
             msg_caption = caption if i == 0 else ""
             self.send_image(url, msg_caption)
 
-            # Salva a foto no histórico para aparecer no módulo Atendimentos
             try:
                 self._sb.from_("messages").insert({
                     "lead_id":   self.lead_id,
@@ -253,7 +255,7 @@ class CRMClient:
             if i < len(photos) - 1:
                 time.sleep(0.7)
 
-        logger.info("[ZAPI] %d foto(s) enviadas — %s", len(photos), caption)
+        logger.info("[EVO] %d foto(s) enviadas — %s", len(photos), caption)
         return True
 
     def notify_seller(self, notify_phone: str, sender_name: str, message: str) -> None:
@@ -266,10 +268,10 @@ class CRMClient:
         )
         try:
             requests.post(
-                f"{ZAPI_BASE}/{self.zapi_instance}/token/{self.zapi_token}/send-text",
-                json={"phone": fmt_phone(notify_phone), "message": alerta},
-                headers=self._zapi_headers(),
+                f"{EVO_BASE}/message/sendText/{self.evo_instance}",
+                json={"number": fmt_phone(notify_phone), "text": alerta},
+                headers=self._evo_headers(),
                 timeout=10,
             )
         except Exception as e:
-            logger.error("[ZAPI] Erro notificar vendedor: %s", e)
+            logger.error("[EVO] Erro notificar vendedor: %s", e)

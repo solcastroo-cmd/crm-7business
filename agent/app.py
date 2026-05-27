@@ -1,5 +1,5 @@
 """
-app.py — Flask webhook para Z-API.
+app.py — Flask webhook para Evolution API.
 Recebe mensagens WhatsApp, processa com o agente Paulo e responde ao cliente.
 """
 
@@ -32,7 +32,6 @@ def _is_dup(msg_id: str) -> bool:
     import time
     now = time.monotonic()
     with _lock:
-        # Remove expirados
         expired = [k for k, ts in _recent_ids.items() if now - ts > 300]
         for k in expired:
             del _recent_ids[k]
@@ -40,6 +39,41 @@ def _is_dup(msg_id: str) -> bool:
             return True
         _recent_ids[msg_id] = now
         return False
+
+
+def _extract_text(message_obj: dict) -> str:
+    """Extrai texto de qualquer tipo de mensagem Evolution API."""
+    if not message_obj:
+        return ""
+    return (
+        message_obj.get("conversation")
+        or (message_obj.get("extendedTextMessage") or {}).get("text")
+        or (message_obj.get("imageMessage") or {}).get("caption")
+        or (message_obj.get("videoMessage") or {}).get("caption")
+        or ""
+    ).strip()
+
+
+def _parse_evolution_webhook(body: dict) -> tuple[str, str, str, str, str, bool, bool]:
+    """
+    Parseia payload Evolution API v2.
+    Retorna: (event, phone, message, sender_name, msg_id, from_me, is_group)
+    """
+    event    = body.get("event", "")
+    instance = body.get("instance", "")
+    data     = body.get("data") or {}
+    key      = data.get("key") or {}
+
+    remote_jid = key.get("remoteJid", "")
+    from_me    = bool(key.get("fromMe", False))
+    msg_id     = key.get("id", "")
+    is_group   = remote_jid.endswith("@g.us")
+
+    raw_phone = remote_jid.replace("@s.whatsapp.net", "").replace("@c.us", "")
+    message   = _extract_text(data.get("message") or {})
+    sender    = data.get("pushName", "")
+
+    return event, raw_phone, message, sender, msg_id, from_me, is_group
 
 
 # ── Processamento em background ────────────────────────────────────────────────
@@ -61,8 +95,8 @@ def process_message(
             logger.info("[WEBHOOK] IA desativada globalmente")
             return
 
-        if not all([store.get("zapi_instance"), store.get("zapi_token"), store.get("zapi_client_token")]):
-            logger.warning("[WEBHOOK] Credenciais Z-API ausentes")
+        if not store.get("evo_instance"):
+            logger.warning("[WEBHOOK] evo_instance ausente na store")
             return
 
         store_id = store["id"]
@@ -103,7 +137,6 @@ def process_message(
             lead_id = rows[0]["id"] if rows else None
 
             if not lead_id:
-                # Race condition: outro request criou o lead ao mesmo tempo
                 err = str(getattr(r, "error", "") or "")
                 if "duplicate" in err.lower() or "unique" in err.lower() or "23505" in err:
                     logger.warning("[WEBHOOK] Race condition — buscando lead existente: %s", phone)
@@ -129,12 +162,10 @@ def process_message(
 
         # ── Dedup por external_id no banco ─────────────────────────────────
         crm = CRMClient(
-            lead_id           = lead_id,
-            phone             = phone,
-            store_id          = store_id,
-            zapi_instance     = store["zapi_instance"],
-            zapi_token        = store["zapi_token"],
-            zapi_client_token = store["zapi_client_token"],
+            lead_id      = lead_id,
+            phone        = phone,
+            store_id     = store_id,
+            evo_instance = store["evo_instance"],
         )
         if msg_id and crm.is_dup_external(msg_id):
             logger.info("[WEBHOOK] Dup external_id ignorada: %s", msg_id)
@@ -166,8 +197,6 @@ def process_message(
         logger.exception("[WEBHOOK] Erro ao processar mensagem de %s", phone)
 
 
-# ── Handlers SentCallback (handoff pelo celular do vendedor) ──────────────────
-
 def process_sent_by_seller(
     phone: str,
     message: str,
@@ -191,12 +220,13 @@ def process_sent_by_seller(
             r    = sb.from_("leads").select("id,ai_enabled").eq("phone", ph).eq("store_id", store_id).maybe_single().execute()
             lead = _extract_data(r)
             if lead:
-                # Salva msg do vendedor
-                crm = CRMClient(lead_id=lead["id"], phone=ph, store_id=store_id,
-                                 zapi_instance=store["zapi_instance"], zapi_token=store["zapi_token"],
-                                 zapi_client_token=store["zapi_client_token"])
+                crm = CRMClient(
+                    lead_id      = lead["id"],
+                    phone        = ph,
+                    store_id     = store_id,
+                    evo_instance = store["evo_instance"],
+                )
 
-                # Se é SentCallback da própria IA, ignora
                 if msg_id and crm.is_dup_external(msg_id):
                     logger.info("[WEBHOOK] SentCallback da IA ignorado: %s", msg_id)
                     return
@@ -218,19 +248,14 @@ def process_sent_by_seller(
 def webhook():
     body = request.get_json(silent=True) or {}
 
-    ev_type  = body.get("type", "")
-    is_group = body.get("isGroup", False)
-    from_me  = body.get("fromMe", False)
-    raw_phone = body.get("phone", "")
-    message  = (body.get("text") or {}).get("message", "").strip()
-    msg_id   = body.get("messageId", "")
-    instance = body.get("instanceId", "")
-    sender   = body.get("senderName", "")
+    event, raw_phone, message, sender, msg_id, from_me, is_group = _parse_evolution_webhook(body)
+    instance = body.get("instance", "")
 
-    logger.info("[WEBHOOK] type=%s fromMe=%s phone=%s msg=%s", ev_type, from_me, raw_phone, message[:60])
+    logger.info("[WEBHOOK] event=%s fromMe=%s phone=%s msg=%s", event, from_me, raw_phone, message[:60])
 
-    if ev_type not in ("ReceivedCallback", "SentCallback"):
-        return jsonify({"ok": True, "skipped": "type"})
+    # Aceita apenas mensagens novas
+    if event not in ("messages.upsert",):
+        return jsonify({"ok": True, "skipped": "event"})
 
     if is_group:
         return jsonify({"ok": True, "skipped": "group"})
@@ -240,17 +265,14 @@ def webhook():
 
     phone = normalize_phone(raw_phone)
 
-    # Dedup em memória
     if msg_id and _is_dup(msg_id):
         return jsonify({"ok": True, "skipped": "dup_mem"})
 
     if from_me:
-        # Vendedor enviou pelo celular → handoff
         t = threading.Thread(target=process_sent_by_seller, args=(phone, message, instance, msg_id), daemon=True)
         t.start()
         return jsonify({"ok": True, "handoff": "seller"})
 
-    # Mensagem do cliente → agente Paulo
     t = threading.Thread(target=process_message, args=(phone, message, sender, instance, msg_id), daemon=True)
     t.start()
     return jsonify({"ok": True})
@@ -267,7 +289,7 @@ def health():
 
 @app.route("/", methods=["GET"])
 def root():
-    return jsonify({"service": "CRM 7Business — Agente Paulo", "version": "2.0"})
+    return jsonify({"service": "CRM 7Business — Agente Paulo", "version": "2.1-evolution"})
 
 
 if __name__ == "__main__":
