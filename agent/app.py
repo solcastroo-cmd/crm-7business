@@ -95,10 +95,6 @@ def process_message(
             logger.info("[WEBHOOK] IA desativada globalmente")
             return
 
-        if not store.get("evo_instance"):
-            logger.warning("[WEBHOOK] evo_instance ausente na store")
-            return
-
         store_id = store["id"]
         from crm import _sb
         sb = _sb()
@@ -165,7 +161,7 @@ def process_message(
             lead_id      = lead_id,
             phone        = phone,
             store_id     = store_id,
-            evo_instance = store["evo_instance"],
+            evo_instance = instance_id,  # vem direto do webhook
         )
         if msg_id and crm.is_dup_external(msg_id):
             logger.info("[WEBHOOK] Dup external_id ignorada: %s", msg_id)
@@ -224,7 +220,7 @@ def process_sent_by_seller(
                     lead_id      = lead["id"],
                     phone        = ph,
                     store_id     = store_id,
-                    evo_instance = store["evo_instance"],
+                    evo_instance = instance_id,  # vem direto do webhook
                 )
 
                 if msg_id and crm.is_dup_external(msg_id):

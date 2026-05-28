@@ -55,16 +55,8 @@ def _extract_data(r: object) -> dict | None:
 
 def load_store(instance_id: str | None = None) -> dict | None:
     sb   = _sb()
-    cols = "id,ai_enabled,ai_name,ai_personality,evo_instance,notify_phone"
-
-    if instance_id:
-        try:
-            r    = sb.from_("users").select(cols).eq("evo_instance", instance_id).maybe_single().execute()
-            data = _extract_data(r)
-            if data:
-                return data
-        except Exception as e:
-            logger.warning("[CRM] load_store evo_instance error: %s", e)
+    # evo_instance não é selecionada do banco — vem do webhook diretamente
+    cols = "id,ai_enabled,ai_name,ai_personality,notify_phone"
 
     if STORE_ID:
         try:
