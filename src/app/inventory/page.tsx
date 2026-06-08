@@ -9,6 +9,8 @@ type Vehicle = {
   ipva_paid?: boolean; single_owner?: boolean; has_manual?: boolean; has_key?: boolean;
   optional_items?: string[]; description?: string; status: string; created_at?: string;
   photos?: string[];
+  publish_to_site?: boolean;
+  featured?: boolean;
 };
 
 const OPTIONALS = [
@@ -31,6 +33,8 @@ const EMPTY: Omit<Vehicle,"id"|"created_at"|"photos"> = {
   color:"",km:undefined,fuel:"",transmission:"",body_type:"",doors:undefined,end_plate:"",
   renavam:"",chassis:"",ipva_paid:false,single_owner:false,has_manual:false,has_key:false,
   optional_items:[],description:"",status:"disponivel",
+  publish_to_site: false,
+  featured: false,
 };
 
 const MAX_PHOTOS = 10;
@@ -86,6 +90,13 @@ function PhotoUpload({
     if (res.ok) onPhotosChange(data.photos);
   }
 
+  async function setCover(url: string) {
+    if (!vehicleId) return;
+    const res = await fetch(`/api/inventory/photos?vehicleId=${vehicleId}&url=${encodeURIComponent(url)}`, { method: "PATCH" });
+    const data = await res.json();
+    if (res.ok) onPhotosChange(data.photos);
+  }
+
   function removePending(idx: number) {
     setPendingFiles(prev => prev.filter((_, i) => i !== idx));
   }
@@ -122,9 +133,23 @@ function PhotoUpload({
       {photos.length > 0 && (
         <div className="grid grid-cols-4 gap-2 mb-3">
           {photos.map((url, i) => (
-            <div key={i} className="relative group aspect-square rounded-xl overflow-hidden"
-              style={{ border: "1px solid #3a3a3a" }}>
+            <div key={url} className="relative group aspect-square rounded-xl overflow-hidden"
+              style={{ border: i === 0 ? "2px solid #dc2626" : "1px solid #3a3a3a" }}>
               <img src={url} alt={`Foto ${i+1}`} className="w-full h-full object-cover" />
+              {/* Badge capa */}
+              {i === 0 && (
+                <span className="absolute top-1 left-1 text-[9px] font-bold px-1.5 py-0.5 rounded-full"
+                  style={{ background: "#dc2626", color: "#fff" }}>CAPA</span>
+              )}
+              {/* Botão definir como capa */}
+              {vehicleId && i !== 0 && (
+                <button type="button"
+                  onClick={() => setCover(url)}
+                  className="absolute bottom-1 left-1 text-[9px] font-bold px-1.5 py-0.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                  style={{ background: "rgba(220,38,38,0.85)", color: "#fff" }}>
+                  ★ Capa
+                </button>
+              )}
               {vehicleId && (
                 <button type="button" onClick={() => removePhoto(url)}
                   className="absolute top-1 right-1 w-5 h-5 rounded-full text-white text-xs font-bold flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
@@ -216,7 +241,8 @@ export default function InventoryPage() {
       color:v.color,km:v.km,fuel:v.fuel,transmission:v.transmission,body_type:v.body_type,doors:v.doors,
       end_plate:v.end_plate,renavam:v.renavam,chassis:v.chassis,ipva_paid:v.ipva_paid??false,
       single_owner:v.single_owner??false,has_manual:v.has_manual??false,has_key:v.has_key??false,
-      optional_items:v.optional_items??[],description:v.description,status:v.status });
+      optional_items:v.optional_items??[],description:v.description,status:v.status,
+      publish_to_site:v.publish_to_site??false,featured:v.featured??false });
     setFormPhotos(v.photos ?? []);
     setShowForm(true); setErr(null);
   }
@@ -240,6 +266,14 @@ export default function InventoryPage() {
       }
 
       await loadVehicles(); setShowForm(false);
+
+      // Notificar vitrine web para revalidar cache
+      if (process.env.NEXT_PUBLIC_VITRINE_URL) {
+        fetch(`${process.env.NEXT_PUBLIC_VITRINE_URL}/api/revalidate`, {
+          method: "POST",
+          headers: { "x-revalidate-secret": process.env.NEXT_PUBLIC_REVALIDATE_SECRET ?? "" },
+        }).catch(() => {}); // silencioso — não bloqueia o save
+      }
     } catch { setErr("Erro de rede."); }
     finally { setSaving(false); }
   }
@@ -368,6 +402,11 @@ export default function InventoryPage() {
                   )}
                   <span className="absolute top-2 right-2 text-xs px-2 py-0.5 rounded-full font-bold"
                     style={{ background: cfg.bg, color: cfg.color }}>{cfg.label}</span>
+                  {v.publish_to_site && (
+                    <span className="absolute top-2 left-2 text-xs px-2 py-0.5 rounded-full font-bold bg-green-500/90 text-white">
+                      🌐 Site
+                    </span>
+                  )}
                   {(v.photos?.length ?? 0) > 1 && (
                     <span className="absolute bottom-2 right-2 text-xs px-2 py-0.5 rounded-full font-bold"
                       style={{ background: "rgba(0,0,0,0.6)", color: "#fff" }}>
@@ -487,6 +526,24 @@ export default function InventoryPage() {
                       <span className="text-sm text-gray-300">{label}</span>
                     </label>
                   ))}
+                </div>
+                {/* ── Vitrine Web ── */}
+                <div className="mt-4 p-3 rounded-xl border border-green-900/50 bg-green-950/30">
+                  <p className="text-xs font-bold text-green-400 uppercase tracking-wider mb-2">🌐 Vitrine Web</p>
+                  <div className="flex flex-col gap-2">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" checked={form.publish_to_site ?? false}
+                        onChange={e => setForm(p => ({ ...p, publish_to_site: e.target.checked }))}
+                        className="w-4 h-4 rounded accent-green-500" />
+                      <span className="text-sm text-gray-300">Publicar no site</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" checked={form.featured ?? false}
+                        onChange={e => setForm(p => ({ ...p, featured: e.target.checked }))}
+                        className="w-4 h-4 rounded accent-yellow-400" />
+                      <span className="text-sm text-gray-300">⭐ Destaque</span>
+                    </label>
+                  </div>
                 </div>
               </div>
               <div>

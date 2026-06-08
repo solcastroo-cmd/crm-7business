@@ -76,6 +76,33 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ photos: updatedPhotos });
 }
 
+// ─── PATCH: define foto de capa (move url para photos[0]) ────────────────────
+export async function PATCH(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+  const vehicleId = searchParams.get("vehicleId");
+  const coverUrl  = searchParams.get("url");
+
+  if (!vehicleId || !coverUrl) {
+    return NextResponse.json({ error: "vehicleId e url são obrigatórios" }, { status: 400 });
+  }
+
+  const { data: vehicle, error: fetchErr } = await supabaseAdmin
+    .from("vehicles").select("photos").eq("id", vehicleId).maybeSingle();
+  if (fetchErr) return NextResponse.json({ error: fetchErr.message }, { status: 500 });
+
+  const photos: string[] = vehicle?.photos ?? [];
+  if (!photos.includes(coverUrl)) {
+    return NextResponse.json({ error: "Foto não encontrada no veículo" }, { status: 404 });
+  }
+
+  const reordered = [coverUrl, ...photos.filter(p => p !== coverUrl)];
+  const { error: updateErr } = await supabaseAdmin
+    .from("vehicles").update({ photos: reordered }).eq("id", vehicleId);
+  if (updateErr) return NextResponse.json({ error: updateErr.message }, { status: 500 });
+
+  return NextResponse.json({ photos: reordered });
+}
+
 // ─── DELETE: remove uma foto ──────────────────────────────────────────────────
 export async function DELETE(req: NextRequest) {
   const { searchParams } = new URL(req.url);
