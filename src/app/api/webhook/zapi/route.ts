@@ -23,7 +23,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { getAIReply, qualifyLead, extractLeadData, parseVehicleTag } from "@/lib/ai";
-import { sendCAPILeadEvent } from "@/lib/capi";
+import { sendCAPILeadEvent, sendCAPIQualifiedLeadEvent, calcLeadScore } from "@/lib/capi";
 
 export const dynamic = "force-dynamic";
 
@@ -432,15 +432,41 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   if (!leadId) return NextResponse.json({ ok: false, error: "leadId vazio" });
 
-  // ── CAPI: dispara QualifiedLead quando lead é "quente" ───────────────────
-  // Não-bloqueante (sem await) — não atrasa resposta ao cliente.
-  // Deduplicado por leadId: apenas 1 evento por lead por ciclo do processo.
-  if (qualification === "quente" && !_capiSentLeads.has(leadId)) {
-    _capiSentLeads.add(leadId);
-    sendCAPILeadEvent(phone, leadId).catch((e) =>
-      console.error("[CAPI] Erro assíncrono:", e),
+  // ── CAPI + Score ──────────────────────────────────────────────────────────
+  // Carrega histórico de mensagens para calcular score acumulado do lead
+  const { data: msgHistory } = await supabaseAdmin
+    .from("messages")
+    .select("text")
+    .eq("lead_id", leadId)
+    .eq("from_me", false)          // só mensagens do cliente
+    .order("created_at", { ascending: true })
+    .limit(50);
+
+  const allClientMsgs = [
+    ...(msgHistory ?? []).map(m => m.text ?? ""),
+    message,
+  ];
+  const score = calcLeadScore(allClientMsgs);
+
+  // Persiste score no lead (não-bloqueante)
+  supabaseAdmin.from("leads").update({ score }).eq("id", leadId).then(() => {});
+
+  // Lead "quente" por keyword → envia Lead (retrocompatível)
+  if (qualification === "quente" && !_capiSentLeads.has(`${leadId}_Lead`)) {
+    _capiSentLeads.add(`${leadId}_Lead`);
+    sendCAPILeadEvent(phone, leadId, { leadId, storeId: storeId ?? undefined, score }).catch(
+      (e) => console.error("[CAPI] Erro Lead assíncrono:", e),
     );
-    console.log(`[CAPI] 🔥 QualifiedLead disparado — lead:${leadId} phone:${phone}`);
+    console.log(`[CAPI] 🔥 Lead disparado — lead:${leadId} score:${score}`);
+  }
+
+  // Score >= 70 → envia QualifiedLead (alta intenção de compra)
+  if (score >= 70 && !_capiSentLeads.has(`${leadId}_QualifiedLead`)) {
+    _capiSentLeads.add(`${leadId}_QualifiedLead`);
+    sendCAPIQualifiedLeadEvent(phone, leadId, score, { leadId, storeId: storeId ?? undefined }).catch(
+      (e) => console.error("[CAPI] Erro QualifiedLead assíncrono:", e),
+    );
+    console.log(`[CAPI] 🎯 QualifiedLead disparado — lead:${leadId} score:${score}`);
   }
 
   // Dedup nível 3 (banco 30s por texto)

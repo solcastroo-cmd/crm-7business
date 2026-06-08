@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { sendCAPIPurchaseEvent } from "@/lib/capi";
 
 export const dynamic = "force-dynamic";
 
@@ -104,6 +105,12 @@ export async function PATCH(req: NextRequest) {
       updates.position = pos;
     }
 
+    // Inclui sale_value se enviado
+    if (rawUpdates.sale_value !== undefined) {
+      const val = Number(rawUpdates.sale_value);
+      if (!isNaN(val) && val > 0) updates.sale_value = val;
+    }
+
     const { data, error } = await supabaseAdmin
       .from("leads")
       .update(updates)
@@ -112,6 +119,18 @@ export async function PATCH(req: NextRequest) {
       .single();
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+    // ── CAPI Purchase: dispara quando stage muda para "VENDIDO!" ─────────────
+    if (updates.stage === "VENDIDO!" && data?.phone) {
+      const saleValue = data.sale_value ? Number(data.sale_value) : undefined;
+      sendCAPIPurchaseEvent(data.phone, data.id, saleValue, {
+        leadId:  data.id,
+        storeId: data.store_id ?? undefined,
+        score:   data.score   ?? undefined,
+      }).catch((e) => console.error("[CAPI] Erro Purchase assíncrono:", e));
+      console.log(`[CAPI] 💰 Purchase disparado — lead:${data.id} valor:${saleValue ?? "?"}`);
+    }
+
     return NextResponse.json(data);
   } catch {
     return NextResponse.json({ error: "Body inválido" }, { status: 400 });
