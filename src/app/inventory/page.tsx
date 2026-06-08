@@ -145,8 +145,8 @@ function PhotoUpload({
               {vehicleId && i !== 0 && (
                 <button type="button"
                   onClick={() => setCover(url)}
-                  className="absolute bottom-1 left-1 text-[9px] font-bold px-1.5 py-0.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-                  style={{ background: "rgba(220,38,38,0.85)", color: "#fff" }}>
+                  className="absolute bottom-1 left-1 text-[9px] font-bold px-1.5 py-0.5 rounded-full"
+                  style={{ background: "rgba(0,0,0,0.65)", color: "#fff", border: "1px solid rgba(255,255,255,0.3)" }}>
                   ★ Capa
                 </button>
               )}
