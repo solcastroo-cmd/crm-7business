@@ -23,7 +23,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { getAIReply, qualifyLead, extractLeadData, parseVehicleTag } from "@/lib/ai";
-import { sendCAPILeadEvent, sendCAPIQualifiedLeadEvent, calcLeadScore } from "@/lib/capi";
+import {
+  sendCAPIInitiateConversation,
+  sendCAPILeadEvent,
+  sendCAPIQualifiedLeadEvent,
+  calcLeadScore,
+  type CAPIUserData,
+} from "@/lib/capi";
 
 export const dynamic = "force-dynamic";
 
@@ -31,16 +37,24 @@ export const dynamic = "force-dynamic";
 type ZApiBody = {
   instanceId?: string;
   messageId?:  string;
-  phone?:      string;    // número (sempre com DDI, ex: 5511999999999)
+  phone?:      string;
   fromMe?:     boolean;
   momment?:    number;
   status?:     string;
   chatName?:   string;
   senderName?: string;
-  type?:       string;    // "ReceivedCallback" | "SentCallback" | ...
+  type?:       string;
   isGroup?:    boolean;
   text?: {
     message?: string;
+  };
+  // UTM tracking via referral (Z-API envia quando lead vem de link rastreado)
+  referral?: {
+    source_url?:  string;
+    headline?:    string;
+    body?:        string;
+    media_url?:   string;
+    ctwa_clid?:   string;   // Click-to-WhatsApp click ID (equivale ao fbclid)
   };
 };
 
@@ -272,7 +286,27 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     senderName,
     text: textObj,
     isGroup,
+    referral,
   } = body;
+
+  // ── Extrai UTMs do referral (vem quando lead clica em anúncio Meta) ──────
+  const sourceUrl  = referral?.source_url ?? "";
+  const ctwaClid   = referral?.ctwa_clid  ?? null;  // equivale ao fbclid no WhatsApp
+  const utmParams  = (() => {
+    try {
+      const url = new URL(sourceUrl.includes("?") ? sourceUrl : `https://x.com?${sourceUrl}`);
+      return {
+        utm_source:   url.searchParams.get("utm_source")   ?? (sourceUrl ? "meta" : null),
+        utm_campaign: url.searchParams.get("utm_campaign")  ?? null,
+        utm_medium:   url.searchParams.get("utm_medium")    ?? null,
+        utm_adset:    url.searchParams.get("utm_adset")     ?? null,
+        utm_ad:       url.searchParams.get("utm_ad")        ?? null,
+        fbclid:       url.searchParams.get("fbclid")        ?? ctwaClid,
+      };
+    } catch {
+      return { utm_source: sourceUrl ? "meta" : null, utm_campaign: null, utm_medium: null, utm_adset: null, utm_ad: null, fbclid: ctwaClid };
+    }
+  })();
 
   // LOG COMPLETO — diagnóstico de payload real do Z-API
   console.log("[ZAPI] RAW PAYLOAD:", JSON.stringify({
@@ -394,13 +428,22 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   let leadId: string;
   let leadRecord: Record<string, unknown> = existing ?? {};
 
+  const isNewLead = !existing;
+
   if (existing) {
     leadId = existing.id;
     const upd: Record<string, unknown> = { qualification };
-    if (!existing.name && senderName)  upd.name    = senderName;
-    if (extracted.budget  && !existing.budget)  upd.budget  = extracted.budget;
-    if (extracted.type    && !existing.type)    upd.type    = extracted.type;
-    if (extracted.payment && !existing.payment) upd.payment = extracted.payment;
+    if (!existing.name && senderName)              upd.name         = senderName;
+    if (extracted.budget  && !existing.budget)     upd.budget       = extracted.budget;
+    if (extracted.type    && !existing.type)       upd.type         = extracted.type;
+    if (extracted.payment && !existing.payment)    upd.payment      = extracted.payment;
+    // Salva UTMs só se ainda não estiver preenchido
+    if (utmParams.utm_source   && !existing.utm_source)   upd.utm_source   = utmParams.utm_source;
+    if (utmParams.utm_campaign && !existing.utm_campaign) upd.utm_campaign = utmParams.utm_campaign;
+    if (utmParams.utm_medium   && !existing.utm_medium)   upd.utm_medium   = utmParams.utm_medium;
+    if (utmParams.utm_adset    && !existing.utm_adset)    upd.utm_adset    = utmParams.utm_adset;
+    if (utmParams.utm_ad       && !existing.utm_ad)       upd.utm_ad       = utmParams.utm_ad;
+    if (utmParams.fbclid       && !existing.fbclid)       upd.fbclid       = utmParams.fbclid;
     if (Object.keys(upd).length > 1) {
       await supabaseAdmin.from("leads").update(upd).eq("id", leadId);
       leadRecord = { ...leadRecord, ...upd };
@@ -411,12 +454,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       stage: "Novo Lead", qualification,
       budget: extracted.budget ?? null, type: extracted.type ?? null,
       payment: extracted.payment ?? null,
+      utm_source:   utmParams.utm_source   ?? null,
+      utm_campaign: utmParams.utm_campaign ?? null,
+      utm_medium:   utmParams.utm_medium   ?? null,
+      utm_adset:    utmParams.utm_adset    ?? null,
+      utm_ad:       utmParams.utm_ad       ?? null,
+      fbclid:       utmParams.fbclid       ?? null,
     };
     if (storeId) row.store_id = storeId;
     const { data: nl, error: insertErr } = await supabaseAdmin.from("leads").insert(row).select("*").single();
 
     if (insertErr && (insertErr.code === "23505" || insertErr.message.includes("duplicate") || insertErr.message.includes("unique"))) {
-      // Race condition: outro request criou o lead ao mesmo tempo — busca o existente
       console.warn("[ZAPI] Race condition em lead — buscando existente:", phone);
       const { data: raceEx } = await buildLeadQuery()
         .order("created_at", { ascending: true })
@@ -433,12 +481,29 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   if (!leadId) return NextResponse.json({ ok: false, error: "leadId vazio" });
 
   // ── CAPI + Score ──────────────────────────────────────────────────────────
-  // Carrega histórico de mensagens para calcular score acumulado do lead
+  // User data enriquecido para melhor Event Match Quality
+  const capiUserData: CAPIUserData = {
+    phone,
+    name:      (leadRecord.name as string | null) ?? senderName ?? null,
+    fbclid:    (leadRecord.fbclid as string | null) ?? utmParams.fbclid ?? null,
+    fbclidTs:  Math.floor(Date.now() / 1000),
+  };
+  const capiOpts = { leadId, storeId: storeId ?? undefined };
+
+  // InitiateConversation — apenas para leads novos (primeira mensagem)
+  if (isNewLead) {
+    sendCAPIInitiateConversation(capiUserData, leadId, capiOpts).catch(
+      (e) => console.error("[CAPI] Erro InitiateConversation:", e),
+    );
+    console.log(`[CAPI] 💬 InitiateConversation — lead:${leadId}`);
+  }
+
+  // Carrega histórico para calcular score acumulado
   const { data: msgHistory } = await supabaseAdmin
     .from("messages")
     .select("text")
     .eq("lead_id", leadId)
-    .eq("from_me", false)          // só mensagens do cliente
+    .eq("from_me", false)
     .order("created_at", { ascending: true })
     .limit(50);
 
@@ -451,22 +516,23 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // Persiste score no lead (não-bloqueante)
   supabaseAdmin.from("leads").update({ score }).eq("id", leadId).then(() => {});
 
-  // Lead "quente" por keyword → envia Lead (retrocompatível)
+  // Lead "quente" por keyword → envia Lead
+  // Dedup via _capiSentLeads (memória) + banco (capi_events) — dupla proteção
   if (qualification === "quente" && !_capiSentLeads.has(`${leadId}_Lead`)) {
     _capiSentLeads.add(`${leadId}_Lead`);
-    sendCAPILeadEvent(phone, leadId, { leadId, storeId: storeId ?? undefined, score }).catch(
-      (e) => console.error("[CAPI] Erro Lead assíncrono:", e),
+    sendCAPILeadEvent(capiUserData, leadId, { ...capiOpts, score }).catch(
+      (e) => console.error("[CAPI] Erro Lead:", e),
     );
-    console.log(`[CAPI] 🔥 Lead disparado — lead:${leadId} score:${score}`);
+    console.log(`[CAPI] 🔥 Lead — lead:${leadId} score:${score}`);
   }
 
-  // Score >= 70 → envia QualifiedLead (alta intenção de compra)
+  // Score >= 70 → QualifiedLead
   if (score >= 70 && !_capiSentLeads.has(`${leadId}_QualifiedLead`)) {
     _capiSentLeads.add(`${leadId}_QualifiedLead`);
-    sendCAPIQualifiedLeadEvent(phone, leadId, score, { leadId, storeId: storeId ?? undefined }).catch(
-      (e) => console.error("[CAPI] Erro QualifiedLead assíncrono:", e),
+    sendCAPIQualifiedLeadEvent(capiUserData, leadId, score, capiOpts).catch(
+      (e) => console.error("[CAPI] Erro QualifiedLead:", e),
     );
-    console.log(`[CAPI] 🎯 QualifiedLead disparado — lead:${leadId} score:${score}`);
+    console.log(`[CAPI] 🎯 QualifiedLead — lead:${leadId} score:${score}`);
   }
 
   // Dedup nível 3 (banco 30s por texto)

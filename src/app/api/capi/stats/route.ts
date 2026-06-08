@@ -8,10 +8,38 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const dynamic = "force-dynamic";
 
+// ── Métricas financeiras ──────────────────────────────────────────────────────
+function calcFinanceiro(
+  spend:        number,
+  total:        number,
+  qualificados: number,
+  vendidos:     number,
+  leads:        Array<{ sale_value?: number | null }>,
+) {
+  const receita = leads.reduce((s, l) => s + (l.sale_value ? Number(l.sale_value) : 0), 0);
+  const fmt = (v: number) => v > 0 ? `R$ ${v.toFixed(2)}` : "—";
+
+  return {
+    metaSpend:    spend,
+    receita,
+    cpl:          spend > 0 && total > 0        ? spend / total         : null,
+    cpql:         spend > 0 && qualificados > 0  ? spend / qualificados  : null,
+    cpa:          spend > 0 && vendidos > 0       ? spend / vendidos      : null,
+    roas:         spend > 0 && receita > 0        ? receita / spend       : null,
+    cplFmt:       spend > 0 && total > 0        ? fmt(spend / total)         : "—",
+    cpqlFmt:      spend > 0 && qualificados > 0  ? fmt(spend / qualificados)  : "—",
+    cpaFmt:       spend > 0 && vendidos > 0       ? fmt(spend / vendidos)      : "—",
+    roasFmt:      spend > 0 && receita > 0        ? `${(receita / spend).toFixed(2)}x` : "—",
+    receitaFmt:   fmt(receita),
+    metaSpendFmt: fmt(spend),
+  };
+}
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const storeId = searchParams.get("storeId");
+    const storeId   = searchParams.get("storeId");
+    const metaSpend = parseFloat(searchParams.get("metaSpend") ?? "0") || 0;
 
     const buildLeadQ = () => {
       let q = supabaseAdmin.from("leads").select("*");
@@ -117,7 +145,9 @@ export async function GET(req: NextRequest) {
       capi: {
         success: capiSuccess, error: capiError,
         leads: capiLeads, qualifiedLeads: capiQLeads, purchases: capiPurchase,
+        initiateConversations: logs.filter(l => l.event_name === "InitiateConversation" && l.status === "success").length,
       },
+      financeiro: calcFinanceiro(metaSpend, total, qualificados, vendidos, leads),
     });
 
   } catch (e: unknown) {

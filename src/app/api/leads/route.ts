@@ -123,12 +123,13 @@ export async function PATCH(req: NextRequest) {
     // ── CAPI Purchase: dispara quando stage muda para "VENDIDO!" ─────────────
     if (updates.stage === "VENDIDO!" && data?.phone) {
       const saleValue = data.sale_value ? Number(data.sale_value) : undefined;
-      sendCAPIPurchaseEvent(data.phone, data.id, saleValue, {
-        leadId:  data.id,
-        storeId: data.store_id ?? undefined,
-        score:   data.score   ?? undefined,
-      }).catch((e) => console.error("[CAPI] Erro Purchase assíncrono:", e));
-      console.log(`[CAPI] 💰 Purchase disparado — lead:${data.id} valor:${saleValue ?? "?"}`);
+      sendCAPIPurchaseEvent(
+        { phone: data.phone, name: data.name ?? null, fbclid: data.fbclid ?? null },
+        data.id,
+        saleValue,
+        { leadId: data.id, storeId: data.store_id ?? undefined, score: data.score ?? undefined },
+      ).catch((e) => console.error("[CAPI] Erro Purchase:", e));
+      console.log(`[CAPI] 💰 Purchase — lead:${data.id} valor:${saleValue ?? "?"}`);
     }
 
     return NextResponse.json(data);
