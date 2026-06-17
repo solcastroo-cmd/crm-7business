@@ -54,15 +54,15 @@ export default function NovoConsignacaoPage() {
 
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
 
-  const F = ({ label, name, type = "text", placeholder = "", full = false, as = "input", options = [] as string[] }) => (
+  const F = ({ label, name, type = "text", placeholder = "", full = false, as: as_ = "input", options = [] as string[] }: { label: string; name: string; type?: string; placeholder?: string; full?: boolean; as?: string; options?: string[] }) => (
     <div style={full ? { gridColumn: "1/-1" } : {}}>
       <label style={lbl}>{label}</label>
-      {as === "select" ? (
+      {as_ === "select" ? (
         <select value={(form as Record<string, string>)[name]} onChange={e => set(name, e.target.value)} style={{ ...inp, appearance: "none" }}>
           <option value="">— Selecione —</option>
           {options.map(o => <option key={o} value={o}>{o}</option>)}
         </select>
-      ) : as === "textarea" ? (
+      ) : as_ === "textarea" ? (
         <textarea value={(form as Record<string, string>)[name]} onChange={e => set(name, e.target.value)}
           rows={3} style={{ ...inp, resize: "vertical" }} placeholder={placeholder} />
       ) : (

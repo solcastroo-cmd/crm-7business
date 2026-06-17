@@ -71,15 +71,15 @@ export default function ConsignacaoDetailPage() {
 
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
 
-  const F = ({ label, name, type = "text", placeholder = "", full = false, as = "input", options = [] as string[] }) => (
+  const F = ({ label, name, type = "text", placeholder = "", full = false, as: as_ = "input", options = [] as string[] }: { label: string; name: string; type?: string; placeholder?: string; full?: boolean; as?: string; options?: string[] }) => (
     <div style={full ? { gridColumn: "1/-1" } : {}}>
       <label style={lbl}>{label}</label>
-      {as === "select" ? (
+      {as_ === "select" ? (
         <select value={form[name] ?? ""} onChange={e => set(name, e.target.value)} style={{ ...inp, appearance: "none" }}>
           <option value="">— Selecione —</option>
           {options.map(o => <option key={o} value={o}>{o}</option>)}
         </select>
-      ) : as === "textarea" ? (
+      ) : as_ === "textarea" ? (
         <textarea value={form[name] ?? ""} onChange={e => set(name, e.target.value)}
           rows={3} style={{ ...inp, resize: "vertical" }} placeholder={placeholder} />
       ) : (
@@ -91,19 +91,19 @@ export default function ConsignacaoDetailPage() {
 
   async function handleSave() {
     setErr(null); setSaving(true); setSaved(false);
-    const payload = {
-      ...form,
-      veiculo_ano_fabricacao: form.veiculo_ano_fabricacao ? parseInt(form.veiculo_ano_fabricacao) : null,
-      veiculo_ano_modelo:     form.veiculo_ano_modelo     ? parseInt(form.veiculo_ano_modelo)     : null,
-      veiculo_km_atual:       form.veiculo_km_atual       ? parseInt(form.veiculo_km_atual)       : null,
-      valor_minimo_venda:     form.valor_minimo_venda     ? parseFloat(form.valor_minimo_venda.replace(/\./g,"").replace(",",".")) : null,
-      percentual_comissao:    form.percentual_comissao    ? parseFloat(form.percentual_comissao)  : null,
-      taxa_retirada:          form.taxa_retirada          ? parseFloat(form.taxa_retirada.replace(/\./g,"").replace(",",".")) : null,
-      data_inicio:     form.data_inicio     || null,
-      data_final:      form.data_final      || null,
-      data_assinatura: form.data_assinatura || null,
+    const { id: _id, created_at: _ca, updated_at: _ua, user_id: _uid, ...rest } = form;
+    const payload: Record<string, unknown> = {
+      ...rest,
+      veiculo_ano_fabricacao: rest.veiculo_ano_fabricacao ? parseInt(rest.veiculo_ano_fabricacao) : null,
+      veiculo_ano_modelo:     rest.veiculo_ano_modelo     ? parseInt(rest.veiculo_ano_modelo)     : null,
+      veiculo_km_atual:       rest.veiculo_km_atual       ? parseInt(rest.veiculo_km_atual)       : null,
+      valor_minimo_venda:     rest.valor_minimo_venda     ? parseFloat(rest.valor_minimo_venda.replace(/\./g,"").replace(",",".")) : null,
+      percentual_comissao:    rest.percentual_comissao    ? parseFloat(rest.percentual_comissao)  : null,
+      taxa_retirada:          rest.taxa_retirada          ? parseFloat(rest.taxa_retirada.replace(/\./g,"").replace(",",".")) : null,
+      data_inicio:     rest.data_inicio     || null,
+      data_final:      rest.data_final      || null,
+      data_assinatura: rest.data_assinatura || null,
     };
-    delete payload.id; delete payload.created_at; delete payload.updated_at; delete payload.user_id;
     const r = await fetch(`/api/consignacao/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     const d = await r.json();
     setSaving(false);
