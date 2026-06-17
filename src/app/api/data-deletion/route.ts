@@ -18,7 +18,7 @@ export async function GET() {
 <body style="font-family:Arial,sans-serif;max-width:600px;margin:40px auto;padding:20px">
   <h1>Exclusão de Dados</h1>
   <p>Para solicitar a exclusão dos seus dados coletados via Facebook, envie um e-mail para:</p>
-  <p><strong>phautoscar@hotmail.com</strong></p>
+  <p><strong>contato@phdmotors.com.br</strong></p>
   <p>Seu pedido será processado em até 30 dias.</p>
 </body>
 </html>`,

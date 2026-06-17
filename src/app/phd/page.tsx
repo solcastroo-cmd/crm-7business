@@ -14,7 +14,7 @@ export default function PHDMotors() {
           <p style={{fontSize:16,color:"#aaccee",lineHeight:2}}>
             <strong style={{color:"#fff"}}>PHD Motors</strong><br/>
             Av. Desembargador Gonzaga, 860 — Luciano Cavalcante, Fortaleza - CE<br/>
-            📞 (85) 99403-3032 &nbsp;|&nbsp; ✉️ phautoscar@hotmail.com<br/>
+            📞 (85) 99403-3032<br/>
             © 2026 PHD Motors. Todos os direitos reservados.
           </p>
         </div>
