@@ -575,13 +575,31 @@ export default function VendasPage() {
                       className="w-full rounded-xl px-3 py-2 text-sm text-white border focus:outline-none"
                       style={{ background: "#111827", borderColor: "#374151" }} />
                   </div>
-                  {(["parcelado", "financiado", "consorcio", "leasing", "troca_financiado", "troca_consorcio"].includes(form.payment_method)) && <>
+                  {(["parcelado", "financiado", "consorcio", "leasing", "troca_financiado", "troca_consorcio", "cartao_credito"].includes(form.payment_method)) && <>
                     <div>
-                      <label className="block text-[10px] font-semibold mb-1" style={{ color: "#6b7280" }}>Nº Parcelas</label>
-                      <input type="number" min="1" value={form.installments_count}
-                        onChange={e => setForm(f => ({ ...f, installments_count: e.target.value }))}
-                        className="w-full rounded-xl px-3 py-2 text-sm text-white border focus:outline-none"
-                        style={{ background: "#111827", borderColor: "#374151" }} />
+                      <label className="block text-[10px] font-semibold mb-1" style={{ color: "#6b7280" }}>
+                        Nº Parcelas {form.payment_method === "cartao_credito" && <span style={{ color: "#f59e0b" }}>💳 até 24x</span>}
+                      </label>
+                      {form.payment_method === "cartao_credito" ? (
+                        <select value={form.installments_count}
+                          onChange={e => {
+                            const n = Number(e.target.value);
+                            const saldo = Number(form.total_value) - Number(form.down_payment || 0);
+                            const parcela = n > 0 && saldo > 0 ? (saldo / n).toFixed(2) : "";
+                            setForm(f => ({ ...f, installments_count: String(n), installment_value: parcela }));
+                          }}
+                          className="w-full rounded-xl px-3 py-2 text-sm text-white border focus:outline-none"
+                          style={{ background: "#111827", borderColor: "#374151" }}>
+                          {Array.from({ length: 24 }, (_, i) => i + 1).map(n => (
+                            <option key={n} value={n}>{n}x</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input type="number" min="1" value={form.installments_count}
+                          onChange={e => setForm(f => ({ ...f, installments_count: e.target.value }))}
+                          className="w-full rounded-xl px-3 py-2 text-sm text-white border focus:outline-none"
+                          style={{ background: "#111827", borderColor: "#374151" }} />
+                      )}
                     </div>
                     <div>
                       <label className="block text-[10px] font-semibold mb-1" style={{ color: "#6b7280" }}>Valor Parcela (R$)</label>
@@ -778,11 +796,29 @@ export default function VendasPage() {
                           style={{ background: "#111827", borderColor: "#374151" }} />
                       </div>
                       <div>
-                        <label className="block text-[10px] font-semibold mb-1" style={{ color: "#6b7280" }}>Nº Parcelas</label>
-                        <input type="number" min="1" value={String(editForm.installments_count ?? 1)}
-                          onChange={e => setEditForm(prev => ({ ...prev, installments_count: Number(e.target.value) }))}
-                          className="w-full rounded-xl px-3 py-2 text-sm text-white border focus:outline-none"
-                          style={{ background: "#111827", borderColor: "#374151" }} />
+                        <label className="block text-[10px] font-semibold mb-1" style={{ color: "#6b7280" }}>
+                          Nº Parcelas {editForm.payment_method === "cartao_credito" && <span style={{ color: "#f59e0b" }}>💳 até 24x</span>}
+                        </label>
+                        {editForm.payment_method === "cartao_credito" ? (
+                          <select value={String(editForm.installments_count ?? 1)}
+                            onChange={e => {
+                              const n = Number(e.target.value);
+                              const saldo = Number(editForm.total_value ?? 0) - Number(editForm.down_payment ?? 0);
+                              const parcela = n > 0 && saldo > 0 ? saldo / n : editForm.installment_value;
+                              setEditForm(prev => ({ ...prev, installments_count: n, installment_value: Number(parcela) }));
+                            }}
+                            className="w-full rounded-xl px-3 py-2 text-sm text-white border focus:outline-none"
+                            style={{ background: "#111827", borderColor: "#374151" }}>
+                            {Array.from({ length: 24 }, (_, i) => i + 1).map(n => (
+                              <option key={n} value={n}>{n}x</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input type="number" min="1" value={String(editForm.installments_count ?? 1)}
+                            onChange={e => setEditForm(prev => ({ ...prev, installments_count: Number(e.target.value) }))}
+                            className="w-full rounded-xl px-3 py-2 text-sm text-white border focus:outline-none"
+                            style={{ background: "#111827", borderColor: "#374151" }} />
+                        )}
                       </div>
                       <div>
                         <label className="block text-[10px] font-semibold mb-1" style={{ color: "#6b7280" }}>Valor/Parcela (R$)</label>
