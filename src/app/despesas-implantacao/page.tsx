@@ -1,0 +1,618 @@
+"use client";
+
+import { useEffect, useState, useMemo, useCallback } from "react";
+import { getSupabaseBrowser } from "@/lib/supabaseBrowser";
+
+const supabase = getSupabaseBrowser();
+
+/* ── Types ─────────────────────────────────────────────────────────── */
+type Despesa = {
+  id: string;
+  loja_id: string;
+  descricao: string;
+  categoria: "ativo_imobilizado" | "uso_e_consumo" | "outros";
+  valor: number;
+  data_despesa: string;
+  observacao?: string;
+  created_at: string;
+  updated_at: string;
+};
+
+/* ── Constants ──────────────────────────────────────────────────────── */
+const CATEGORIAS = [
+  { value: "ativo_imobilizado", label: "Aquisição e Instalação (Ativo Imobilizado)" },
+  { value: "uso_e_consumo",     label: "Uso e Consumo (Despesa Operacional)" },
+  { value: "outros",            label: "Outros" },
+] as const;
+
+const CAT_LABEL: Record<string, string> = Object.fromEntries(
+  CATEGORIAS.map(c => [c.value, c.label]),
+);
+
+const CAT_COLOR: Record<string, string> = {
+  ativo_imobilizado: "#f59e0b",
+  uso_e_consumo:     "#e63946",
+  outros:            "#6b7280",
+};
+
+const EMPTY_FORM = {
+  descricao: "",
+  categoria: "ativo_imobilizado" as Despesa["categoria"],
+  valor: "",
+  data_despesa: new Date().toISOString().split("T")[0],
+  observacao: "",
+};
+
+/* ── Helpers ────────────────────────────────────────────────────────── */
+function brl(v: number) {
+  return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+function fmtDate(iso: string) {
+  return new Date(iso + "T12:00:00").toLocaleDateString("pt-BR");
+}
+function monthKey(iso: string) { return iso.slice(0, 7); }
+function monthLabel(key: string) {
+  const [y, m] = key.split("-");
+  const names = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
+  return `${names[parseInt(m) - 1]}/${y.slice(2)}`;
+}
+
+/* ── PDF Report ─────────────────────────────────────────────────────── */
+function printReport(
+  despesas: Despesa[],
+  storeName: string,
+  filters: { dateFrom: string; dateTo: string; categoria: string },
+) {
+  const win = window.open("", "_blank");
+  if (!win) return;
+
+  const total = despesas.reduce((s, d) => s + Number(d.valor), 0);
+  const bycat: Record<string, number> = {};
+  despesas.forEach(d => { bycat[d.categoria] = (bycat[d.categoria] ?? 0) + Number(d.valor); });
+
+  const rows = despesas.map(d => `
+    <tr>
+      <td>${fmtDate(d.data_despesa)}</td>
+      <td>${d.descricao}</td>
+      <td>${CAT_LABEL[d.categoria] ?? d.categoria}</td>
+      <td style="text-align:right">${brl(Number(d.valor))}</td>
+      <td style="color:#6b7280;font-size:10px">${d.observacao ?? ""}</td>
+    </tr>`).join("");
+
+  const catRows = Object.entries(bycat)
+    .sort((a, b) => b[1] - a[1])
+    .map(([cat, val]) => `<tr><td>${CAT_LABEL[cat] ?? cat}</td><td style="text-align:right;font-weight:700">${brl(val)}</td></tr>`)
+    .join("");
+
+  const filterDesc = [
+    filters.dateFrom && `De: ${fmtDate(filters.dateFrom)}`,
+    filters.dateTo   && `Até: ${fmtDate(filters.dateTo)}`,
+    filters.categoria !== "todas" && `Categoria: ${CAT_LABEL[filters.categoria]}`,
+  ].filter(Boolean).join(" · ") || "Todos os registros";
+
+  win.document.write(`<!DOCTYPE html><html><head>
+    <meta charset="UTF-8"/>
+    <title>Despesas de Implantação — ${storeName}</title>
+    <style>
+      *{box-sizing:border-box;margin:0;padding:0}
+      body{font-family:Arial,sans-serif;padding:32px;color:#1a1a1a;font-size:12px}
+      .header{text-align:center;border-bottom:3px solid #c1121f;padding-bottom:14px;margin-bottom:20px}
+      .header h1{font-size:20px;color:#c1121f;font-weight:800}
+      .header p{font-size:11px;color:#666;margin-top:4px}
+      .section-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#888;border-bottom:1px solid #eee;padding-bottom:4px;margin:16px 0 10px}
+      table{width:100%;border-collapse:collapse;font-size:11px}
+      th{background:#f3f4f6;font-weight:700;padding:6px 8px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.5px}
+      td{padding:5px 8px;border-bottom:1px solid #f0f0f0}
+      .total-box{background:#f8f8f8;border:1px solid #ddd;border-radius:6px;padding:12px;display:flex;justify-content:space-between;align-items:center;margin-top:16px}
+      .total-box .label{font-size:12px;font-weight:700;color:#333}
+      .total-box .value{font-size:18px;font-weight:800;color:#c1121f}
+      @media print{body{padding:0}}
+    </style>
+  </head><body>
+    <div class="header">
+      <h1>${storeName}</h1>
+      <p>Despesas de Implantação · Gerado em ${new Date().toLocaleDateString("pt-BR")}</p>
+      <p style="margin-top:6px;font-size:10px;color:#999">${filterDesc}</p>
+    </div>
+    <div class="section-title">Resumo por Categoria</div>
+    <table>
+      <thead><tr><th>Categoria</th><th style="text-align:right">Total</th></tr></thead>
+      <tbody>${catRows}</tbody>
+    </table>
+    <div class="section-title">Despesas Detalhadas</div>
+    <table>
+      <thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th style="text-align:right">Valor</th><th>Observação</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div class="total-box">
+      <span class="label">Total Geral</span>
+      <span class="value">${brl(total)}</span>
+    </div>
+  </body></html>`);
+  win.document.close();
+  win.print();
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   PAGE
+══════════════════════════════════════════════════════════════════════ */
+export default function DespesasImplantacaoPage() {
+  const [userId, setUserId]       = useState<string | null>(null);
+  const [storeName, setStoreName] = useState("CRM 7Business");
+  const [tab, setTab]             = useState<"lista" | "relatorio">("lista");
+
+  const [despesas, setDespesas] = useState<Despesa[]>([]);
+  const [loading, setLoading]   = useState(true);
+
+  // filtros
+  const [filterCat, setFilterCat] = useState("todas");
+  const [dateFrom, setDateFrom]   = useState("");
+  const [dateTo, setDateTo]       = useState("");
+  const [search, setSearch]       = useState("");
+
+  // modal
+  const [showModal, setShowModal] = useState(false);
+  const [editing, setEditing]     = useState<Despesa | null>(null);
+  const [form, setForm]           = useState({ ...EMPTY_FORM });
+  const [saving, setSaving]       = useState(false);
+
+  /* ── auth ── */
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      if (!data?.user) return;
+      setUserId(data.user.id);
+      fetch(`/api/settings?userId=${data.user.id}`)
+        .then(r => r.ok ? r.json() : null)
+        .then(d => { if (d?.business_name) setStoreName(d.business_name); })
+        .catch(() => {});
+    });
+  }, []);
+
+  /* ── fetch ── */
+  const fetchAll = useCallback(async () => {
+    setLoading(true);
+    const res = await fetch("/api/despesas-implantacao");
+    if (res.ok) setDespesas(await res.json());
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  /* ── filtros ── */
+  const filtered = useMemo(() => {
+    return despesas.filter(d => {
+      if (filterCat !== "todas" && d.categoria !== filterCat) return false;
+      if (dateFrom && d.data_despesa < dateFrom) return false;
+      if (dateTo   && d.data_despesa > dateTo)   return false;
+      if (search) {
+        const q = search.toLowerCase();
+        if (!d.descricao.toLowerCase().includes(q) &&
+            !(d.observacao ?? "").toLowerCase().includes(q)) return false;
+      }
+      return true;
+    });
+  }, [despesas, filterCat, dateFrom, dateTo, search]);
+
+  /* ── KPIs ── */
+  const kpi = useMemo(() => {
+    const total       = despesas.reduce((s, d) => s + Number(d.valor), 0);
+    const ativo       = despesas.filter(d => d.categoria === "ativo_imobilizado").reduce((s, d) => s + Number(d.valor), 0);
+    const operacional = despesas.filter(d => d.categoria === "uso_e_consumo").reduce((s, d) => s + Number(d.valor), 0);
+    const outros      = despesas.filter(d => d.categoria === "outros").reduce((s, d) => s + Number(d.valor), 0);
+    return { total, ativo, operacional, outros };
+  }, [despesas]);
+
+  /* ── modal helpers ── */
+  function openNew() {
+    setEditing(null);
+    setForm({ ...EMPTY_FORM });
+    setShowModal(true);
+  }
+  function openEdit(d: Despesa) {
+    setEditing(d);
+    setForm({
+      descricao:   d.descricao,
+      categoria:   d.categoria,
+      valor:       String(d.valor),
+      data_despesa: d.data_despesa,
+      observacao:  d.observacao ?? "",
+    });
+    setShowModal(true);
+  }
+
+  async function saveForm() {
+    if (!form.descricao || !form.valor || !userId) return;
+    setSaving(true);
+    const payload = {
+      loja_id:     userId,
+      descricao:   form.descricao,
+      categoria:   form.categoria,
+      valor:       Number(form.valor),
+      data_despesa: form.data_despesa,
+      observacao:  form.observacao || null,
+    };
+
+    const res = editing
+      ? await fetch("/api/despesas-implantacao", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: editing.id, ...payload }),
+        })
+      : await fetch("/api/despesas-implantacao", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+
+    if (!res.ok) { alert("Erro ao salvar despesa"); setSaving(false); return; }
+    setSaving(false);
+    setShowModal(false);
+    fetchAll();
+  }
+
+  async function deleteDespesa(id: string) {
+    if (!confirm("Excluir esta despesa?")) return;
+    await fetch(`/api/despesas-implantacao?id=${id}`, { method: "DELETE" });
+    fetchAll();
+  }
+
+  function setMonth(offset: number) {
+    const d = new Date();
+    d.setMonth(d.getMonth() + offset);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    setDateFrom(`${y}-${m}-01`);
+    setDateTo(`${y}-${m}-${new Date(y, d.getMonth() + 1, 0).getDate()}`);
+  }
+
+  /* ── styles ── */
+  const inputStyle  = { background: "#111827", borderColor: "#374151" };
+  const sectionBg   = { background: "#0f172a", border: "1px solid #1f2937" };
+  const TAB_STYLE = (active: boolean) => ({
+    background:   active ? "rgba(230,57,70,0.15)" : "transparent",
+    color:        active ? "#f87171" : "#6b7280",
+    borderBottom: active ? "2px solid #e63946" : "2px solid transparent",
+  });
+
+  /* ══════════════════════════════════════════════════════════════════
+     RENDER
+  ══════════════════════════════════════════════════════════════════ */
+  return (
+    <main className="min-h-screen p-4 sm:p-6" style={{ background: "#0a0f1a" }}>
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-black text-white">🏗️ Despesas de Implantação</h1>
+          <p className="text-sm mt-1" style={{ color: "#6b7280" }}>
+            Controle de investimentos e custos de abertura da loja
+          </p>
+        </div>
+        <button onClick={openNew}
+          className="rounded-xl px-5 py-2.5 text-sm font-bold text-white flex items-center gap-2 hover:opacity-90"
+          style={{ background: "#e63946" }}>
+          + Nova Despesa
+        </button>
+      </div>
+
+      {/* KPI Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        {[
+          { label: "Total Geral",            value: kpi.total,       color: "#f87171", icon: "💸" },
+          { label: "Ativo Imobilizado",       value: kpi.ativo,       color: "#f59e0b", icon: "🏢" },
+          { label: "Despesa Operacional",     value: kpi.operacional, color: "#e63946", icon: "⚙️" },
+          { label: "Outros",                  value: kpi.outros,      color: "#6b7280", icon: "📦" },
+        ].map(c => (
+          <div key={c.label} className="rounded-2xl p-4" style={sectionBg}>
+            <p className="text-xl mb-1">{c.icon}</p>
+            <p className="text-[11px] font-semibold mb-1" style={{ color: "#6b7280" }}>{c.label}</p>
+            <p className="text-xl font-black" style={{ color: c.color }}>{brl(c.value)}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-1 mb-6 border-b" style={{ borderColor: "#1f2937" }}>
+        {(["lista", "relatorio"] as const).map(t => (
+          <button key={t} onClick={() => setTab(t)}
+            className="px-5 py-3 text-sm font-semibold capitalize transition-all"
+            style={TAB_STYLE(tab === t)}>
+            {t === "lista" ? "📋 Despesas" : "📄 Relatório"}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center h-40 text-gray-500">Carregando…</div>
+      ) : (
+        <>
+          {/* ══ TAB LISTA ══ */}
+          {tab === "lista" && (
+            <div className="space-y-4">
+              {/* Filtros */}
+              <div className="rounded-2xl p-4" style={sectionBg}>
+                <div className="flex flex-wrap gap-3">
+                  <input type="text" placeholder="🔍 Buscar..." value={search}
+                    onChange={e => setSearch(e.target.value)}
+                    className="rounded-xl px-3 py-2 text-sm text-white border focus:outline-none focus:border-red-500 flex-1 min-w-40"
+                    style={inputStyle} />
+                  <select value={filterCat} onChange={e => setFilterCat(e.target.value)}
+                    className="rounded-xl px-3 py-2 text-sm text-white border focus:outline-none"
+                    style={inputStyle}>
+                    <option value="todas">Todas categorias</option>
+                    {CATEGORIAS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                  </select>
+                  <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+                    className="rounded-xl px-3 py-2 text-sm text-white border focus:outline-none"
+                    style={inputStyle} />
+                  <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+                    className="rounded-xl px-3 py-2 text-sm text-white border focus:outline-none"
+                    style={inputStyle} />
+                  <button onClick={() => { setDateFrom(""); setDateTo(""); setFilterCat("todas"); setSearch(""); }}
+                    className="rounded-xl px-3 py-2 text-xs font-semibold"
+                    style={{ background: "#1f2937", color: "#9ca3af" }}>
+                    Limpar
+                  </button>
+                </div>
+                <div className="flex gap-2 mt-3 flex-wrap">
+                  {[
+                    { label: "Este mês",    fn: () => setMonth(0)  },
+                    { label: "Mês passado", fn: () => setMonth(-1) },
+                  ].map(a => (
+                    <button key={a.label} onClick={a.fn}
+                      className="rounded-lg px-3 py-1 text-xs font-semibold"
+                      style={{ background: "#1f2937", color: "#9ca3af" }}>
+                      {a.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Total filtrado */}
+              <div className="rounded-2xl px-5 py-3 flex justify-between items-center" style={sectionBg}>
+                <span className="text-sm font-semibold" style={{ color: "#6b7280" }}>
+                  {filtered.length} registro{filtered.length !== 1 ? "s" : ""} encontrado{filtered.length !== 1 ? "s" : ""}
+                </span>
+                <span className="text-xl font-black" style={{ color: "#f87171" }}>
+                  {brl(filtered.reduce((s, d) => s + Number(d.valor), 0))}
+                </span>
+              </div>
+
+              {/* Tabela */}
+              <div className="rounded-2xl overflow-hidden" style={sectionBg}>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr style={{ borderBottom: "1px solid #1f2937", background: "#111827" }}>
+                      {["Data", "Descrição", "Categoria", "Valor", "Ações"].map(h => (
+                        <th key={h} className="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wider"
+                          style={{ color: "#6b7280" }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filtered.length === 0 && (
+                      <tr><td colSpan={5} className="text-center py-12 text-gray-600">
+                        Nenhuma despesa encontrada
+                      </td></tr>
+                    )}
+                    {filtered.map(d => (
+                      <tr key={d.id} className="transition-colors hover:bg-white/[0.02]"
+                        style={{ borderBottom: "1px solid #1f293740" }}>
+                        <td className="px-4 py-3 text-white whitespace-nowrap">{fmtDate(d.data_despesa)}</td>
+                        <td className="px-4 py-3">
+                          <p className="font-semibold text-white">{d.descricao}</p>
+                          {d.observacao && (
+                            <p className="text-[10px] mt-0.5" style={{ color: "#6b7280" }}>{d.observacao}</p>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="text-xs font-semibold px-2 py-1 rounded-lg"
+                            style={{
+                              background: (CAT_COLOR[d.categoria] ?? "#6b7280") + "22",
+                              color:       CAT_COLOR[d.categoria] ?? "#9ca3af",
+                            }}>
+                            {CAT_LABEL[d.categoria] ?? d.categoria}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 font-bold text-white whitespace-nowrap">
+                          {brl(Number(d.valor))}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex gap-2">
+                            <button onClick={() => openEdit(d)}
+                              className="rounded-lg px-2 py-1 text-xs font-semibold hover:opacity-80"
+                              style={{ background: "#1f2937", color: "#9ca3af" }}>✏️</button>
+                            <button onClick={() => deleteDespesa(d.id)}
+                              className="rounded-lg px-2 py-1 text-xs font-semibold hover:opacity-80"
+                              style={{ background: "#ef444415", color: "#ef4444" }}>🗑️</button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* ══ TAB RELATÓRIO ══ */}
+          {tab === "relatorio" && (
+            <div className="space-y-5">
+              {/* Filtros */}
+              <div className="rounded-2xl p-4" style={sectionBg}>
+                <p className="text-xs font-bold uppercase tracking-wider mb-3" style={{ color: "#6b7280" }}>
+                  Filtros do Relatório
+                </p>
+                <div className="flex flex-wrap gap-3">
+                  <select value={filterCat} onChange={e => setFilterCat(e.target.value)}
+                    className="rounded-xl px-3 py-2 text-sm text-white border focus:outline-none"
+                    style={inputStyle}>
+                    <option value="todas">Todas categorias</option>
+                    {CATEGORIAS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                  </select>
+                  <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+                    className="rounded-xl px-3 py-2 text-sm text-white border focus:outline-none"
+                    style={inputStyle} />
+                  <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+                    className="rounded-xl px-3 py-2 text-sm text-white border focus:outline-none"
+                    style={inputStyle} />
+                  <div className="flex gap-2">
+                    {[{ l: "Este mês", f: () => setMonth(0) }, { l: "Mês passado", f: () => setMonth(-1) }].map(a => (
+                      <button key={a.l} onClick={a.f}
+                        className="rounded-xl px-3 py-2 text-xs font-semibold"
+                        style={{ background: "#1f2937", color: "#9ca3af" }}>{a.l}</button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Resumo por categoria */}
+              <div className="rounded-2xl p-5" style={sectionBg}>
+                <p className="text-sm font-bold text-white mb-4">📊 Resumo por Categoria</p>
+                <div className="space-y-3">
+                  {(() => {
+                    const catMap: Record<string, number> = {};
+                    filtered.forEach(d => { catMap[d.categoria] = (catMap[d.categoria] ?? 0) + Number(d.valor); });
+                    const items = Object.entries(catMap).sort((a, b) => b[1] - a[1]);
+                    if (!items.length) return (
+                      <p className="text-sm text-center py-4" style={{ color: "#6b7280" }}>Nenhum dado</p>
+                    );
+                    const totalFiltrado = filtered.reduce((s, d) => s + Number(d.valor), 0.001);
+                    const max = Math.max(...items.map(i => i[1]));
+                    return items.map(([cat, val]) => (
+                      <div key={cat} className="flex items-center gap-3">
+                        <span className="text-xs w-48 shrink-0 truncate" style={{ color: "#9ca3af" }}>
+                          {CAT_LABEL[cat] ?? cat}
+                        </span>
+                        <div className="flex-1 h-5 rounded-full overflow-hidden" style={{ background: "#1f2937" }}>
+                          <div className="h-5 rounded-full transition-all"
+                            style={{ width: `${(val / max) * 100}%`, background: CAT_COLOR[cat] ?? "#6b7280" }} />
+                        </div>
+                        <span className="text-sm font-bold w-28 text-right shrink-0 text-white">{brl(val)}</span>
+                        <span className="text-[10px] w-10 text-right shrink-0" style={{ color: "#6b7280" }}>
+                          {((val / totalFiltrado) * 100).toFixed(1)}%
+                        </span>
+                      </div>
+                    ));
+                  })()}
+                </div>
+                <div className="mt-4 flex justify-between items-center border-t pt-4" style={{ borderColor: "#1f2937" }}>
+                  <span className="text-sm font-bold text-white">Total do Período</span>
+                  <span className="text-2xl font-black" style={{ color: "#e63946" }}>
+                    {brl(filtered.reduce((s, d) => s + Number(d.valor), 0))}
+                  </span>
+                </div>
+              </div>
+
+              {/* Totais mensais */}
+              <div className="rounded-2xl p-5" style={sectionBg}>
+                <p className="text-sm font-bold text-white mb-4">📅 Totais por Mês</p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                  {(() => {
+                    const mm: Record<string, number> = {};
+                    filtered.forEach(d => { const k = monthKey(d.data_despesa); mm[k] = (mm[k] ?? 0) + Number(d.valor); });
+                    const entries = Object.entries(mm).sort((a, b) => a[0].localeCompare(b[0]));
+                    if (!entries.length) return (
+                      <p className="col-span-4 text-sm text-center py-4" style={{ color: "#6b7280" }}>Sem dados mensais</p>
+                    );
+                    return entries.map(([k, v]) => (
+                      <div key={k} className="rounded-xl p-3" style={{ background: "#111827" }}>
+                        <p className="text-[10px] font-semibold mb-1" style={{ color: "#6b7280" }}>{monthLabel(k)}</p>
+                        <p className="text-base font-black" style={{ color: "#e63946" }}>{brl(v)}</p>
+                      </div>
+                    ));
+                  })()}
+                </div>
+              </div>
+
+              <button
+                onClick={() => printReport(filtered, storeName, { dateFrom, dateTo, categoria: filterCat })}
+                className="w-full rounded-xl py-3 text-sm font-bold text-white flex items-center justify-center gap-2 hover:opacity-90"
+                style={{ background: "#e63946" }}>
+                🖨️ Exportar Relatório em PDF
+              </button>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ══ MODAL ══ */}
+      {showModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.8)", backdropFilter: "blur(4px)" }}
+          onClick={e => { if (e.target === e.currentTarget) setShowModal(false); }}>
+          <div className="w-full max-w-lg rounded-2xl overflow-hidden"
+            style={{ background: "#111827", border: "1px solid #1f2937" }}>
+            <div className="flex items-center justify-between px-6 py-4"
+              style={{ borderBottom: "1px solid #1f2937" }}>
+              <h2 className="text-base font-black text-white">
+                {editing ? "✏️ Editar Despesa" : "➕ Nova Despesa de Implantação"}
+              </h2>
+              <button onClick={() => setShowModal(false)}
+                className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-400 hover:text-white"
+                style={{ background: "#1f2937" }}>✕</button>
+            </div>
+
+            <div className="px-6 py-5 space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-semibold mb-1" style={{ color: "#6b7280" }}>Data *</label>
+                  <input type="date" value={form.data_despesa}
+                    onChange={e => setForm(f => ({ ...f, data_despesa: e.target.value }))}
+                    className="w-full rounded-xl px-3 py-2 text-sm text-white border focus:outline-none focus:border-red-500"
+                    style={inputStyle} />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-semibold mb-1" style={{ color: "#6b7280" }}>Valor (R$) *</label>
+                  <input type="number" min="0.01" step="0.01" placeholder="0,00" value={form.valor}
+                    onChange={e => setForm(f => ({ ...f, valor: e.target.value }))}
+                    className="w-full rounded-xl px-3 py-2 text-sm text-white border focus:outline-none focus:border-red-500"
+                    style={inputStyle} />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-semibold mb-1" style={{ color: "#6b7280" }}>Descrição *</label>
+                <input type="text" placeholder="Ex: Computador para recepção" value={form.descricao}
+                  onChange={e => setForm(f => ({ ...f, descricao: e.target.value }))}
+                  className="w-full rounded-xl px-3 py-2 text-sm text-white border focus:outline-none focus:border-red-500"
+                  style={inputStyle} />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-semibold mb-1" style={{ color: "#6b7280" }}>Categoria *</label>
+                <select value={form.categoria}
+                  onChange={e => setForm(f => ({ ...f, categoria: e.target.value as Despesa["categoria"] }))}
+                  className="w-full rounded-xl px-3 py-2 text-sm text-white border focus:outline-none"
+                  style={inputStyle}>
+                  {CATEGORIAS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-semibold mb-1" style={{ color: "#6b7280" }}>Observação</label>
+                <textarea rows={3} placeholder="Detalhes adicionais, número de nota fiscal, fornecedor..." value={form.observacao}
+                  onChange={e => setForm(f => ({ ...f, observacao: e.target.value }))}
+                  className="w-full rounded-xl px-3 py-2 text-sm text-white border focus:outline-none resize-none"
+                  style={inputStyle} />
+              </div>
+            </div>
+
+            <div className="flex gap-3 px-6 pb-6">
+              <button onClick={saveForm}
+                disabled={saving || !form.descricao || !form.valor}
+                className="flex-1 rounded-xl py-3 text-sm font-bold text-white hover:opacity-90 disabled:opacity-50"
+                style={{ background: "#e63946" }}>
+                {saving ? "Salvando…" : editing ? "✓ Salvar Alterações" : "✓ Cadastrar Despesa"}
+              </button>
+              <button onClick={() => setShowModal(false)}
+                className="rounded-xl px-5 py-3 text-sm font-semibold"
+                style={{ background: "#1f2937", color: "#9ca3af" }}>
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </main>
+  );
+}

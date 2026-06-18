@@ -15,7 +15,8 @@ const NAV = [
   { href: "/atendimentos",  icon: "💬", label: "Atendimentos"   },
   { href: "/inventory",     icon: "🚗", label: "Estoque"        },
   { href: "/financeiro",      icon: "💰", label: "Financeiro"     },
-  { href: "/financeiro-loja", icon: "🏪", label: "Fin. da Loja"   },
+  { href: "/financeiro-loja",        icon: "🏪", label: "Fin. da Loja"   },
+  { href: "/despesas-implantacao",   icon: "🏗️", label: "Implantação"    },
   { href: "/integrations",    icon: "🔗", label: "Integracoes"    },
   { href: "/settings",      icon: "⚙️", label: "Configuracoes"  },
 ];
@@ -25,6 +26,7 @@ export function Sidebar() {
   const router   = useRouter();
   const [open, setOpen]           = useState(false);
   const [storeName, setStoreName] = useState<string | null>(null);
+  const [logoUrl,   setLogoUrl]   = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [isAdmin, setIsAdmin]     = useState(false);
 
@@ -38,7 +40,8 @@ export function Sidebar() {
         .then(r => r.ok ? r.json() : null)
         .then(d => {
           if (d?.business_name) setStoreName(d.business_name);
-          if (d?.is_admin) setIsAdmin(true);
+          if (d?.logo_url)      setLogoUrl(d.logo_url);
+          if (d?.is_admin)      setIsAdmin(true);
         })
         .catch(() => {});
     });
@@ -52,15 +55,20 @@ export function Sidebar() {
   }
 
   const isActive = (href: string) =>
-    href === "/" ? pathname === "/" : pathname.startsWith(href);
+    href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(href + "/");
 
   const Content = () => (
     <div className="flex flex-col h-full" style={{ background: "#111827", borderRight: "1px solid #1f2937" }}>
       <div className="px-5 py-5" style={{ borderBottom: "1px solid #1f2937" }}>
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl flex items-center justify-center font-black text-white text-base flex-shrink-0"
-            style={{ background: "linear-gradient(135deg,#e63946 0%,#c1121f 100%)", boxShadow: "0 2px 8px rgba(230,57,70,0.4)" }}>
-            7
+          <div className="w-9 h-9 rounded-xl flex-shrink-0 overflow-hidden flex items-center justify-center"
+            style={logoUrl
+              ? { border: "1px solid #2e2e2e" }
+              : { background: "linear-gradient(135deg,#e63946 0%,#c1121f 100%)", boxShadow: "0 2px 8px rgba(230,57,70,0.4)" }}>
+            {logoUrl
+              ? <img src={logoUrl} alt="Logo" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              : <span className="font-black text-white text-base">7</span>
+            }
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-black text-white leading-tight truncate">{storeName ?? "7Business"}</p>
