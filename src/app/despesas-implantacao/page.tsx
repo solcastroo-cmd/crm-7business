@@ -57,6 +57,55 @@ function monthLabel(key: string) {
   return `${names[parseInt(m) - 1]}/${y.slice(2)}`;
 }
 
+/* ── CSV Export ─────────────────────────────────────────────────────── */
+function exportCSV(
+  despesas: Despesa[],
+  storeName: string,
+  filters: { dateFrom: string; dateTo: string; categoria: string },
+) {
+  const filterDesc = [
+    filters.dateFrom && `De ${fmtDate(filters.dateFrom)}`,
+    filters.dateTo   && `Ate ${fmtDate(filters.dateTo)}`,
+    filters.categoria !== "todas" && CAT_LABEL[filters.categoria],
+  ].filter(Boolean).join(" - ") || "todos";
+
+  const header = ["Data", "Descricao", "Categoria", "Valor (R$)", "Observacao"];
+  const rows = despesas.map(d => [
+    fmtDate(d.data_despesa),
+    `"${d.descricao.replace(/"/g, '""')}"`,
+    `"${(CAT_LABEL[d.categoria] ?? d.categoria).replace(/"/g, '""')}"`,
+    Number(d.valor).toFixed(2).replace(".", ","),
+    `"${(d.observacao ?? "").replace(/"/g, '""')}"`,
+  ]);
+
+  const total = despesas.reduce((s, d) => s + Number(d.valor), 0);
+  const bycat: Record<string, number> = {};
+  despesas.forEach(d => { bycat[d.categoria] = (bycat[d.categoria] ?? 0) + Number(d.valor); });
+
+  const lines = [
+    `"${storeName} - Despesas de Implantacao (${filterDesc})"`,
+    "",
+    header.join(";"),
+    ...rows.map(r => r.join(";")),
+    "",
+    "RESUMO POR CATEGORIA",
+    ...Object.entries(bycat).sort((a, b) => b[1] - a[1]).map(
+      ([cat, val]) => `"${CAT_LABEL[cat] ?? cat}";${val.toFixed(2).replace(".", ",")}`,
+    ),
+    "",
+    `"TOTAL GERAL";;;"${total.toFixed(2).replace(".", ",")}"`,
+  ];
+
+  const bom = "﻿";
+  const blob = new Blob([bom + lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement("a");
+  a.href     = url;
+  a.download = `despesas-implantacao-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 /* ── PDF Report ─────────────────────────────────────────────────────── */
 function printReport(
   despesas: Despesa[],
@@ -524,12 +573,20 @@ export default function DespesasImplantacaoPage() {
                 </div>
               </div>
 
-              <button
-                onClick={() => printReport(filtered, storeName, { dateFrom, dateTo, categoria: filterCat })}
-                className="w-full rounded-xl py-3 text-sm font-bold text-white flex items-center justify-center gap-2 hover:opacity-90"
-                style={{ background: "#e63946" }}>
-                🖨️ Exportar Relatório em PDF
-              </button>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => printReport(filtered, storeName, { dateFrom, dateTo, categoria: filterCat })}
+                  className="flex-1 rounded-xl py-3 text-sm font-bold text-white flex items-center justify-center gap-2 hover:opacity-90"
+                  style={{ background: "#e63946" }}>
+                  🖨️ Exportar PDF
+                </button>
+                <button
+                  onClick={() => exportCSV(filtered, storeName, { dateFrom, dateTo, categoria: filterCat })}
+                  className="flex-1 rounded-xl py-3 text-sm font-bold text-white flex items-center justify-center gap-2 hover:opacity-90"
+                  style={{ background: "#1d4ed8" }}>
+                  📥 Exportar CSV
+                </button>
+              </div>
             </div>
           )}
         </>
