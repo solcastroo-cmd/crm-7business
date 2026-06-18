@@ -82,19 +82,23 @@ function monthLabel(key: string) {
 function exportCSV(
   despesas: Despesa[],
   storeName: string,
-  filters: { dateFrom: string; dateTo: string; categoria: string },
+  filters: { dateFrom: string; dateTo: string; categoria: string; pagamento?: string },
 ) {
   const filterDesc = [
     filters.dateFrom && `De ${fmtDate(filters.dateFrom)}`,
     filters.dateTo   && `Ate ${fmtDate(filters.dateTo)}`,
     filters.categoria !== "todas" && CAT_LABEL[filters.categoria],
+    filters.pagamento && filters.pagamento !== "todas" && PAGTO_LABEL[filters.pagamento],
   ].filter(Boolean).join(" - ") || "todos";
 
-  const header = ["Data", "Descricao", "Categoria", "Valor (R$)", "Observacao"];
+  const header = ["Data", "Descricao", "Categoria", "Forma Pagamento", "Parcelas", "Valor Parcela (R$)", "Valor Total (R$)", "Observacao"];
   const rows = despesas.map(d => [
     fmtDate(d.data_despesa),
     `"${d.descricao.replace(/"/g, '""')}"`,
     `"${(CAT_LABEL[d.categoria] ?? d.categoria).replace(/"/g, '""')}"`,
+    `"${(PAGTO_LABEL[d.forma_pagamento ?? "avista"] ?? d.forma_pagamento ?? "").replace(/"/g, '""')}"`,
+    d.forma_pagamento === "cartao_credito" ? String(d.parcelas ?? 1) : "1",
+    d.forma_pagamento === "cartao_credito" && d.valor_parcela ? Number(d.valor_parcela).toFixed(2).replace(".", ",") : "",
     Number(d.valor).toFixed(2).replace(".", ","),
     `"${(d.observacao ?? "").replace(/"/g, '""')}"`,
   ]);
@@ -102,6 +106,8 @@ function exportCSV(
   const total = despesas.reduce((s, d) => s + Number(d.valor), 0);
   const bycat: Record<string, number> = {};
   despesas.forEach(d => { bycat[d.categoria] = (bycat[d.categoria] ?? 0) + Number(d.valor); });
+  const bypagto: Record<string, number> = {};
+  despesas.forEach(d => { const k = d.forma_pagamento ?? "avista"; bypagto[k] = (bypagto[k] ?? 0) + Number(d.valor); });
 
   const lines = [
     `"${storeName} - Despesas de Implantacao (${filterDesc})"`,
@@ -111,10 +117,15 @@ function exportCSV(
     "",
     "RESUMO POR CATEGORIA",
     ...Object.entries(bycat).sort((a, b) => b[1] - a[1]).map(
-      ([cat, val]) => `"${CAT_LABEL[cat] ?? cat}";${val.toFixed(2).replace(".", ",")}`,
+      ([cat, val]) => `"${CAT_LABEL[cat] ?? cat}";"${val.toFixed(2).replace(".", ",")}"`,
     ),
     "",
-    `"TOTAL GERAL";;;"${total.toFixed(2).replace(".", ",")}"`,
+    "TOTAL POR FORMA DE PAGAMENTO",
+    ...Object.entries(bypagto).sort((a, b) => b[1] - a[1]).map(
+      ([p, val]) => `"${PAGTO_LABEL[p] ?? p}";"${val.toFixed(2).replace(".", ",")}"`,
+    ),
+    "",
+    `"TOTAL GERAL";;;;;;;"${total.toFixed(2).replace(".", ",")}"`,
   ];
 
   const bom = "﻿";
@@ -131,7 +142,7 @@ function exportCSV(
 function printReport(
   despesas: Despesa[],
   storeName: string,
-  filters: { dateFrom: string; dateTo: string; categoria: string },
+  filters: { dateFrom: string; dateTo: string; categoria: string; pagamento?: string },
 ) {
   const win = window.open("", "_blank");
   if (!win) return;
@@ -145,6 +156,7 @@ function printReport(
       <td>${fmtDate(d.data_despesa)}</td>
       <td>${d.descricao}</td>
       <td>${CAT_LABEL[d.categoria] ?? d.categoria}</td>
+      <td>${PAGTO_LABEL[d.forma_pagamento ?? "avista"] ?? d.forma_pagamento}${d.forma_pagamento === "cartao_credito" && (d.parcelas ?? 1) > 1 ? ` (${d.parcelas}x)` : ""}</td>
       <td style="text-align:right">${brl(Number(d.valor))}</td>
       <td style="color:#6b7280;font-size:10px">${d.observacao ?? ""}</td>
     </tr>`).join("");
@@ -154,10 +166,18 @@ function printReport(
     .map(([cat, val]) => `<tr><td>${CAT_LABEL[cat] ?? cat}</td><td style="text-align:right;font-weight:700">${brl(val)}</td></tr>`)
     .join("");
 
+  const bypagto: Record<string, number> = {};
+  despesas.forEach(d => { const k = d.forma_pagamento ?? "avista"; bypagto[k] = (bypagto[k] ?? 0) + Number(d.valor); });
+  const pagtoRows = Object.entries(bypagto)
+    .sort((a, b) => b[1] - a[1])
+    .map(([p, val]) => `<tr><td>${PAGTO_LABEL[p] ?? p}</td><td style="text-align:right;font-weight:700">${brl(val)}</td></tr>`)
+    .join("");
+
   const filterDesc = [
     filters.dateFrom && `De: ${fmtDate(filters.dateFrom)}`,
     filters.dateTo   && `Até: ${fmtDate(filters.dateTo)}`,
     filters.categoria !== "todas" && `Categoria: ${CAT_LABEL[filters.categoria]}`,
+    filters.pagamento && filters.pagamento !== "todas" && `Pagamento: ${PAGTO_LABEL[filters.pagamento]}`,
   ].filter(Boolean).join(" · ") || "Todos os registros";
 
   win.document.write(`<!DOCTYPE html><html><head>
@@ -184,14 +204,25 @@ function printReport(
       <p>Despesas de Implantação · Gerado em ${new Date().toLocaleDateString("pt-BR")}</p>
       <p style="margin-top:6px;font-size:10px;color:#999">${filterDesc}</p>
     </div>
-    <div class="section-title">Resumo por Categoria</div>
-    <table>
-      <thead><tr><th>Categoria</th><th style="text-align:right">Total</th></tr></thead>
-      <tbody>${catRows}</tbody>
-    </table>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:8px">
+      <div>
+        <div class="section-title">Resumo por Categoria</div>
+        <table>
+          <thead><tr><th>Categoria</th><th style="text-align:right">Total</th></tr></thead>
+          <tbody>${catRows}</tbody>
+        </table>
+      </div>
+      <div>
+        <div class="section-title">💳 Total por Forma de Pagamento</div>
+        <table>
+          <thead><tr><th>Forma de Pagamento</th><th style="text-align:right">Total</th></tr></thead>
+          <tbody>${pagtoRows}</tbody>
+        </table>
+      </div>
+    </div>
     <div class="section-title">Despesas Detalhadas</div>
     <table>
-      <thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th style="text-align:right">Valor</th><th>Observação</th></tr></thead>
+      <thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Pagamento</th><th style="text-align:right">Valor</th><th>Observação</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
     <div class="total-box">
@@ -215,7 +246,8 @@ export default function DespesasImplantacaoPage() {
   const [loading, setLoading]   = useState(true);
 
   // filtros
-  const [filterCat, setFilterCat] = useState("todas");
+  const [filterCat, setFilterCat]     = useState("todas");
+  const [filterPagto, setFilterPagto] = useState("todas");
   const [dateFrom, setDateFrom]   = useState("");
   const [dateTo, setDateTo]       = useState("");
   const [search, setSearch]       = useState("");
@@ -251,7 +283,8 @@ export default function DespesasImplantacaoPage() {
   /* ── filtros ── */
   const filtered = useMemo(() => {
     return despesas.filter(d => {
-      if (filterCat !== "todas" && d.categoria !== filterCat) return false;
+      if (filterCat   !== "todas" && d.categoria        !== filterCat)   return false;
+      if (filterPagto !== "todas" && (d.forma_pagamento ?? "avista") !== filterPagto) return false;
       if (dateFrom && d.data_despesa < dateFrom) return false;
       if (dateTo   && d.data_despesa > dateTo)   return false;
       if (search) {
@@ -534,6 +567,12 @@ export default function DespesasImplantacaoPage() {
                     <option value="todas">Todas categorias</option>
                     {CATEGORIAS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
                   </select>
+                  <select value={filterPagto} onChange={e => setFilterPagto(e.target.value)}
+                    className="rounded-xl px-3 py-2 text-sm text-white border focus:outline-none"
+                    style={inputStyle}>
+                    <option value="todas">Todas as formas de pagamento</option>
+                    {FORMAS_PAGAMENTO.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+                  </select>
                   <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
                     className="rounded-xl px-3 py-2 text-sm text-white border focus:outline-none"
                     style={inputStyle} />
@@ -588,6 +627,54 @@ export default function DespesasImplantacaoPage() {
                 </div>
               </div>
 
+              {/* Totais por Forma de Pagamento */}
+              <div className="rounded-2xl p-5" style={sectionBg}>
+                <p className="text-sm font-bold text-white mb-4">💳 Total por Forma de Pagamento</p>
+                {(() => {
+                  const pagMap: Record<string, number> = {};
+                  filtered.forEach(d => {
+                    const k = d.forma_pagamento ?? "avista";
+                    pagMap[k] = (pagMap[k] ?? 0) + Number(d.valor);
+                  });
+                  const items = Object.entries(pagMap).sort((a, b) => b[1] - a[1]);
+                  if (!items.length) return (
+                    <p className="text-sm text-center py-4" style={{ color: "#6b7280" }}>Nenhum dado</p>
+                  );
+                  const totalFiltrado = filtered.reduce((s, d) => s + Number(d.valor), 0.001);
+                  const max = Math.max(...items.map(i => i[1]));
+                  const PAG_COLOR: Record<string, string> = {
+                    avista: "#10b981", pix: "#06b6d4", cartao_credito: "#f59e0b",
+                    cartao_debito: "#8b5cf6", boleto: "#6b7280", transferencia: "#3b82f6",
+                    financiado: "#e63946", outros: "#9ca3af",
+                  };
+                  return (
+                    <div className="space-y-3">
+                      {items.map(([pag, val]) => (
+                        <div key={pag} className="flex items-center gap-3">
+                          <span className="text-xs w-36 shrink-0 truncate" style={{ color: "#9ca3af" }}>
+                            {PAGTO_LABEL[pag] ?? pag}
+                          </span>
+                          <div className="flex-1 h-5 rounded-full overflow-hidden" style={{ background: "#1f2937" }}>
+                            <div className="h-5 rounded-full transition-all"
+                              style={{ width: `${(val / max) * 100}%`, background: PAG_COLOR[pag] ?? "#6b7280" }} />
+                          </div>
+                          <span className="text-sm font-bold w-28 text-right shrink-0 text-white">{brl(val)}</span>
+                          <span className="text-[10px] w-10 text-right shrink-0" style={{ color: "#6b7280" }}>
+                            {((val / totalFiltrado) * 100).toFixed(1)}%
+                          </span>
+                        </div>
+                      ))}
+                      <div className="mt-3 flex justify-between items-center border-t pt-3" style={{ borderColor: "#1f2937" }}>
+                        <span className="text-xs font-bold" style={{ color: "#6b7280" }}>Total</span>
+                        <span className="text-lg font-black" style={{ color: "#f87171" }}>
+                          {brl(filtered.reduce((s, d) => s + Number(d.valor), 0))}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+
               {/* Totais mensais */}
               <div className="rounded-2xl p-5" style={sectionBg}>
                 <p className="text-sm font-bold text-white mb-4">📅 Totais por Mês</p>
@@ -611,13 +698,13 @@ export default function DespesasImplantacaoPage() {
 
               <div className="flex gap-3">
                 <button
-                  onClick={() => printReport(filtered, storeName, { dateFrom, dateTo, categoria: filterCat })}
+                  onClick={() => printReport(filtered, storeName, { dateFrom, dateTo, categoria: filterCat, pagamento: filterPagto })}
                   className="flex-1 rounded-xl py-3 text-sm font-bold text-white flex items-center justify-center gap-2 hover:opacity-90"
                   style={{ background: "#e63946" }}>
                   🖨️ Exportar PDF
                 </button>
                 <button
-                  onClick={() => exportCSV(filtered, storeName, { dateFrom, dateTo, categoria: filterCat })}
+                  onClick={() => exportCSV(filtered, storeName, { dateFrom, dateTo, categoria: filterCat, pagamento: filterPagto })}
                   className="flex-1 rounded-xl py-3 text-sm font-bold text-white flex items-center justify-center gap-2 hover:opacity-90"
                   style={{ background: "#1d4ed8" }}>
                   📥 Exportar CSV
