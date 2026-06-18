@@ -1,10 +1,10 @@
 /**
  * POST /api/webhook/kiwify
- * Recebe evento de compra confirmada da Kiwify e provisiona
- * automaticamente uma nova loja (usuário) no CRM 7Business.
- *
- * Usa supabaseAdmin.auth.admin.inviteUserByEmail para criar o usuário
- * e disparar o e-mail de convite automaticamente via SMTP do Supabase.
+ * Recebe compra confirmada da Kiwify:
+ *  1. Cria usuário no Supabase
+ *  2. Gera link de criação de senha
+ *  3. Envia link via WhatsApp para o cliente (Evolution API)
+ *  4. Notifica Soraya com resumo da venda
  */
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
@@ -18,13 +18,15 @@ const EVO_KEY       = process.env.EVOLUTION_API_KEY    ?? "";
 const EVO_INSTANCE  = process.env.EVOLUTION_INSTANCE   ?? "";
 const CRM_URL       = "https://crm-7business-production.up.railway.app";
 
-async function notifySoraya(message: string) {
-  if (!EVO_URL || !EVO_KEY || !EVO_INSTANCE) return;
+async function sendWhatsApp(phone: string, message: string) {
+  if (!EVO_URL || !EVO_KEY || !EVO_INSTANCE || !phone) return;
+  const clean = phone.replace(/\D/g, "");
+  if (clean.length < 10) return;
   try {
     await fetch(`${EVO_URL}/message/sendText/${EVO_INSTANCE}`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "apikey": EVO_KEY },
-      body: JSON.stringify({ number: SORAYA_PHONE, textMessage: { text: message } }),
+      body: JSON.stringify({ number: clean, textMessage: { text: message } }),
     });
   } catch { /* silencia */ }
 }
@@ -33,7 +35,6 @@ export async function POST(req: NextRequest) {
   // 1. Valida token
   const token = req.nextUrl.searchParams.get("token") ?? "";
   if (WEBHOOK_TOKEN && token !== WEBHOOK_TOKEN) {
-    console.warn("[Kiwify] Token inválido");
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -44,15 +45,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Body inválido" }, { status: 400 });
   }
 
-  console.log("[Kiwify] Payload recebido:", JSON.stringify(body).slice(0, 300));
+  console.log("[Kiwify] Payload:", JSON.stringify(body).slice(0, 300));
 
-  // 2. Só processa compras pagas
+  // 2. Filtra só compras pagas
   const order    = body.order    as Record<string, unknown> | undefined;
   const customer = body.Customer as Record<string, unknown> | undefined;
   const status   = (order?.status as string | undefined)?.toLowerCase();
 
   if (status !== "paid" && status !== "approved") {
-    console.log(`[Kiwify] Status ignorado: ${status}`);
     return NextResponse.json({ received: true, skipped: true });
   }
 
@@ -62,13 +62,12 @@ export async function POST(req: NextRequest) {
   const orderId = (order?.id        as string | undefined) ?? "";
 
   if (!email) {
-    console.error("[Kiwify] E-mail ausente no payload");
     return NextResponse.json({ error: "E-mail ausente" }, { status: 400 });
   }
 
-  console.log(`[Kiwify] Compra confirmada: ${email} — pedido ${orderId}`);
+  console.log(`[Kiwify] Compra: ${email} | pedido: ${orderId}`);
 
-  // 3. Idempotência — checa se já existe
+  // 3. Idempotência
   const { data: existing } = await supabaseAdmin.auth.admin.listUsers();
   const alreadyExists = existing?.users?.some(u => u.email === email);
   if (alreadyExists) {
@@ -76,24 +75,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ received: true, skipped: true });
   }
 
-  // 4. Convida usuário — Supabase envia o e-mail automaticamente
-  const { data: inviteData, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(
+  // 4. Cria usuário (confirmado, sem senha — cliente vai definir)
+  const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
     email,
-    {
-      redirectTo: `${CRM_URL}/login`,
-      data: { name, kiwify_order_id: orderId },
-    }
-  );
+    email_confirm: true,
+    user_metadata: { name, kiwify_order_id: orderId },
+  });
 
-  if (inviteError || !inviteData?.user) {
-    console.error("[Kiwify] Erro ao convidar usuário:", inviteError?.message);
+  if (authError || !authData?.user) {
+    console.error("[Kiwify] Erro ao criar usuário:", authError?.message);
     return NextResponse.json({ error: "Falha ao criar usuário" }, { status: 500 });
   }
 
-  const userId = inviteData.user.id;
+  const userId = authData.user.id;
 
-  // 5. Cria row na tabela users
-  const { error: dbError } = await supabaseAdmin.from("users").upsert({
+  // 5. Salva na tabela users
+  await supabaseAdmin.from("users").upsert({
     id:            userId,
     email,
     business_name: name,
@@ -103,22 +100,41 @@ export async function POST(req: NextRequest) {
     kiwify_order:  orderId,
     created_at:    new Date().toISOString(),
     updated_at:    new Date().toISOString(),
-  }, { onConflict: "id" });
+  }, { onConflict: "id" }).then(({ error }) => {
+    if (error) console.error("[Kiwify] Erro DB:", error.message);
+  });
 
-  if (dbError) {
-    console.error("[Kiwify] Erro ao salvar no banco:", dbError.message);
+  // 6. Gera link de criação de senha
+  const { data: linkData } = await supabaseAdmin.auth.admin.generateLink({
+    type:        "recovery",
+    email,
+    options: { redirectTo: `${CRM_URL}/auth/reset-password` },
+  });
+
+  const accessLink = (linkData as { properties?: { action_link?: string } })?.properties?.action_link ?? `${CRM_URL}/login`;
+
+  // 7. Envia link para o cliente via WhatsApp
+  if (phone) {
+    await sendWhatsApp(phone,
+      `✅ *Olá, ${name}!*\n\n` +
+      `Sua assinatura do *CRM 7Business* foi confirmada! 🎉\n\n` +
+      `Clique no link abaixo para criar sua senha e acessar o sistema:\n\n` +
+      `${accessLink}\n\n` +
+      `⚠️ _Link válido por 1 hora._\n\n` +
+      `Dúvidas? Fale comigo aqui mesmo no WhatsApp.`
+    );
   }
 
-  // 6. Notifica Soraya no WhatsApp
-  await notifySoraya(
+  // 8. Notifica Soraya
+  await sendWhatsApp(SORAYA_PHONE,
     `🎉 *Nova venda CRM 7Business!*\n\n` +
     `👤 *Cliente:* ${name}\n` +
     `📧 *E-mail:* ${email}\n` +
     `📱 *Telefone:* ${phone || "não informado"}\n` +
     `🆔 *Pedido:* ${orderId}\n\n` +
-    `✅ Convite enviado automaticamente para o e-mail do cliente!`
+    `✅ Link de acesso enviado para o WhatsApp do cliente!`
   );
 
-  console.log(`[Kiwify] ✅ Convite enviado para ${email} (userId: ${userId})`);
+  console.log(`[Kiwify] ✅ Loja criada: ${email} (${userId})`);
   return NextResponse.json({ received: true, userId });
 }
