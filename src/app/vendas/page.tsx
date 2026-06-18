@@ -81,7 +81,7 @@ function printReceipt(sale: Sale, storeName: string) {
   const win = window.open("", "_blank");
   if (!win) return;
   const v = sale.vehicle;
-  const isParc = sale.payment_method === "parcelado";
+  const isParc = ["parcelado", "financiado", "consorcio", "leasing", "troca_financiado", "troca_consorcio", "cartao_credito"].includes(sale.payment_method) && (sale.installments_count ?? 1) > 1;
 
   win.document.write(`<!DOCTYPE html><html><head>
     <meta charset="UTF-8"/>
