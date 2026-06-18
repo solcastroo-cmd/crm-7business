@@ -14,6 +14,9 @@ type Despesa = {
   valor: number;
   data_despesa: string;
   observacao?: string;
+  forma_pagamento?: string;
+  parcelas?: number;
+  valor_parcela?: number;
   created_at: string;
   updated_at: string;
 };
@@ -35,12 +38,30 @@ const CAT_COLOR: Record<string, string> = {
   outros:            "#6b7280",
 };
 
+const FORMAS_PAGAMENTO = [
+  { value: "avista",         label: "À Vista" },
+  { value: "cartao_credito", label: "Cartão de Crédito" },
+  { value: "cartao_debito",  label: "Cartão de Débito" },
+  { value: "pix",            label: "PIX" },
+  { value: "boleto",         label: "Boleto" },
+  { value: "transferencia",  label: "Transferência" },
+  { value: "financiado",     label: "Financiado" },
+  { value: "outros",         label: "Outros" },
+] as const;
+
+const PAGTO_LABEL: Record<string, string> = Object.fromEntries(
+  FORMAS_PAGAMENTO.map(f => [f.value, f.label]),
+);
+
 const EMPTY_FORM = {
   descricao: "",
   categoria: "ativo_imobilizado" as Despesa["categoria"],
   valor: "",
   data_despesa: new Date().toISOString().split("T")[0],
   observacao: "",
+  forma_pagamento: "avista",
+  parcelas: "1",
+  valor_parcela: "",
 };
 
 /* ── Helpers ────────────────────────────────────────────────────────── */
@@ -260,11 +281,14 @@ export default function DespesasImplantacaoPage() {
   function openEdit(d: Despesa) {
     setEditing(d);
     setForm({
-      descricao:   d.descricao,
-      categoria:   d.categoria,
-      valor:       String(d.valor),
-      data_despesa: d.data_despesa,
-      observacao:  d.observacao ?? "",
+      descricao:       d.descricao,
+      categoria:       d.categoria,
+      valor:           String(d.valor),
+      data_despesa:    d.data_despesa,
+      observacao:      d.observacao ?? "",
+      forma_pagamento: d.forma_pagamento ?? "avista",
+      parcelas:        String(d.parcelas ?? 1),
+      valor_parcela:   d.valor_parcela ? String(d.valor_parcela) : "",
     });
     setShowModal(true);
   }
@@ -272,13 +296,17 @@ export default function DespesasImplantacaoPage() {
   async function saveForm() {
     if (!form.descricao || !form.valor || !userId) return;
     setSaving(true);
+    const isCartao = form.forma_pagamento === "cartao_credito";
     const payload = {
-      loja_id:     userId,
-      descricao:   form.descricao,
-      categoria:   form.categoria,
-      valor:       Number(form.valor),
-      data_despesa: form.data_despesa,
-      observacao:  form.observacao || null,
+      loja_id:         userId,
+      descricao:       form.descricao,
+      categoria:       form.categoria,
+      valor:           Number(form.valor),
+      data_despesa:    form.data_despesa,
+      observacao:      form.observacao || null,
+      forma_pagamento: form.forma_pagamento,
+      parcelas:        isCartao ? Number(form.parcelas) : 1,
+      valor_parcela:   isCartao && form.valor_parcela ? Number(form.valor_parcela) : null,
     };
 
     const res = editing
@@ -431,7 +459,7 @@ export default function DespesasImplantacaoPage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr style={{ borderBottom: "1px solid #1f2937", background: "#111827" }}>
-                      {["Data", "Descrição", "Categoria", "Valor", "Ações"].map(h => (
+                      {["Data", "Descrição", "Categoria", "Pagamento", "Valor", "Ações"].map(h => (
                         <th key={h} className="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wider"
                           style={{ color: "#6b7280" }}>{h}</th>
                       ))}
@@ -461,6 +489,14 @@ export default function DespesasImplantacaoPage() {
                             }}>
                             {CAT_LABEL[d.categoria] ?? d.categoria}
                           </span>
+                        </td>
+                        <td className="px-4 py-3 text-sm whitespace-nowrap" style={{ color: "#9ca3af" }}>
+                          <div>{PAGTO_LABEL[d.forma_pagamento ?? "avista"] ?? d.forma_pagamento}</div>
+                          {d.forma_pagamento === "cartao_credito" && (d.parcelas ?? 1) > 1 && (
+                            <div className="text-[10px] mt-0.5" style={{ color: "#f59e0b" }}>
+                              💳 {d.parcelas}x {d.valor_parcela ? `de ${brl(Number(d.valor_parcela))}` : ""}
+                            </div>
+                          )}
                         </td>
                         <td className="px-4 py-3 font-bold text-white whitespace-nowrap">
                           {brl(Number(d.valor))}
@@ -645,9 +681,55 @@ export default function DespesasImplantacaoPage() {
                 </select>
               </div>
 
+              {/* Forma de Pagamento */}
+              <div>
+                <label className="block text-[10px] font-semibold mb-1" style={{ color: "#6b7280" }}>Forma de Pagamento *</label>
+                <select value={form.forma_pagamento}
+                  onChange={e => {
+                    const fp = e.target.value;
+                    setForm(f => ({ ...f, forma_pagamento: fp, parcelas: fp === "cartao_credito" ? f.parcelas : "1", valor_parcela: "" }));
+                  }}
+                  className="w-full rounded-xl px-3 py-2 text-sm text-white border focus:outline-none"
+                  style={inputStyle}>
+                  {FORMAS_PAGAMENTO.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+                </select>
+              </div>
+
+              {/* Parcelas — só para Cartão de Crédito */}
+              {form.forma_pagamento === "cartao_credito" && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-semibold mb-1" style={{ color: "#6b7280" }}>
+                      💳 Parcelas (até 24x)
+                    </label>
+                    <select value={form.parcelas}
+                      onChange={e => {
+                        const n = Number(e.target.value);
+                        const parcela = n > 0 && Number(form.valor) > 0
+                          ? (Number(form.valor) / n).toFixed(2)
+                          : "";
+                        setForm(f => ({ ...f, parcelas: String(n), valor_parcela: parcela }));
+                      }}
+                      className="w-full rounded-xl px-3 py-2 text-sm text-white border focus:outline-none"
+                      style={inputStyle}>
+                      {Array.from({ length: 24 }, (_, i) => i + 1).map(n => (
+                        <option key={n} value={n}>{n}x</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold mb-1" style={{ color: "#6b7280" }}>Valor da Parcela (R$)</label>
+                    <input type="number" step="0.01" placeholder="0,00" value={form.valor_parcela}
+                      onChange={e => setForm(f => ({ ...f, valor_parcela: e.target.value }))}
+                      className="w-full rounded-xl px-3 py-2 text-sm text-white border focus:outline-none"
+                      style={inputStyle} />
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label className="block text-[10px] font-semibold mb-1" style={{ color: "#6b7280" }}>Observação</label>
-                <textarea rows={3} placeholder="Detalhes adicionais, número de nota fiscal, fornecedor..." value={form.observacao}
+                <textarea rows={2} placeholder="Detalhes adicionais, número de nota fiscal, fornecedor..." value={form.observacao}
                   onChange={e => setForm(f => ({ ...f, observacao: e.target.value }))}
                   className="w-full rounded-xl px-3 py-2 text-sm text-white border focus:outline-none resize-none"
                   style={inputStyle} />
