@@ -32,17 +32,19 @@ async function sendWhatsApp(phone: string, message: string) {
 }
 
 export async function POST(req: NextRequest) {
-  // 1. Valida token
-  const token = req.nextUrl.searchParams.get("token") ?? "";
-  if (WEBHOOK_TOKEN && token !== WEBHOOK_TOKEN) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
   let body: Record<string, unknown>;
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Body inválido" }, { status: 400 });
+  }
+
+  // 1. Valida token (Kiwify envia no body como "token")
+  const bodyToken = (body.token as string | undefined) ?? "";
+  const queryToken = req.nextUrl.searchParams.get("token") ?? "";
+  if (WEBHOOK_TOKEN && bodyToken !== WEBHOOK_TOKEN && queryToken !== WEBHOOK_TOKEN) {
+    console.warn("[Kiwify] Token inválido:", bodyToken.slice(0, 8));
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   console.log("[Kiwify] Payload:", JSON.stringify(body).slice(0, 300));
