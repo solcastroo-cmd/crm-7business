@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef, useCallback, memo, forwardRef, useImperativeHandle } from "react";
+import { useState, useEffect, useRef, useCallback, memo, forwardRef, useImperativeHandle, type RefObject } from "react";
 import { useRouter } from "next/navigation";
 import { getSupabaseBrowser } from "@/lib/supabaseBrowser";
 
@@ -46,17 +46,23 @@ type FProps = {
 
 export type FieldHandle = { setValue: (v: string) => void };
 
-// Campo com estado próprio — imune a re-renders do componente pai
+// Não-controlado (defaultValue) — imune a IME mobile e re-renders do pai
+// React nunca toca no value do input após o mount
 const Field = memo(forwardRef<FieldHandle, FProps>(function Field(
   { label, name, type = "text", placeholder = "", full = false, as: as_ = "input", options = [], initialValue, onChangeRef },
   ref
 ) {
-  const [value, setValue] = useState(initialValue);
+  const domRef = useRef<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null>(null);
 
-  useImperativeHandle(ref, () => ({ setValue }), []);
+  // Expõe setValue para atualizações externas (ex: CEP lookup)
+  useImperativeHandle(ref, () => ({
+    setValue: (v: string) => {
+      if (domRef.current) domRef.current.value = v;
+      onChangeRef.current(name, v);
+    }
+  }), [name, onChangeRef]);
 
   const handle = useCallback((e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-    setValue(e.target.value);
     onChangeRef.current(name, e.target.value);
   }, [name, onChangeRef]);
 
@@ -64,17 +70,28 @@ const Field = memo(forwardRef<FieldHandle, FProps>(function Field(
     <div style={full ? { gridColumn: "1/-1" } : {}}>
       <label style={lbl}>{label}</label>
       {as_ === "select" ? (
-        <select value={value} onChange={handle} style={{ ...inp, appearance: "none" }}
+        <select
+          ref={domRef as React.RefObject<HTMLSelectElement>}
+          defaultValue={initialValue}
+          onChange={handle}
+          style={{ ...inp, appearance: "none" }}
           autoComplete="off">
           <option value="">— Selecione —</option>
           {options.map(o => <option key={o} value={o}>{o}</option>)}
         </select>
       ) : as_ === "textarea" ? (
-        <textarea value={value} onChange={handle}
+        <textarea
+          ref={domRef as React.RefObject<HTMLTextAreaElement>}
+          defaultValue={initialValue}
+          onChange={handle}
           rows={3} style={{ ...inp, resize: "vertical" }} placeholder={placeholder}
           autoComplete="off" spellCheck={false} />
       ) : (
-        <input type={type} value={value} onChange={handle}
+        <input
+          ref={domRef as React.RefObject<HTMLInputElement>}
+          type={type}
+          defaultValue={initialValue}
+          onChange={handle}
           style={inp} placeholder={placeholder}
           autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} />
       )}
