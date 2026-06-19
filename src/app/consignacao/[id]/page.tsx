@@ -1,11 +1,12 @@
 "use client";
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { getSupabaseBrowser } from "@/lib/supabaseBrowser";
 
 const supabase = getSupabaseBrowser();
 
 type Photo = { id: string; url: string; label: string };
+type Data  = Record<string, string>;
 
 const inp: React.CSSProperties = {
   width: "100%", padding: "10px 12px", background: "#111",
@@ -33,7 +34,9 @@ export default function ConsignacaoDetailPage() {
   const router  = useRouter();
   const { id }  = useParams<{ id: string }>();
   const fileRef = useRef<HTMLInputElement>(null);
+  const enderecoRef = useRef<HTMLTextAreaElement>(null);
 
+  const [d,         setD]         = useState<Data | null>(null);
   const [loading,   setLoading]   = useState(true);
   const [saving,    setSaving]    = useState(false);
   const [saved,     setSaved]     = useState(false);
@@ -44,100 +47,18 @@ export default function ConsignacaoDetailPage() {
   const [newLabel,  setNewLabel]  = useState("Foto");
   const [deleting,  setDeleting]  = useState<string | null>(null);
   const [editingLabel, setEditingLabel] = useState<{ id: string; val: string } | null>(null);
-  const [cep,        setCep]        = useState("");
-  const [cepLoading, setCepLoading] = useState(false);
-  const [headerTitle,setHeaderTitle]= useState("");
-
-  /* ── campos individuais (mesmo padrão do settings) ── */
-  const [proprietarioNome,          setProprietarioNome]          = useState("");
-  const [proprietarioTelefone,      setProprietarioTelefone]      = useState("");
-  const [proprietarioNacionalidade, setProprietarioNacionalidade] = useState("");
-  const [proprietarioEstadoCivil,   setProprietarioEstadoCivil]   = useState("");
-  const [proprietarioProfissao,     setProprietarioProfissao]     = useState("");
-  const [proprietarioRg,            setProprietarioRg]            = useState("");
-  const [proprietarioCpfCnpj,       setProprietarioCpfCnpj]       = useState("");
-  const [proprietarioEmail,         setProprietarioEmail]         = useState("");
-  const [proprietarioEndereco,      setProprietarioEndereco]      = useState("");
-
-  const [lojaRazaoSocial,  setLojaRazaoSocial]  = useState("");
-  const [lojaNomeFantasia, setLojaNomeFantasia]  = useState("");
-  const [lojaCnpj,         setLojaCnpj]          = useState("");
-  const [lojaResponsavel,  setLojaResponsavel]   = useState("");
-
-  const [veiculoMarca,         setVeiculoMarca]         = useState("");
-  const [veiculoModelo,        setVeiculoModelo]        = useState("");
-  const [veiculoVersao,        setVeiculoVersao]        = useState("");
-  const [veiculoAnoFabricacao, setVeiculoAnoFabricacao] = useState("");
-  const [veiculoAnoModelo,     setVeiculoAnoModelo]     = useState("");
-  const [veiculoPlaca,         setVeiculoPlaca]         = useState("");
-  const [veiculoChassi,        setVeiculoChassi]        = useState("");
-  const [veiculoRenavam,       setVeiculoRenavam]       = useState("");
-  const [veiculoKmAtual,       setVeiculoKmAtual]       = useState("");
-  const [veiculoCor,           setVeiculoCor]           = useState("");
-  const [veiculoCombustivel,   setVeiculoCombustivel]   = useState("");
-
-  const [valorMinimoVenda,   setValorMinimoVenda]   = useState("");
-  const [percentualComissao, setPercentualComissao] = useState("");
-
-  const [dataInicio,   setDataInicio]   = useState("");
-  const [dataFinal,    setDataFinal]    = useState("");
-  const [taxaRetirada, setTaxaRetirada] = useState("");
-
-  const [vistoriaPintura,    setVistoriaPintura]    = useState("");
-  const [vistoriaPneus,      setVistoriaPneus]      = useState("");
-  const [vistoriaInterior,   setVistoriaInterior]   = useState("");
-  const [observacoesVistoria,setObservacoesVistoria]= useState("");
-
-  const [cidadeForo,     setCidadeForo]     = useState("");
-  const [dataAssinatura, setDataAssinatura] = useState("");
-  const [status,         setStatus]         = useState("ativo");
+  const [cepLoading,   setCepLoading]   = useState(false);
+  const [status,    setStatus]    = useState("ativo");
 
   const load = useCallback(async () => {
     const r = await fetch(`/api/consignacao/${id}`);
-    const d = await r.json();
+    const json = await r.json();
     if (!r.ok) { router.push("/consignacao"); return; }
-
-    const { consignment_photos, ...rest } = d;
-    const s = (k: string) => rest[k] == null ? "" : String(rest[k]);
-
-    setProprietarioNome(s("proprietario_nome"));
-    setProprietarioTelefone(s("proprietario_telefone"));
-    setProprietarioNacionalidade(s("proprietario_nacionalidade"));
-    setProprietarioEstadoCivil(s("proprietario_estado_civil"));
-    setProprietarioProfissao(s("proprietario_profissao"));
-    setProprietarioRg(s("proprietario_rg"));
-    setProprietarioCpfCnpj(s("proprietario_cpf_cnpj"));
-    setProprietarioEmail(s("proprietario_email"));
-    setProprietarioEndereco(s("proprietario_endereco"));
-    setLojaRazaoSocial(s("loja_razao_social"));
-    setLojaNomeFantasia(s("loja_nome_fantasia"));
-    setLojaCnpj(s("loja_cnpj"));
-    setLojaResponsavel(s("loja_responsavel"));
-    setVeiculoMarca(s("veiculo_marca"));
-    setVeiculoModelo(s("veiculo_modelo"));
-    setVeiculoVersao(s("veiculo_versao"));
-    setVeiculoAnoFabricacao(s("veiculo_ano_fabricacao"));
-    setVeiculoAnoModelo(s("veiculo_ano_modelo"));
-    setVeiculoPlaca(s("veiculo_placa"));
-    setVeiculoChassi(s("veiculo_chassi"));
-    setVeiculoRenavam(s("veiculo_renavam"));
-    setVeiculoKmAtual(s("veiculo_km_atual"));
-    setVeiculoCor(s("veiculo_cor"));
-    setVeiculoCombustivel(s("veiculo_combustivel"));
-    setValorMinimoVenda(s("valor_minimo_venda"));
-    setPercentualComissao(s("percentual_comissao"));
-    setDataInicio(s("data_inicio"));
-    setDataFinal(s("data_final"));
-    setTaxaRetirada(s("taxa_retirada"));
-    setVistoriaPintura(s("vistoria_pintura"));
-    setVistoriaPneus(s("vistoria_pneus"));
-    setVistoriaInterior(s("vistoria_interior"));
-    setObservacoesVistoria(s("observacoes_vistoria"));
-    setCidadeForo(s("cidade_foro"));
-    setDataAssinatura(s("data_assinatura"));
-    setStatus(s("status") || "ativo");
-
-    setHeaderTitle(`${s("veiculo_marca")} ${s("veiculo_modelo")}`.trim());
+    const { consignment_photos, ...rest } = json;
+    const flat: Data = {};
+    for (const [k, v] of Object.entries(rest)) flat[k] = v == null ? "" : String(v);
+    setD(flat);
+    setStatus(flat.status || "ativo");
     setPhotos(Array.isArray(consignment_photos) ? consignment_photos : []);
     setLoading(false);
   }, [id, router]);
@@ -152,73 +73,79 @@ export default function ConsignacaoDetailPage() {
 
   const lookupCep = useCallback(async (raw: string) => {
     const digits = raw.replace(/\D/g, "");
-    setCep(digits.replace(/(\d{5})(\d{3})/, "$1-$2"));
     if (digits.length !== 8) return;
     setCepLoading(true);
     try {
       const r = await fetch(`https://viacep.com.br/ws/${digits}/json/`);
-      const d = await r.json();
-      if (!d.erro) {
-        const end = [d.logradouro, d.complemento, d.bairro, `${d.localidade} - ${d.uf}`,
-          `CEP: ${digits.replace(/(\d{5})(\d{3})/, "$1-$2")}`].filter(Boolean).join(", ");
-        setProprietarioEndereco(end);
+      const json = await r.json();
+      if (!json.erro && enderecoRef.current) {
+        enderecoRef.current.value = [
+          json.logradouro, json.complemento, json.bairro,
+          `${json.localidade} - ${json.uf}`,
+          `CEP: ${digits.replace(/(\d{5})(\d{3})/, "$1-$2")}`,
+        ].filter(Boolean).join(", ");
       }
     } finally { setCepLoading(false); }
   }, []);
 
-  async function handleSave(e: React.FormEvent) {
+  async function handleSave(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setErr(null); setSaving(true); setSaved(false);
     try {
+      const fd = new FormData(e.currentTarget);
+      const g = (k: string) => (fd.get(k) as string | null) ?? "";
       const num = (v: string) => v ? parseFloat(v.replace(/\./g, "").replace(",", ".")) : null;
       const int = (v: string) => v ? parseInt(v) : null;
+
       const payload = {
-        proprietario_nome:          proprietarioNome          || null,
-        proprietario_nacionalidade: proprietarioNacionalidade || null,
-        proprietario_estado_civil:  proprietarioEstadoCivil   || null,
-        proprietario_profissao:     proprietarioProfissao     || null,
-        proprietario_rg:            proprietarioRg            || null,
-        proprietario_cpf_cnpj:      proprietarioCpfCnpj       || null,
-        proprietario_endereco:      proprietarioEndereco      || null,
-        proprietario_telefone:      proprietarioTelefone      || null,
-        proprietario_email:         proprietarioEmail         || null,
-        loja_razao_social:          lojaRazaoSocial           || null,
-        loja_nome_fantasia:         lojaNomeFantasia          || null,
-        loja_cnpj:                  lojaCnpj                  || null,
-        loja_responsavel:           lojaResponsavel           || null,
-        veiculo_marca:              veiculoMarca              || null,
-        veiculo_modelo:             veiculoModelo             || null,
-        veiculo_versao:             veiculoVersao             || null,
-        veiculo_ano_fabricacao:     int(veiculoAnoFabricacao),
-        veiculo_ano_modelo:         int(veiculoAnoModelo),
-        veiculo_placa:              veiculoPlaca              || null,
-        veiculo_chassi:             veiculoChassi             || null,
-        veiculo_renavam:            veiculoRenavam            || null,
-        veiculo_cor:                veiculoCor                || null,
-        veiculo_combustivel:        veiculoCombustivel        || null,
-        veiculo_km_atual:           int(veiculoKmAtual),
-        valor_minimo_venda:         num(valorMinimoVenda),
-        percentual_comissao:        num(percentualComissao),
-        taxa_retirada:              num(taxaRetirada),
-        data_inicio:                dataInicio    || null,
-        data_final:                 dataFinal     || null,
-        data_assinatura:            dataAssinatura|| null,
-        vistoria_pintura:           vistoriaPintura   || null,
-        vistoria_pneus:             vistoriaPneus     || null,
-        vistoria_interior:          vistoriaInterior  || null,
-        observacoes_vistoria:       observacoesVistoria|| null,
-        cidade_foro:                cidadeForo    || null,
-        status:                     status        || "ativo",
+        proprietario_nome:          g("proprietario_nome")          || null,
+        proprietario_nacionalidade: g("proprietario_nacionalidade") || null,
+        proprietario_estado_civil:  g("proprietario_estado_civil")  || null,
+        proprietario_profissao:     g("proprietario_profissao")     || null,
+        proprietario_rg:            g("proprietario_rg")            || null,
+        proprietario_cpf_cnpj:      g("proprietario_cpf_cnpj")      || null,
+        proprietario_endereco:      g("proprietario_endereco")      || null,
+        proprietario_telefone:      g("proprietario_telefone")      || null,
+        proprietario_email:         g("proprietario_email")         || null,
+        loja_razao_social:          g("loja_razao_social")          || null,
+        loja_nome_fantasia:         g("loja_nome_fantasia")         || null,
+        loja_cnpj:                  g("loja_cnpj")                  || null,
+        loja_responsavel:           g("loja_responsavel")           || null,
+        veiculo_marca:              g("veiculo_marca")              || null,
+        veiculo_modelo:             g("veiculo_modelo")             || null,
+        veiculo_versao:             g("veiculo_versao")             || null,
+        veiculo_ano_fabricacao:     int(g("veiculo_ano_fabricacao")),
+        veiculo_ano_modelo:         int(g("veiculo_ano_modelo")),
+        veiculo_placa:              g("veiculo_placa")              || null,
+        veiculo_chassi:             g("veiculo_chassi")             || null,
+        veiculo_renavam:            g("veiculo_renavam")            || null,
+        veiculo_cor:                g("veiculo_cor")                || null,
+        veiculo_combustivel:        g("veiculo_combustivel")        || null,
+        veiculo_km_atual:           int(g("veiculo_km_atual")),
+        valor_minimo_venda:         num(g("valor_minimo_venda")),
+        percentual_comissao:        num(g("percentual_comissao")),
+        taxa_retirada:              num(g("taxa_retirada")),
+        data_inicio:                g("data_inicio")     || null,
+        data_final:                 g("data_final")      || null,
+        data_assinatura:            g("data_assinatura") || null,
+        vistoria_pintura:           g("vistoria_pintura")    || null,
+        vistoria_pneus:             g("vistoria_pneus")      || null,
+        vistoria_interior:          g("vistoria_interior")   || null,
+        observacoes_vistoria:       g("observacoes_vistoria")|| null,
+        cidade_foro:                g("cidade_foro")     || null,
+        status,
       };
+
       const r = await fetch(`/api/consignacao/${id}`, {
-        method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
       });
       const data = await r.json();
       if (!r.ok) { setErr(data.error ?? "Erro ao salvar"); return; }
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "Erro inesperado");
+    } catch (ex) {
+      setErr(ex instanceof Error ? ex.message : "Erro inesperado");
     } finally { setSaving(false); }
   }
 
@@ -229,8 +156,8 @@ export default function ConsignacaoDetailPage() {
       const fd = new FormData();
       fd.append("file", file); fd.append("label", newLabel); fd.append("userId", userId);
       const r = await fetch(`/api/consignacao/${id}/photos`, { method: "POST", body: fd });
-      const d = await r.json();
-      if (r.ok) setPhotos(p => [...p, d]);
+      const json = await r.json();
+      if (r.ok) setPhotos(p => [...p, json]);
     }
     setUploading(false);
     if (fileRef.current) fileRef.current.value = "";
@@ -257,7 +184,7 @@ export default function ConsignacaoDetailPage() {
     router.push("/consignacao");
   }
 
-  if (loading) return (
+  if (loading || !d) return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "60vh" }}>
       <div style={{ width: 36, height: 36, borderRadius: "50%", border: "3px solid #dc2626", borderTopColor: "transparent", animation: "spin 0.8s linear infinite" }} />
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
@@ -265,11 +192,21 @@ export default function ConsignacaoDetailPage() {
   );
 
   const cfg = STATUS_CFG[status] ?? STATUS_CFG.ativo;
+  const headerTitle = `${d.veiculo_marca ?? ""} ${d.veiculo_modelo ?? ""}`.trim() || "Contrato de Consignação";
+
+  /* helper: select com defaultValue */
+  const Sel = ({ name, options, dv }: { name: string; options: string[]; dv: string }) => (
+    <select name={name} defaultValue={dv} style={{ ...inp, appearance: "none" }}>
+      <option value="">— Selecione —</option>
+      {options.map(o => <option key={o} value={o}>{o}</option>)}
+    </select>
+  );
 
   return (
     <div style={{ padding: "28px 24px", maxWidth: 860, margin: "0 auto" }}>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
 
+      {/* Header */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <button type="button" onClick={() => router.push("/consignacao")}
@@ -277,9 +214,7 @@ export default function ConsignacaoDetailPage() {
             ← Voltar
           </button>
           <div>
-            <h1 style={{ fontSize: 20, fontWeight: 900, color: "#fff", margin: 0 }}>
-              {headerTitle || "Contrato de Consignação"}
-            </h1>
+            <h1 style={{ fontSize: 20, fontWeight: 900, color: "#fff", margin: 0 }}>{headerTitle}</h1>
             <span style={{ fontSize: 12, fontWeight: 700, padding: "2px 10px", borderRadius: 20, background: cfg.bg, color: cfg.color }}>
               {cfg.label}
             </span>
@@ -303,54 +238,36 @@ export default function ConsignacaoDetailPage() {
         <div style={sec}>
           <p style={stl}>1. Consignante — Proprietário</p>
           <div style={{ ...g2, marginBottom: 12 }}>
-            <div>
-              <label style={lbl}>Nome / Razão Social</label>
-              <input value={proprietarioNome} onChange={e => setProprietarioNome(e.target.value)} style={inp} />
-            </div>
-            <div>
-              <label style={lbl}>Telefone</label>
-              <input value={proprietarioTelefone} onChange={e => setProprietarioTelefone(e.target.value)} style={inp} placeholder="(00) 00000-0000" />
-            </div>
+            <div><label style={lbl}>Nome / Razão Social</label>
+              <input name="proprietario_nome" defaultValue={d.proprietario_nome} style={inp} autoComplete="off" /></div>
+            <div><label style={lbl}>Telefone</label>
+              <input name="proprietario_telefone" defaultValue={d.proprietario_telefone} style={inp} autoComplete="off" /></div>
           </div>
           <div style={{ ...g3, marginBottom: 12 }}>
-            <div>
-              <label style={lbl}>Nacionalidade</label>
-              <input value={proprietarioNacionalidade} onChange={e => setProprietarioNacionalidade(e.target.value)} style={inp} />
-            </div>
-            <div>
-              <label style={lbl}>Estado Civil</label>
-              <select value={proprietarioEstadoCivil} onChange={e => setProprietarioEstadoCivil(e.target.value)} style={{ ...inp, appearance: "none" }}>
-                <option value="">— Selecione —</option>
-                {EC.map(o => <option key={o} value={o}>{o}</option>)}
-              </select>
-            </div>
-            <div>
-              <label style={lbl}>Profissão</label>
-              <input value={proprietarioProfissao} onChange={e => setProprietarioProfissao(e.target.value)} style={inp} />
-            </div>
+            <div><label style={lbl}>Nacionalidade</label>
+              <input name="proprietario_nacionalidade" defaultValue={d.proprietario_nacionalidade} style={inp} autoComplete="off" /></div>
+            <div><label style={lbl}>Estado Civil</label>
+              <Sel name="proprietario_estado_civil" options={EC} dv={d.proprietario_estado_civil} /></div>
+            <div><label style={lbl}>Profissão</label>
+              <input name="proprietario_profissao" defaultValue={d.proprietario_profissao} style={inp} autoComplete="off" /></div>
           </div>
           <div style={{ ...g3, marginBottom: 12 }}>
-            <div>
-              <label style={lbl}>RG</label>
-              <input value={proprietarioRg} onChange={e => setProprietarioRg(e.target.value)} style={inp} />
-            </div>
-            <div>
-              <label style={lbl}>CPF / CNPJ</label>
-              <input value={proprietarioCpfCnpj} onChange={e => setProprietarioCpfCnpj(e.target.value)} style={inp} />
-            </div>
-            <div>
-              <label style={lbl}>E-mail</label>
-              <input type="email" value={proprietarioEmail} onChange={e => setProprietarioEmail(e.target.value)} style={inp} />
-            </div>
+            <div><label style={lbl}>RG</label>
+              <input name="proprietario_rg" defaultValue={d.proprietario_rg} style={inp} autoComplete="off" /></div>
+            <div><label style={lbl}>CPF / CNPJ</label>
+              <input name="proprietario_cpf_cnpj" defaultValue={d.proprietario_cpf_cnpj} style={inp} autoComplete="off" /></div>
+            <div><label style={lbl}>E-mail</label>
+              <input type="email" name="proprietario_email" defaultValue={d.proprietario_email} style={inp} autoComplete="off" /></div>
           </div>
           <div style={{ marginBottom: 12 }}>
             <label style={lbl}>CEP {cepLoading && <span style={{ color: "#6b7280", fontWeight: 400 }}>buscando...</span>}</label>
-            <input value={cep} onChange={e => lookupCep(e.target.value)} maxLength={9} style={inp} placeholder="00000-000" />
+            <input style={inp} placeholder="00000-000" maxLength={9} autoComplete="off"
+              onBlur={e => lookupCep(e.target.value)} />
           </div>
           <div>
             <label style={lbl}>Endereço completo</label>
-            <textarea value={proprietarioEndereco} onChange={e => setProprietarioEndereco(e.target.value)} rows={3}
-              style={{ ...inp, resize: "vertical" }} />
+            <textarea ref={enderecoRef} name="proprietario_endereco" defaultValue={d.proprietario_endereco}
+              rows={3} style={{ ...inp, resize: "vertical" }} />
           </div>
         </div>
 
@@ -358,24 +275,16 @@ export default function ConsignacaoDetailPage() {
         <div style={sec}>
           <p style={stl}>2. Consignatária — Loja</p>
           <div style={{ ...g2, marginBottom: 12 }}>
-            <div>
-              <label style={lbl}>Razão Social</label>
-              <input value={lojaRazaoSocial} onChange={e => setLojaRazaoSocial(e.target.value)} style={inp} />
-            </div>
-            <div>
-              <label style={lbl}>Nome Fantasia</label>
-              <input value={lojaNomeFantasia} onChange={e => setLojaNomeFantasia(e.target.value)} style={inp} />
-            </div>
+            <div><label style={lbl}>Razão Social</label>
+              <input name="loja_razao_social" defaultValue={d.loja_razao_social} style={inp} autoComplete="off" /></div>
+            <div><label style={lbl}>Nome Fantasia</label>
+              <input name="loja_nome_fantasia" defaultValue={d.loja_nome_fantasia} style={inp} autoComplete="off" /></div>
           </div>
           <div style={g2}>
-            <div>
-              <label style={lbl}>CNPJ</label>
-              <input value={lojaCnpj} onChange={e => setLojaCnpj(e.target.value)} style={inp} />
-            </div>
-            <div>
-              <label style={lbl}>Representante Legal</label>
-              <input value={lojaResponsavel} onChange={e => setLojaResponsavel(e.target.value)} style={inp} />
-            </div>
+            <div><label style={lbl}>CNPJ</label>
+              <input name="loja_cnpj" defaultValue={d.loja_cnpj} style={inp} autoComplete="off" /></div>
+            <div><label style={lbl}>Representante Legal</label>
+              <input name="loja_responsavel" defaultValue={d.loja_responsavel} style={inp} autoComplete="off" /></div>
           </div>
         </div>
 
@@ -383,59 +292,23 @@ export default function ConsignacaoDetailPage() {
         <div style={sec}>
           <p style={stl}>3. Dados do Veículo</p>
           <div style={{ ...g3, marginBottom: 12 }}>
-            <div>
-              <label style={lbl}>Marca</label>
-              <input value={veiculoMarca} onChange={e => setVeiculoMarca(e.target.value)} style={inp} />
-            </div>
-            <div>
-              <label style={lbl}>Modelo</label>
-              <input value={veiculoModelo} onChange={e => setVeiculoModelo(e.target.value)} style={inp} />
-            </div>
-            <div>
-              <label style={lbl}>Versão</label>
-              <input value={veiculoVersao} onChange={e => setVeiculoVersao(e.target.value)} style={inp} />
-            </div>
+            <div><label style={lbl}>Marca</label><input name="veiculo_marca" defaultValue={d.veiculo_marca} style={inp} autoComplete="off" /></div>
+            <div><label style={lbl}>Modelo</label><input name="veiculo_modelo" defaultValue={d.veiculo_modelo} style={inp} autoComplete="off" /></div>
+            <div><label style={lbl}>Versão</label><input name="veiculo_versao" defaultValue={d.veiculo_versao} style={inp} autoComplete="off" /></div>
           </div>
           <div style={{ ...g3, marginBottom: 12 }}>
-            <div>
-              <label style={lbl}>Ano Fabricação</label>
-              <input type="number" value={veiculoAnoFabricacao} onChange={e => setVeiculoAnoFabricacao(e.target.value)} style={inp} />
-            </div>
-            <div>
-              <label style={lbl}>Ano Modelo</label>
-              <input type="number" value={veiculoAnoModelo} onChange={e => setVeiculoAnoModelo(e.target.value)} style={inp} />
-            </div>
-            <div>
-              <label style={lbl}>Placa</label>
-              <input value={veiculoPlaca} onChange={e => setVeiculoPlaca(e.target.value)} style={inp} />
-            </div>
+            <div><label style={lbl}>Ano Fabricação</label><input type="number" name="veiculo_ano_fabricacao" defaultValue={d.veiculo_ano_fabricacao} style={inp} /></div>
+            <div><label style={lbl}>Ano Modelo</label><input type="number" name="veiculo_ano_modelo" defaultValue={d.veiculo_ano_modelo} style={inp} /></div>
+            <div><label style={lbl}>Placa</label><input name="veiculo_placa" defaultValue={d.veiculo_placa} style={inp} autoComplete="off" /></div>
           </div>
           <div style={{ ...g3, marginBottom: 12 }}>
-            <div>
-              <label style={lbl}>Chassi</label>
-              <input value={veiculoChassi} onChange={e => setVeiculoChassi(e.target.value)} style={inp} />
-            </div>
-            <div>
-              <label style={lbl}>Renavam</label>
-              <input value={veiculoRenavam} onChange={e => setVeiculoRenavam(e.target.value)} style={inp} />
-            </div>
-            <div>
-              <label style={lbl}>Quilometragem</label>
-              <input type="number" value={veiculoKmAtual} onChange={e => setVeiculoKmAtual(e.target.value)} style={inp} />
-            </div>
+            <div><label style={lbl}>Chassi</label><input name="veiculo_chassi" defaultValue={d.veiculo_chassi} style={inp} autoComplete="off" /></div>
+            <div><label style={lbl}>Renavam</label><input name="veiculo_renavam" defaultValue={d.veiculo_renavam} style={inp} autoComplete="off" /></div>
+            <div><label style={lbl}>Quilometragem</label><input type="number" name="veiculo_km_atual" defaultValue={d.veiculo_km_atual} style={inp} /></div>
           </div>
           <div style={g2}>
-            <div>
-              <label style={lbl}>Cor</label>
-              <input value={veiculoCor} onChange={e => setVeiculoCor(e.target.value)} style={inp} />
-            </div>
-            <div>
-              <label style={lbl}>Combustível</label>
-              <select value={veiculoCombustivel} onChange={e => setVeiculoCombustivel(e.target.value)} style={{ ...inp, appearance: "none" }}>
-                <option value="">— Selecione —</option>
-                {COMB.map(o => <option key={o} value={o}>{o}</option>)}
-              </select>
-            </div>
+            <div><label style={lbl}>Cor</label><input name="veiculo_cor" defaultValue={d.veiculo_cor} style={inp} autoComplete="off" /></div>
+            <div><label style={lbl}>Combustível</label><Sel name="veiculo_combustivel" options={COMB} dv={d.veiculo_combustivel} /></div>
           </div>
         </div>
 
@@ -443,14 +316,10 @@ export default function ConsignacaoDetailPage() {
         <div style={sec}>
           <p style={stl}>4. Valor e Comissão</p>
           <div style={g2}>
-            <div>
-              <label style={lbl}>Valor mínimo de venda (R$)</label>
-              <input value={valorMinimoVenda} onChange={e => setValorMinimoVenda(e.target.value)} style={inp} />
-            </div>
-            <div>
-              <label style={lbl}>Comissão da loja (%)</label>
-              <input type="number" value={percentualComissao} onChange={e => setPercentualComissao(e.target.value)} style={inp} />
-            </div>
+            <div><label style={lbl}>Valor mínimo de venda (R$)</label>
+              <input name="valor_minimo_venda" defaultValue={d.valor_minimo_venda} style={inp} autoComplete="off" /></div>
+            <div><label style={lbl}>Comissão da loja (%)</label>
+              <input type="number" name="percentual_comissao" defaultValue={d.percentual_comissao} style={inp} /></div>
           </div>
         </div>
 
@@ -458,18 +327,9 @@ export default function ConsignacaoDetailPage() {
         <div style={sec}>
           <p style={stl}>5. Prazo</p>
           <div style={g3}>
-            <div>
-              <label style={lbl}>Data de início</label>
-              <input type="date" value={dataInicio} onChange={e => setDataInicio(e.target.value)} style={inp} />
-            </div>
-            <div>
-              <label style={lbl}>Data final</label>
-              <input type="date" value={dataFinal} onChange={e => setDataFinal(e.target.value)} style={inp} />
-            </div>
-            <div>
-              <label style={lbl}>Taxa retirada antecipada (R$)</label>
-              <input value={taxaRetirada} onChange={e => setTaxaRetirada(e.target.value)} style={inp} />
-            </div>
+            <div><label style={lbl}>Data de início</label><input type="date" name="data_inicio" defaultValue={d.data_inicio} style={inp} /></div>
+            <div><label style={lbl}>Data final</label><input type="date" name="data_final" defaultValue={d.data_final} style={inp} /></div>
+            <div><label style={lbl}>Taxa retirada antecipada (R$)</label><input name="taxa_retirada" defaultValue={d.taxa_retirada} style={inp} autoComplete="off" /></div>
           </div>
         </div>
 
@@ -477,32 +337,14 @@ export default function ConsignacaoDetailPage() {
         <div style={sec}>
           <p style={stl}>6. Vistoria</p>
           <div style={{ ...g3, marginBottom: 12 }}>
-            <div>
-              <label style={lbl}>Pintura</label>
-              <select value={vistoriaPintura} onChange={e => setVistoriaPintura(e.target.value)} style={{ ...inp, appearance: "none" }}>
-                <option value="">— Selecione —</option>
-                {COND.map(o => <option key={o} value={o}>{o}</option>)}
-              </select>
-            </div>
-            <div>
-              <label style={lbl}>Pneus</label>
-              <select value={vistoriaPneus} onChange={e => setVistoriaPneus(e.target.value)} style={{ ...inp, appearance: "none" }}>
-                <option value="">— Selecione —</option>
-                {COND.map(o => <option key={o} value={o}>{o}</option>)}
-              </select>
-            </div>
-            <div>
-              <label style={lbl}>Interior</label>
-              <select value={vistoriaInterior} onChange={e => setVistoriaInterior(e.target.value)} style={{ ...inp, appearance: "none" }}>
-                <option value="">— Selecione —</option>
-                {COND.map(o => <option key={o} value={o}>{o}</option>)}
-              </select>
-            </div>
+            <div><label style={lbl}>Pintura</label><Sel name="vistoria_pintura" options={COND} dv={d.vistoria_pintura} /></div>
+            <div><label style={lbl}>Pneus</label><Sel name="vistoria_pneus" options={COND} dv={d.vistoria_pneus} /></div>
+            <div><label style={lbl}>Interior</label><Sel name="vistoria_interior" options={COND} dv={d.vistoria_interior} /></div>
           </div>
           <div style={{ marginBottom: 24 }}>
             <label style={lbl}>Observações</label>
-            <textarea value={observacoesVistoria} onChange={e => setObservacoesVistoria(e.target.value)} rows={3}
-              style={{ ...inp, resize: "vertical" }} placeholder="Detalhes do estado do veículo..." />
+            <textarea name="observacoes_vistoria" defaultValue={d.observacoes_vistoria}
+              rows={3} style={{ ...inp, resize: "vertical" }} />
           </div>
 
           {/* Fotos */}
@@ -511,7 +353,8 @@ export default function ConsignacaoDetailPage() {
             <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap", alignItems: "flex-end" }}>
               <div style={{ flex: 1, minWidth: 180 }}>
                 <label style={lbl}>Label para novas fotos</label>
-                <input value={newLabel} onChange={e => setNewLabel(e.target.value)} style={inp} placeholder="Ex: Frente, Motor, Interior..." />
+                <input value={newLabel} onChange={e => setNewLabel(e.target.value)}
+                  style={inp} placeholder="Ex: Frente, Motor..." autoComplete="off" />
               </div>
               <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading}
                 style={{ padding: "10px 18px", borderRadius: 10, border: "1px dashed #555", background: "transparent", color: uploading ? "#555" : "#9ca3af", cursor: uploading ? "not-allowed" : "pointer", fontSize: 14, fontWeight: 600, whiteSpace: "nowrap" }}>
@@ -540,7 +383,7 @@ export default function ConsignacaoDetailPage() {
                       {editingLabel?.id === ph.id ? (
                         <div style={{ display: "flex", gap: 4 }}>
                           <input value={editingLabel.val} onChange={e => setEditingLabel({ id: ph.id, val: e.target.value })}
-                            style={{ ...inp, fontSize: 11, padding: "4px 8px", flex: 1 }} />
+                            style={{ ...inp, fontSize: 11, padding: "4px 8px", flex: 1 }} autoComplete="off" />
                           <button type="button" onClick={() => handleSaveLabel(ph.id, editingLabel.val)}
                             style={{ background: "#10b981", border: "none", borderRadius: 6, color: "#fff", padding: "4px 8px", cursor: "pointer", fontSize: 11 }}>✓</button>
                         </div>
@@ -561,14 +404,10 @@ export default function ConsignacaoDetailPage() {
         <div style={sec}>
           <p style={stl}>7. Foro e Assinatura</p>
           <div style={g2}>
-            <div>
-              <label style={lbl}>Cidade do Foro</label>
-              <input value={cidadeForo} onChange={e => setCidadeForo(e.target.value)} style={inp} />
-            </div>
-            <div>
-              <label style={lbl}>Data de assinatura</label>
-              <input type="date" value={dataAssinatura} onChange={e => setDataAssinatura(e.target.value)} style={inp} />
-            </div>
+            <div><label style={lbl}>Cidade do Foro</label>
+              <input name="cidade_foro" defaultValue={d.cidade_foro} style={inp} autoComplete="off" /></div>
+            <div><label style={lbl}>Data de assinatura</label>
+              <input type="date" name="data_assinatura" defaultValue={d.data_assinatura} style={inp} /></div>
           </div>
         </div>
 
@@ -581,8 +420,8 @@ export default function ConsignacaoDetailPage() {
                 style={{
                   padding: "8px 18px", borderRadius: 20, border: "1px solid",
                   borderColor: status === s ? "#dc2626" : "#2e2e2e",
-                  background: status === s ? "#dc262620" : "transparent",
-                  color: status === s ? "#f87171" : "#9ca3af",
+                  background:  status === s ? "#dc262620" : "transparent",
+                  color:       status === s ? "#f87171" : "#9ca3af",
                   fontWeight: 700, fontSize: 13, cursor: "pointer", textTransform: "capitalize",
                 }}>
                 {s}

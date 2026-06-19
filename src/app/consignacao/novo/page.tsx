@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { getSupabaseBrowser } from "@/lib/supabaseBrowser";
 
@@ -21,56 +21,15 @@ const COMB = ["Gasolina", "Etanol", "Flex", "Diesel", "Elétrico", "Híbrido", "
 const EC   = ["Solteiro(a)", "Casado(a)", "Divorciado(a)", "Viúvo(a)", "União Estável"];
 
 export default function NovoConsignacaoPage() {
-  const router = useRouter();
-  const [userId, setUserId] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [err, setErr]       = useState<string | null>(null);
-  const [cep, setCep]       = useState("");
+  const router  = useRouter();
+  const formRef = useRef<HTMLFormElement>(null);
+
+  const [userId,     setUserId]     = useState<string | null>(null);
+  const [saving,     setSaving]     = useState(false);
+  const [err,        setErr]        = useState<string | null>(null);
   const [cepLoading, setCepLoading] = useState(false);
-
-  /* ── campos individuais (mesmo padrão do settings) ── */
-  const [proprietarioNome,         setProprietarioNome]         = useState("");
-  const [proprietarioTelefone,     setProprietarioTelefone]     = useState("");
-  const [proprietarioNacionalidade,setProprietarioNacionalidade]= useState("Brasileiro(a)");
-  const [proprietarioEstadoCivil,  setProprietarioEstadoCivil]  = useState("");
-  const [proprietarioProfissao,    setProprietarioProfissao]    = useState("");
-  const [proprietarioRg,           setProprietarioRg]           = useState("");
-  const [proprietarioCpfCnpj,      setProprietarioCpfCnpj]      = useState("");
-  const [proprietarioEmail,        setProprietarioEmail]        = useState("");
-  const [proprietarioEndereco,     setProprietarioEndereco]     = useState("");
-
-  const [lojaRazaoSocial,  setLojaRazaoSocial]  = useState("PHD Motors");
-  const [lojaNomeFantasia, setLojaNomeFantasia] = useState("PHD Motors");
-  const [lojaCnpj,         setLojaCnpj]         = useState("");
-  const [lojaResponsavel,  setLojaResponsavel]  = useState("");
-
-  const [veiculoMarca,          setVeiculoMarca]          = useState("");
-  const [veiculoModelo,         setVeiculoModelo]         = useState("");
-  const [veiculoVersao,         setVeiculoVersao]         = useState("");
-  const [veiculoAnoFabricacao,  setVeiculoAnoFabricacao]  = useState("");
-  const [veiculoAnoModelo,      setVeiculoAnoModelo]      = useState("");
-  const [veiculoPlaca,          setVeiculoPlaca]          = useState("");
-  const [veiculoChassi,         setVeiculoChassi]         = useState("");
-  const [veiculoRenavam,        setVeiculoRenavam]        = useState("");
-  const [veiculoKmAtual,        setVeiculoKmAtual]        = useState("");
-  const [veiculoCor,            setVeiculoCor]            = useState("");
-  const [veiculoCombustivel,    setVeiculoCombustivel]    = useState("");
-
-  const [valorMinimoVenda,   setValorMinimoVenda]   = useState("");
-  const [percentualComissao, setPercentualComissao] = useState("5");
-
-  const [dataInicio,    setDataInicio]    = useState("");
-  const [dataFinal,     setDataFinal]     = useState("");
-  const [taxaRetirada,  setTaxaRetirada]  = useState("");
-
-  const [vistoriaPintura,   setVistoriaPintura]   = useState("");
-  const [vistoriaPneus,     setVistoriaPneus]     = useState("");
-  const [vistoriaInterior,  setVistoriaInterior]  = useState("");
-  const [observacoesVistoria,setObservacoesVistoria]=useState("");
-
-  const [cidadeForo,     setCidadeForo]     = useState("Fortaleza");
-  const [dataAssinatura, setDataAssinatura] = useState("");
-  const [status,         setStatus]         = useState("ativo");
+  const [status,     setStatus]     = useState("ativo");
+  const enderecoRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -81,72 +40,80 @@ export default function NovoConsignacaoPage() {
 
   const lookupCep = useCallback(async (raw: string) => {
     const digits = raw.replace(/\D/g, "");
-    setCep(digits.replace(/(\d{5})(\d{3})/, "$1-$2"));
     if (digits.length !== 8) return;
     setCepLoading(true);
     try {
       const r = await fetch(`https://viacep.com.br/ws/${digits}/json/`);
       const d = await r.json();
-      if (!d.erro) {
-        const end = [d.logradouro, d.complemento, d.bairro, `${d.localidade} - ${d.uf}`, `CEP: ${digits.replace(/(\d{5})(\d{3})/, "$1-$2")}`]
-          .filter(Boolean).join(", ");
-        setProprietarioEndereco(end);
+      if (!d.erro && enderecoRef.current) {
+        enderecoRef.current.value = [
+          d.logradouro, d.complemento, d.bairro,
+          `${d.localidade} - ${d.uf}`,
+          `CEP: ${digits.replace(/(\d{5})(\d{3})/, "$1-$2")}`,
+        ].filter(Boolean).join(", ");
       }
     } finally { setCepLoading(false); }
   }, []);
 
-  async function handleSave(e: React.FormEvent) {
+  async function handleSave(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!userId) return;
     setErr(null); setSaving(true);
     try {
+      const fd = new FormData(e.currentTarget);
+      const g = (k: string) => (fd.get(k) as string | null) ?? "";
+      const num = (v: string) => v ? parseFloat(v.replace(/\./g, "").replace(",", ".")) : null;
+      const int = (v: string) => v ? parseInt(v) : null;
+
       const payload = {
         userId,
-        proprietario_nome:          proprietarioNome          || null,
-        proprietario_nacionalidade: proprietarioNacionalidade || null,
-        proprietario_estado_civil:  proprietarioEstadoCivil  || null,
-        proprietario_profissao:     proprietarioProfissao     || null,
-        proprietario_rg:            proprietarioRg            || null,
-        proprietario_cpf_cnpj:      proprietarioCpfCnpj      || null,
-        proprietario_endereco:      proprietarioEndereco      || null,
-        proprietario_telefone:      proprietarioTelefone      || null,
-        proprietario_email:         proprietarioEmail         || null,
-        loja_razao_social:          lojaRazaoSocial           || null,
-        loja_nome_fantasia:         lojaNomeFantasia          || null,
-        loja_cnpj:                  lojaCnpj                  || null,
-        loja_responsavel:           lojaResponsavel           || null,
-        veiculo_marca:              veiculoMarca              || null,
-        veiculo_modelo:             veiculoModelo             || null,
-        veiculo_versao:             veiculoVersao             || null,
-        veiculo_ano_fabricacao:     veiculoAnoFabricacao  ? parseInt(veiculoAnoFabricacao)  : null,
-        veiculo_ano_modelo:         veiculoAnoModelo      ? parseInt(veiculoAnoModelo)      : null,
-        veiculo_placa:              veiculoPlaca              || null,
-        veiculo_chassi:             veiculoChassi             || null,
-        veiculo_renavam:            veiculoRenavam            || null,
-        veiculo_cor:                veiculoCor                || null,
-        veiculo_combustivel:        veiculoCombustivel        || null,
-        veiculo_km_atual:           veiculoKmAtual        ? parseInt(veiculoKmAtual)        : null,
-        valor_minimo_venda:         valorMinimoVenda      ? parseFloat(valorMinimoVenda.replace(/\./g, "").replace(",", "."))  : null,
-        percentual_comissao:        percentualComissao    ? parseFloat(percentualComissao)  : null,
-        taxa_retirada:              taxaRetirada          ? parseFloat(taxaRetirada.replace(/\./g, "").replace(",", "."))       : null,
-        data_inicio:                dataInicio            || null,
-        data_final:                 dataFinal             || null,
-        data_assinatura:            dataAssinatura        || null,
-        vistoria_pintura:           vistoriaPintura       || null,
-        vistoria_pneus:             vistoriaPneus         || null,
-        vistoria_interior:          vistoriaInterior      || null,
-        observacoes_vistoria:       observacoesVistoria   || null,
-        cidade_foro:                cidadeForo            || null,
+        proprietario_nome:          g("proprietario_nome")          || null,
+        proprietario_nacionalidade: g("proprietario_nacionalidade") || null,
+        proprietario_estado_civil:  g("proprietario_estado_civil")  || null,
+        proprietario_profissao:     g("proprietario_profissao")     || null,
+        proprietario_rg:            g("proprietario_rg")            || null,
+        proprietario_cpf_cnpj:      g("proprietario_cpf_cnpj")      || null,
+        proprietario_endereco:      g("proprietario_endereco")      || null,
+        proprietario_telefone:      g("proprietario_telefone")      || null,
+        proprietario_email:         g("proprietario_email")         || null,
+        loja_razao_social:          g("loja_razao_social")          || null,
+        loja_nome_fantasia:         g("loja_nome_fantasia")         || null,
+        loja_cnpj:                  g("loja_cnpj")                  || null,
+        loja_responsavel:           g("loja_responsavel")           || null,
+        veiculo_marca:              g("veiculo_marca")              || null,
+        veiculo_modelo:             g("veiculo_modelo")             || null,
+        veiculo_versao:             g("veiculo_versao")             || null,
+        veiculo_ano_fabricacao:     int(g("veiculo_ano_fabricacao")),
+        veiculo_ano_modelo:         int(g("veiculo_ano_modelo")),
+        veiculo_placa:              g("veiculo_placa")              || null,
+        veiculo_chassi:             g("veiculo_chassi")             || null,
+        veiculo_renavam:            g("veiculo_renavam")            || null,
+        veiculo_cor:                g("veiculo_cor")                || null,
+        veiculo_combustivel:        g("veiculo_combustivel")        || null,
+        veiculo_km_atual:           int(g("veiculo_km_atual")),
+        valor_minimo_venda:         num(g("valor_minimo_venda")),
+        percentual_comissao:        num(g("percentual_comissao")),
+        taxa_retirada:              num(g("taxa_retirada")),
+        data_inicio:                g("data_inicio")    || null,
+        data_final:                 g("data_final")     || null,
+        data_assinatura:            g("data_assinatura")|| null,
+        vistoria_pintura:           g("vistoria_pintura")  || null,
+        vistoria_pneus:             g("vistoria_pneus")    || null,
+        vistoria_interior:          g("vistoria_interior") || null,
+        observacoes_vistoria:       g("observacoes_vistoria") || null,
+        cidade_foro:                g("cidade_foro")    || null,
         status,
       };
+
       const r = await fetch("/api/consignacao", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
       });
       const d = await r.json();
       if (!r.ok) { setErr(d.error ?? "Erro ao salvar"); return; }
       router.push(`/consignacao/${d.id}`);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "Erro de conexão");
+    } catch (ex) {
+      setErr(ex instanceof Error ? ex.message : "Erro de conexão");
     } finally { setSaving(false); }
   }
 
@@ -160,7 +127,7 @@ export default function NovoConsignacaoPage() {
         <h1 style={{ fontSize: 22, fontWeight: 900, color: "#fff", margin: 0 }}>Novo Contrato de Consignação</h1>
       </div>
 
-      <form onSubmit={handleSave}>
+      <form ref={formRef} onSubmit={handleSave}>
 
         {/* 1. Proprietário */}
         <div style={sec}>
@@ -168,51 +135,54 @@ export default function NovoConsignacaoPage() {
           <div style={{ ...g2, marginBottom: 12 }}>
             <div>
               <label style={lbl}>Nome / Razão Social *</label>
-              <input value={proprietarioNome} onChange={e => setProprietarioNome(e.target.value)} style={inp} placeholder="Nome completo" />
+              <input name="proprietario_nome" style={inp} placeholder="Nome completo" autoComplete="off" />
             </div>
             <div>
               <label style={lbl}>Telefone</label>
-              <input value={proprietarioTelefone} onChange={e => setProprietarioTelefone(e.target.value)} style={inp} placeholder="(00) 00000-0000" />
+              <input name="proprietario_telefone" style={inp} placeholder="(00) 00000-0000" autoComplete="off" />
             </div>
           </div>
           <div style={{ ...g3, marginBottom: 12 }}>
             <div>
               <label style={lbl}>Nacionalidade</label>
-              <input value={proprietarioNacionalidade} onChange={e => setProprietarioNacionalidade(e.target.value)} style={inp} />
+              <input name="proprietario_nacionalidade" defaultValue="Brasileiro(a)" style={inp} autoComplete="off" />
             </div>
             <div>
               <label style={lbl}>Estado Civil</label>
-              <select value={proprietarioEstadoCivil} onChange={e => setProprietarioEstadoCivil(e.target.value)} style={{ ...inp, appearance: "none" }}>
+              <select name="proprietario_estado_civil" style={{ ...inp, appearance: "none" }}>
                 <option value="">— Selecione —</option>
                 {EC.map(o => <option key={o} value={o}>{o}</option>)}
               </select>
             </div>
             <div>
               <label style={lbl}>Profissão</label>
-              <input value={proprietarioProfissao} onChange={e => setProprietarioProfissao(e.target.value)} style={inp} />
+              <input name="proprietario_profissao" style={inp} autoComplete="off" />
             </div>
           </div>
           <div style={{ ...g3, marginBottom: 12 }}>
             <div>
               <label style={lbl}>RG</label>
-              <input value={proprietarioRg} onChange={e => setProprietarioRg(e.target.value)} style={inp} placeholder="0000000" />
+              <input name="proprietario_rg" style={inp} placeholder="0000000" autoComplete="off" />
             </div>
             <div>
               <label style={lbl}>CPF / CNPJ</label>
-              <input value={proprietarioCpfCnpj} onChange={e => setProprietarioCpfCnpj(e.target.value)} style={inp} placeholder="000.000.000-00" />
+              <input name="proprietario_cpf_cnpj" style={inp} placeholder="000.000.000-00" autoComplete="off" />
             </div>
             <div>
               <label style={lbl}>E-mail</label>
-              <input type="email" value={proprietarioEmail} onChange={e => setProprietarioEmail(e.target.value)} style={inp} placeholder="email@exemplo.com" />
+              <input type="email" name="proprietario_email" style={inp} placeholder="email@exemplo.com" autoComplete="off" />
             </div>
           </div>
           <div style={{ marginBottom: 12 }}>
             <label style={lbl}>CEP {cepLoading && <span style={{ color: "#6b7280", fontWeight: 400 }}>buscando...</span>}</label>
-            <input value={cep} onChange={e => lookupCep(e.target.value)} maxLength={9} style={inp} placeholder="00000-000" />
+            <input
+              style={inp} placeholder="00000-000" maxLength={9} autoComplete="off"
+              onBlur={e => lookupCep(e.target.value)}
+            />
           </div>
           <div>
             <label style={lbl}>Endereço completo</label>
-            <textarea value={proprietarioEndereco} onChange={e => setProprietarioEndereco(e.target.value)} rows={3}
+            <textarea ref={enderecoRef} name="proprietario_endereco" rows={3}
               style={{ ...inp, resize: "vertical" }} placeholder="Rua, nº, bairro, cidade - UF" />
           </div>
         </div>
@@ -223,21 +193,21 @@ export default function NovoConsignacaoPage() {
           <div style={{ ...g2, marginBottom: 12 }}>
             <div>
               <label style={lbl}>Razão Social</label>
-              <input value={lojaRazaoSocial} onChange={e => setLojaRazaoSocial(e.target.value)} style={inp} />
+              <input name="loja_razao_social" defaultValue="PHD Motors" style={inp} autoComplete="off" />
             </div>
             <div>
               <label style={lbl}>Nome Fantasia</label>
-              <input value={lojaNomeFantasia} onChange={e => setLojaNomeFantasia(e.target.value)} style={inp} />
+              <input name="loja_nome_fantasia" defaultValue="PHD Motors" style={inp} autoComplete="off" />
             </div>
           </div>
           <div style={g2}>
             <div>
               <label style={lbl}>CNPJ</label>
-              <input value={lojaCnpj} onChange={e => setLojaCnpj(e.target.value)} style={inp} placeholder="00.000.000/0001-00" />
+              <input name="loja_cnpj" style={inp} placeholder="00.000.000/0001-00" autoComplete="off" />
             </div>
             <div>
               <label style={lbl}>Representante Legal</label>
-              <input value={lojaResponsavel} onChange={e => setLojaResponsavel(e.target.value)} style={inp} placeholder="Nome do responsável" />
+              <input name="loja_responsavel" style={inp} placeholder="Nome do responsável" autoComplete="off" />
             </div>
           </div>
         </div>
@@ -246,55 +216,25 @@ export default function NovoConsignacaoPage() {
         <div style={sec}>
           <p style={stl}>3. Dados do Veículo</p>
           <div style={{ ...g3, marginBottom: 12 }}>
-            <div>
-              <label style={lbl}>Marca</label>
-              <input value={veiculoMarca} onChange={e => setVeiculoMarca(e.target.value)} style={inp} placeholder="Ex: Toyota" />
-            </div>
-            <div>
-              <label style={lbl}>Modelo</label>
-              <input value={veiculoModelo} onChange={e => setVeiculoModelo(e.target.value)} style={inp} placeholder="Ex: Corolla" />
-            </div>
-            <div>
-              <label style={lbl}>Versão</label>
-              <input value={veiculoVersao} onChange={e => setVeiculoVersao(e.target.value)} style={inp} placeholder="Ex: XEI 2.0" />
-            </div>
+            <div><label style={lbl}>Marca</label><input name="veiculo_marca" style={inp} placeholder="Ex: Toyota" autoComplete="off" /></div>
+            <div><label style={lbl}>Modelo</label><input name="veiculo_modelo" style={inp} placeholder="Ex: Corolla" autoComplete="off" /></div>
+            <div><label style={lbl}>Versão</label><input name="veiculo_versao" style={inp} placeholder="Ex: XEI 2.0" autoComplete="off" /></div>
           </div>
           <div style={{ ...g3, marginBottom: 12 }}>
-            <div>
-              <label style={lbl}>Ano Fabricação</label>
-              <input type="number" value={veiculoAnoFabricacao} onChange={e => setVeiculoAnoFabricacao(e.target.value)} style={inp} placeholder="2020" />
-            </div>
-            <div>
-              <label style={lbl}>Ano Modelo</label>
-              <input type="number" value={veiculoAnoModelo} onChange={e => setVeiculoAnoModelo(e.target.value)} style={inp} placeholder="2021" />
-            </div>
-            <div>
-              <label style={lbl}>Placa</label>
-              <input value={veiculoPlaca} onChange={e => setVeiculoPlaca(e.target.value)} style={inp} placeholder="ABC-1234" />
-            </div>
+            <div><label style={lbl}>Ano Fabricação</label><input type="number" name="veiculo_ano_fabricacao" style={inp} placeholder="2020" /></div>
+            <div><label style={lbl}>Ano Modelo</label><input type="number" name="veiculo_ano_modelo" style={inp} placeholder="2021" /></div>
+            <div><label style={lbl}>Placa</label><input name="veiculo_placa" style={inp} placeholder="ABC-1234" autoComplete="off" /></div>
           </div>
           <div style={{ ...g3, marginBottom: 12 }}>
-            <div>
-              <label style={lbl}>Chassi</label>
-              <input value={veiculoChassi} onChange={e => setVeiculoChassi(e.target.value)} style={inp} placeholder="9BWZZZ377VT004251" />
-            </div>
-            <div>
-              <label style={lbl}>Renavam</label>
-              <input value={veiculoRenavam} onChange={e => setVeiculoRenavam(e.target.value)} style={inp} placeholder="00000000000" />
-            </div>
-            <div>
-              <label style={lbl}>Quilometragem</label>
-              <input type="number" value={veiculoKmAtual} onChange={e => setVeiculoKmAtual(e.target.value)} style={inp} placeholder="45000" />
-            </div>
+            <div><label style={lbl}>Chassi</label><input name="veiculo_chassi" style={inp} placeholder="9BWZZZ377VT004251" autoComplete="off" /></div>
+            <div><label style={lbl}>Renavam</label><input name="veiculo_renavam" style={inp} placeholder="00000000000" autoComplete="off" /></div>
+            <div><label style={lbl}>Quilometragem</label><input type="number" name="veiculo_km_atual" style={inp} placeholder="45000" /></div>
           </div>
           <div style={g2}>
-            <div>
-              <label style={lbl}>Cor</label>
-              <input value={veiculoCor} onChange={e => setVeiculoCor(e.target.value)} style={inp} placeholder="Prata" />
-            </div>
+            <div><label style={lbl}>Cor</label><input name="veiculo_cor" style={inp} placeholder="Prata" autoComplete="off" /></div>
             <div>
               <label style={lbl}>Combustível</label>
-              <select value={veiculoCombustivel} onChange={e => setVeiculoCombustivel(e.target.value)} style={{ ...inp, appearance: "none" }}>
+              <select name="veiculo_combustivel" style={{ ...inp, appearance: "none" }}>
                 <option value="">— Selecione —</option>
                 {COMB.map(o => <option key={o} value={o}>{o}</option>)}
               </select>
@@ -306,14 +246,8 @@ export default function NovoConsignacaoPage() {
         <div style={sec}>
           <p style={stl}>4. Valor e Comissão</p>
           <div style={g2}>
-            <div>
-              <label style={lbl}>Valor mínimo de venda (R$)</label>
-              <input value={valorMinimoVenda} onChange={e => setValorMinimoVenda(e.target.value)} style={inp} placeholder="50.000,00" />
-            </div>
-            <div>
-              <label style={lbl}>Comissão da loja (%)</label>
-              <input type="number" value={percentualComissao} onChange={e => setPercentualComissao(e.target.value)} style={inp} placeholder="5" />
-            </div>
+            <div><label style={lbl}>Valor mínimo de venda (R$)</label><input name="valor_minimo_venda" style={inp} placeholder="50.000,00" autoComplete="off" /></div>
+            <div><label style={lbl}>Comissão da loja (%)</label><input type="number" name="percentual_comissao" defaultValue="5" style={inp} /></div>
           </div>
         </div>
 
@@ -321,18 +255,9 @@ export default function NovoConsignacaoPage() {
         <div style={sec}>
           <p style={stl}>5. Prazo do Contrato</p>
           <div style={g3}>
-            <div>
-              <label style={lbl}>Data de início</label>
-              <input type="date" value={dataInicio} onChange={e => setDataInicio(e.target.value)} style={inp} />
-            </div>
-            <div>
-              <label style={lbl}>Data final</label>
-              <input type="date" value={dataFinal} onChange={e => setDataFinal(e.target.value)} style={inp} />
-            </div>
-            <div>
-              <label style={lbl}>Taxa de retirada antecipada (R$)</label>
-              <input value={taxaRetirada} onChange={e => setTaxaRetirada(e.target.value)} style={inp} placeholder="500,00" />
-            </div>
+            <div><label style={lbl}>Data de início</label><input type="date" name="data_inicio" style={inp} /></div>
+            <div><label style={lbl}>Data final</label><input type="date" name="data_final" style={inp} /></div>
+            <div><label style={lbl}>Taxa de retirada antecipada (R$)</label><input name="taxa_retirada" style={inp} placeholder="500,00" autoComplete="off" /></div>
           </div>
         </div>
 
@@ -342,21 +267,21 @@ export default function NovoConsignacaoPage() {
           <div style={{ ...g3, marginBottom: 12 }}>
             <div>
               <label style={lbl}>Pintura</label>
-              <select value={vistoriaPintura} onChange={e => setVistoriaPintura(e.target.value)} style={{ ...inp, appearance: "none" }}>
+              <select name="vistoria_pintura" style={{ ...inp, appearance: "none" }}>
                 <option value="">— Selecione —</option>
                 {COND.map(o => <option key={o} value={o}>{o}</option>)}
               </select>
             </div>
             <div>
               <label style={lbl}>Pneus</label>
-              <select value={vistoriaPneus} onChange={e => setVistoriaPneus(e.target.value)} style={{ ...inp, appearance: "none" }}>
+              <select name="vistoria_pneus" style={{ ...inp, appearance: "none" }}>
                 <option value="">— Selecione —</option>
                 {COND.map(o => <option key={o} value={o}>{o}</option>)}
               </select>
             </div>
             <div>
               <label style={lbl}>Interior</label>
-              <select value={vistoriaInterior} onChange={e => setVistoriaInterior(e.target.value)} style={{ ...inp, appearance: "none" }}>
+              <select name="vistoria_interior" style={{ ...inp, appearance: "none" }}>
                 <option value="">— Selecione —</option>
                 {COND.map(o => <option key={o} value={o}>{o}</option>)}
               </select>
@@ -364,24 +289,18 @@ export default function NovoConsignacaoPage() {
           </div>
           <div>
             <label style={lbl}>Observações da vistoria</label>
-            <textarea value={observacoesVistoria} onChange={e => setObservacoesVistoria(e.target.value)} rows={3}
+            <textarea name="observacoes_vistoria" rows={3}
               style={{ ...inp, resize: "vertical" }} placeholder="Detalhes sobre o estado do veículo, avarias, acessórios etc." />
           </div>
-          <p style={{ color: "#6b7280", fontSize: 12, marginTop: 12 }}>📸 Fotos de vistoria podem ser adicionadas após salvar o contrato.</p>
+          <p style={{ color: "#6b7280", fontSize: 12, marginTop: 12 }}>📸 Fotos podem ser adicionadas após salvar.</p>
         </div>
 
         {/* 7. Foro */}
         <div style={sec}>
           <p style={stl}>7. Foro e Assinatura</p>
           <div style={g2}>
-            <div>
-              <label style={lbl}>Cidade do Foro</label>
-              <input value={cidadeForo} onChange={e => setCidadeForo(e.target.value)} style={inp} />
-            </div>
-            <div>
-              <label style={lbl}>Data de assinatura</label>
-              <input type="date" value={dataAssinatura} onChange={e => setDataAssinatura(e.target.value)} style={inp} />
-            </div>
+            <div><label style={lbl}>Cidade do Foro</label><input name="cidade_foro" defaultValue="Fortaleza" style={inp} autoComplete="off" /></div>
+            <div><label style={lbl}>Data de assinatura</label><input type="date" name="data_assinatura" style={inp} /></div>
           </div>
         </div>
 
@@ -394,8 +313,8 @@ export default function NovoConsignacaoPage() {
                 style={{
                   padding: "8px 18px", borderRadius: 20, border: "1px solid",
                   borderColor: status === s ? "#dc2626" : "#2e2e2e",
-                  background: status === s ? "#dc262620" : "transparent",
-                  color: status === s ? "#f87171" : "#9ca3af",
+                  background:  status === s ? "#dc262620" : "transparent",
+                  color:       status === s ? "#f87171" : "#9ca3af",
                   fontWeight: 700, fontSize: 13, cursor: "pointer", textTransform: "capitalize",
                 }}>
                 {s}
