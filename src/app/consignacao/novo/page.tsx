@@ -1,11 +1,11 @@
 "use client";
-import { useState, useEffect, useCallback, memo } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { getSupabaseBrowser } from "@/lib/supabaseBrowser";
 
 const supabase = getSupabaseBrowser();
 
-const EMPTY = {
+const EMPTY: Record<string, string> = {
   proprietario_nome: "", proprietario_nacionalidade: "Brasileiro(a)",
   proprietario_estado_civil: "", proprietario_profissao: "",
   proprietario_rg: "", proprietario_cpf_cnpj: "",
@@ -41,36 +41,39 @@ const COMB = ["Gasolina", "Etanol", "Flex", "Diesel", "Elétrico", "Híbrido", "
 type FProps = {
   label: string; name: string; type?: string; placeholder?: string;
   full?: boolean; as?: string; options?: string[];
-  value: string; onChange: (k: string, v: string) => void;
+  defaultValue: string; onChange: (k: string, v: string) => void;
 };
-const Field = memo(function Field({ label, name, type = "text", placeholder = "", full = false, as: as_ = "input", options = [], value, onChange }: FProps) {
+function Field({ label, name, type = "text", placeholder = "", full = false, as: as_ = "input", options = [], defaultValue, onChange }: FProps) {
   return (
     <div style={full ? { gridColumn: "1/-1" } : {}}>
       <label style={lbl}>{label}</label>
       {as_ === "select" ? (
-        <select value={value} onChange={e => onChange(name, e.target.value)} style={{ ...inp, appearance: "none" }}>
+        <select defaultValue={defaultValue} onChange={e => onChange(name, e.target.value)} style={{ ...inp, appearance: "none" }}>
           <option value="">— Selecione —</option>
           {options.map(o => <option key={o} value={o}>{o}</option>)}
         </select>
       ) : as_ === "textarea" ? (
-        <textarea value={value} onChange={e => onChange(name, e.target.value)}
+        <textarea defaultValue={defaultValue} onChange={e => onChange(name, e.target.value)}
           rows={3} style={{ ...inp, resize: "vertical" }} placeholder={placeholder} />
       ) : (
-        <input type={type} value={value} onChange={e => onChange(name, e.target.value)}
+        <input type={type} defaultValue={defaultValue} onChange={e => onChange(name, e.target.value)}
           style={inp} placeholder={placeholder} />
       )}
     </div>
   );
-});
+}
 
 export default function NovoConsignacaoPage() {
   const router = useRouter();
   const [userId, setUserId] = useState<string | null>(null);
-  const [form, setForm]     = useState({ ...EMPTY });
   const [saving, setSaving]         = useState(false);
   const [err, setErr]               = useState<string | null>(null);
   const [cep, setCep]               = useState("");
   const [cepLoading, setCepLoading] = useState(false);
+  const [status, setStatus]         = useState("ativo");
+
+  // Form data em ref — sem re-renders ao digitar
+  const formRef = useRef<Record<string, string>>({ ...EMPTY });
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -79,7 +82,10 @@ export default function NovoConsignacaoPage() {
     });
   }, [router]);
 
-  const handleChange = useCallback((k: string, v: string) => setForm(f => ({ ...f, [k]: v })), []);
+  const handleChange = useCallback((k: string, v: string) => {
+    formRef.current[k] = v;
+    if (k === "status") setStatus(v);
+  }, []);
 
   const lookupCep = useCallback(async (raw: string) => {
     const digits = raw.replace(/\D/g, "");
@@ -92,29 +98,33 @@ export default function NovoConsignacaoPage() {
       if (!d.erro) {
         const end = [d.logradouro, d.complemento, d.bairro, `${d.localidade} - ${d.uf}`, `CEP: ${digits.replace(/(\d{5})(\d{3})/, "$1-$2")}`].filter(Boolean).join(", ");
         handleChange("proprietario_endereco", end);
+        const el = document.querySelector<HTMLTextAreaElement>('[data-field="proprietario_endereco"]');
+        if (el) el.value = end;
       }
     } finally {
       setCepLoading(false);
     }
   }, [handleChange]);
 
-  const fv = (name: string) => ({ value: (form as Record<string, string>)[name] ?? "", onChange: handleChange });
+  const fv = (name: string) => ({ defaultValue: formRef.current[name] ?? "", onChange: handleChange });
 
   async function handleSave() {
     if (!userId) return;
     setErr(null); setSaving(true);
+    const f = formRef.current;
     const payload = {
       userId,
-      ...form,
-      veiculo_ano_fabricacao: form.veiculo_ano_fabricacao ? parseInt(form.veiculo_ano_fabricacao) : null,
-      veiculo_ano_modelo:     form.veiculo_ano_modelo     ? parseInt(form.veiculo_ano_modelo)     : null,
-      veiculo_km_atual:       form.veiculo_km_atual       ? parseInt(form.veiculo_km_atual)       : null,
-      valor_minimo_venda:     form.valor_minimo_venda     ? parseFloat(form.valor_minimo_venda.replace(/\./g, "").replace(",", ".")) : null,
-      percentual_comissao:    form.percentual_comissao    ? parseFloat(form.percentual_comissao)  : null,
-      taxa_retirada:          form.taxa_retirada          ? parseFloat(form.taxa_retirada.replace(/\./g, "").replace(",", ".")) : null,
-      data_inicio:     form.data_inicio     || null,
-      data_final:      form.data_final      || null,
-      data_assinatura: form.data_assinatura || null,
+      ...f,
+      status,
+      veiculo_ano_fabricacao: f.veiculo_ano_fabricacao ? parseInt(f.veiculo_ano_fabricacao) : null,
+      veiculo_ano_modelo:     f.veiculo_ano_modelo     ? parseInt(f.veiculo_ano_modelo)     : null,
+      veiculo_km_atual:       f.veiculo_km_atual       ? parseInt(f.veiculo_km_atual)       : null,
+      valor_minimo_venda:     f.valor_minimo_venda     ? parseFloat(f.valor_minimo_venda.replace(/\./g, "").replace(",", ".")) : null,
+      percentual_comissao:    f.percentual_comissao    ? parseFloat(f.percentual_comissao)  : null,
+      taxa_retirada:          f.taxa_retirada          ? parseFloat(f.taxa_retirada.replace(/\./g, "").replace(",", ".")) : null,
+      data_inicio:     f.data_inicio     || null,
+      data_final:      f.data_final      || null,
+      data_assinatura: f.data_assinatura || null,
     };
     const r = await fetch("/api/consignacao", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     const d = await r.json();
@@ -202,11 +212,6 @@ export default function NovoConsignacaoPage() {
           <Field {...fv("valor_minimo_venda")} label="Valor mínimo de venda (R$)" name="valor_minimo_venda" placeholder="50.000,00" />
           <Field {...fv("percentual_comissao")} label="Comissão da loja (%)" name="percentual_comissao" type="number" placeholder="5" />
         </div>
-        {form.valor_minimo_venda && form.percentual_comissao && (
-          <p style={{ color: "#10b981", fontSize: 13, marginTop: 10 }}>
-            💰 Comissão estimada: R$ {(parseFloat(form.valor_minimo_venda.replace(/\./g,"").replace(",",".") || "0") * parseFloat(form.percentual_comissao) / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-          </p>
-        )}
       </div>
 
       {/* 5. Prazo */}
@@ -250,9 +255,9 @@ export default function NovoConsignacaoPage() {
             <button key={s} onClick={() => handleChange("status", s)}
               style={{
                 padding: "8px 18px", borderRadius: 20, border: "1px solid",
-                borderColor: form.status === s ? "#dc2626" : "#2e2e2e",
-                background: form.status === s ? "#dc262620" : "transparent",
-                color: form.status === s ? "#f87171" : "#9ca3af",
+                borderColor: status === s ? "#dc2626" : "#2e2e2e",
+                background: status === s ? "#dc262620" : "transparent",
+                color: status === s ? "#f87171" : "#9ca3af",
                 fontWeight: 700, fontSize: 13, cursor: "pointer", textTransform: "capitalize",
               }}>
               {s}

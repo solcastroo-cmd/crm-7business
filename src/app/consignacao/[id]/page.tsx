@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef, useCallback, memo } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { getSupabaseBrowser } from "@/lib/supabaseBrowser";
 
@@ -27,27 +27,27 @@ const COMB = ["Gasolina", "Etanol", "Flex", "Diesel", "Elétrico", "Híbrido", "
 type FProps = {
   label: string; name: string; type?: string; placeholder?: string;
   full?: boolean; as?: string; options?: string[];
-  value: string; onChange: (k: string, v: string) => void;
+  defaultValue: string; onChange: (k: string, v: string) => void;
 };
-const Field = memo(function Field({ label, name, type = "text", placeholder = "", full = false, as: as_ = "input", options = [], value, onChange }: FProps) {
+function Field({ label, name, type = "text", placeholder = "", full = false, as: as_ = "input", options = [], defaultValue, onChange }: FProps) {
   return (
     <div style={full ? { gridColumn: "1/-1" } : {}}>
       <label style={lbl}>{label}</label>
       {as_ === "select" ? (
-        <select value={value} onChange={e => onChange(name, e.target.value)} style={{ ...inp, appearance: "none" }}>
+        <select defaultValue={defaultValue} onChange={e => onChange(name, e.target.value)} style={{ ...inp, appearance: "none" }}>
           <option value="">— Selecione —</option>
           {options.map(o => <option key={o} value={o}>{o}</option>)}
         </select>
       ) : as_ === "textarea" ? (
-        <textarea value={value} onChange={e => onChange(name, e.target.value)}
+        <textarea defaultValue={defaultValue} onChange={e => onChange(name, e.target.value)}
           rows={3} style={{ ...inp, resize: "vertical" }} placeholder={placeholder} />
       ) : (
-        <input type={type} value={value} onChange={e => onChange(name, e.target.value)}
+        <input type={type} defaultValue={defaultValue} onChange={e => onChange(name, e.target.value)}
           style={inp} placeholder={placeholder} />
       )}
     </div>
   );
-});
+}
 
 const STATUS_CFG: Record<string, { label: string; color: string; bg: string }> = {
   ativo:    { label: "Ativo",    color: "#10b981", bg: "#10b98120" },
@@ -61,8 +61,10 @@ export default function ConsignacaoDetailPage() {
   const { id }  = useParams<{ id: string }>();
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // Form data stored in ref — sem re-renders ao digitar
+  const formRef = useRef<Record<string, string>>({});
+
   const [userId, setUserId]     = useState<string | null>(null);
-  const [form, setForm]         = useState<Record<string, string>>({});
   const [photos, setPhotos]     = useState<Photo[]>([]);
   const [loading, setLoading]   = useState(true);
   const [saving, setSaving]     = useState(false);
@@ -75,6 +77,10 @@ export default function ConsignacaoDetailPage() {
   const [cep, setCep]               = useState("");
   const [cepLoading, setCepLoading] = useState(false);
 
+  // Estado reativo apenas para campos que precisam atualizar a UI
+  const [status, setStatus]     = useState("ativo");
+  const [headerTitle, setHeaderTitle] = useState("");
+
   const load = useCallback(async () => {
     const r = await fetch(`/api/consignacao/${id}`);
     const d = await r.json();
@@ -84,7 +90,9 @@ export default function ConsignacaoDetailPage() {
     for (const [k, v] of Object.entries(rest)) {
       flat[k] = v == null ? "" : String(v);
     }
-    setForm(flat);
+    formRef.current = flat;
+    setStatus(flat.status ?? "ativo");
+    setHeaderTitle(`${flat.veiculo_marca ?? ""} ${flat.veiculo_modelo ?? ""}`.trim());
     setPhotos(Array.isArray(consignment_photos) ? consignment_photos : []);
     setLoading(false);
   }, [id, router]);
@@ -97,7 +105,11 @@ export default function ConsignacaoDetailPage() {
     });
   }, [router, load]);
 
-  const handleChange = useCallback((k: string, v: string) => setForm(f => ({ ...f, [k]: v })), []);
+  // handleChange grava no ref sem causar re-render
+  const handleChange = useCallback((k: string, v: string) => {
+    formRef.current[k] = v;
+    if (k === "status") setStatus(v);
+  }, []);
 
   const lookupCep = useCallback(async (raw: string) => {
     const digits = raw.replace(/\D/g, "");
@@ -110,65 +122,70 @@ export default function ConsignacaoDetailPage() {
       if (!d.erro) {
         const end = [d.logradouro, d.complemento, d.bairro, `${d.localidade} - ${d.uf}`, `CEP: ${digits.replace(/(\d{5})(\d{3})/, "$1-$2")}`].filter(Boolean).join(", ");
         handleChange("proprietario_endereco", end);
+        // Atualiza o textarea via DOM diretamente
+        const el = document.querySelector<HTMLTextAreaElement>('[data-field="proprietario_endereco"]');
+        if (el) el.value = end;
       }
     } finally {
       setCepLoading(false);
     }
   }, [handleChange]);
 
-  const fv = (name: string) => ({ value: form[name] ?? "", onChange: handleChange });
+  // fv passa defaultValue (valor inicial) para o Field — sem re-render ao digitar
+  const fv = (name: string) => ({ defaultValue: formRef.current[name] ?? "", onChange: handleChange });
 
   async function handleSave() {
     setErr(null); setSaving(true); setSaved(false);
     try {
+      const f = formRef.current;
       const num = (v: string) => v ? parseFloat(v.replace(/\./g, "").replace(",", ".")) : null;
       const int = (v: string) => v ? parseInt(v) : null;
       const dt  = (v: string) => v || null;
       const payload = {
-        proprietario_nome:         form.proprietario_nome         || null,
-        proprietario_nacionalidade:form.proprietario_nacionalidade|| null,
-        proprietario_estado_civil: form.proprietario_estado_civil || null,
-        proprietario_profissao:    form.proprietario_profissao    || null,
-        proprietario_rg:           form.proprietario_rg           || null,
-        proprietario_cpf_cnpj:     form.proprietario_cpf_cnpj    || null,
-        proprietario_endereco:     form.proprietario_endereco     || null,
-        proprietario_telefone:     form.proprietario_telefone     || null,
-        proprietario_email:        form.proprietario_email        || null,
-        loja_razao_social:         form.loja_razao_social         || null,
-        loja_nome_fantasia:        form.loja_nome_fantasia        || null,
-        loja_cnpj:                 form.loja_cnpj                 || null,
-        loja_responsavel:          form.loja_responsavel          || null,
-        veiculo_marca:             form.veiculo_marca             || null,
-        veiculo_modelo:            form.veiculo_modelo            || null,
-        veiculo_versao:            form.veiculo_versao            || null,
-        veiculo_ano_fabricacao:    int(form.veiculo_ano_fabricacao),
-        veiculo_ano_modelo:        int(form.veiculo_ano_modelo),
-        veiculo_placa:             form.veiculo_placa             || null,
-        veiculo_chassi:            form.veiculo_chassi            || null,
-        veiculo_renavam:           form.veiculo_renavam           || null,
-        veiculo_cor:               form.veiculo_cor               || null,
-        veiculo_combustivel:       form.veiculo_combustivel       || null,
-        veiculo_km_atual:          int(form.veiculo_km_atual),
-        valor_minimo_venda:        num(form.valor_minimo_venda),
-        percentual_comissao:       num(form.percentual_comissao),
-        taxa_retirada:             num(form.taxa_retirada),
-        data_inicio:               dt(form.data_inicio),
-        data_final:                dt(form.data_final),
-        data_assinatura:           dt(form.data_assinatura),
-        vistoria_pintura:          form.vistoria_pintura          || null,
-        vistoria_pneus:            form.vistoria_pneus            || null,
-        vistoria_interior:         form.vistoria_interior         || null,
-        observacoes_vistoria:      form.observacoes_vistoria      || null,
-        cidade_foro:               form.cidade_foro               || null,
-        status:                    form.status                    || "ativo",
+        proprietario_nome:         f.proprietario_nome         || null,
+        proprietario_nacionalidade:f.proprietario_nacionalidade|| null,
+        proprietario_estado_civil: f.proprietario_estado_civil || null,
+        proprietario_profissao:    f.proprietario_profissao    || null,
+        proprietario_rg:           f.proprietario_rg           || null,
+        proprietario_cpf_cnpj:     f.proprietario_cpf_cnpj    || null,
+        proprietario_endereco:     f.proprietario_endereco     || null,
+        proprietario_telefone:     f.proprietario_telefone     || null,
+        proprietario_email:        f.proprietario_email        || null,
+        loja_razao_social:         f.loja_razao_social         || null,
+        loja_nome_fantasia:        f.loja_nome_fantasia        || null,
+        loja_cnpj:                 f.loja_cnpj                 || null,
+        loja_responsavel:          f.loja_responsavel          || null,
+        veiculo_marca:             f.veiculo_marca             || null,
+        veiculo_modelo:            f.veiculo_modelo            || null,
+        veiculo_versao:            f.veiculo_versao            || null,
+        veiculo_ano_fabricacao:    int(f.veiculo_ano_fabricacao),
+        veiculo_ano_modelo:        int(f.veiculo_ano_modelo),
+        veiculo_placa:             f.veiculo_placa             || null,
+        veiculo_chassi:            f.veiculo_chassi            || null,
+        veiculo_renavam:           f.veiculo_renavam           || null,
+        veiculo_cor:               f.veiculo_cor               || null,
+        veiculo_combustivel:       f.veiculo_combustivel       || null,
+        veiculo_km_atual:          int(f.veiculo_km_atual),
+        valor_minimo_venda:        num(f.valor_minimo_venda),
+        percentual_comissao:       num(f.percentual_comissao),
+        taxa_retirada:             num(f.taxa_retirada),
+        data_inicio:               dt(f.data_inicio),
+        data_final:                dt(f.data_final),
+        data_assinatura:           dt(f.data_assinatura),
+        vistoria_pintura:          f.vistoria_pintura          || null,
+        vistoria_pneus:            f.vistoria_pneus            || null,
+        vistoria_interior:         f.vistoria_interior         || null,
+        observacoes_vistoria:      f.observacoes_vistoria      || null,
+        cidade_foro:               f.cidade_foro               || null,
+        status:                    status                      || "ativo",
       };
       const r = await fetch(`/api/consignacao/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const d = await r.json();
-      if (!r.ok) { setErr(d.error ?? "Erro ao salvar"); return; }
+      const data = await r.json();
+      if (!r.ok) { setErr(data.error ?? "Erro ao salvar"); return; }
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch (e) {
@@ -222,7 +239,7 @@ export default function ConsignacaoDetailPage() {
     </div>
   );
 
-  const cfg = STATUS_CFG[form.status] ?? STATUS_CFG.ativo;
+  const cfg = STATUS_CFG[status] ?? STATUS_CFG.ativo;
 
   return (
     <div style={{ padding: "28px 24px", maxWidth: 860, margin: "0 auto" }}>
@@ -237,7 +254,7 @@ export default function ConsignacaoDetailPage() {
           </button>
           <div>
             <h1 style={{ fontSize: 20, fontWeight: 900, color: "#fff", margin: 0 }}>
-              {form.veiculo_marca} {form.veiculo_modelo} {form.veiculo_placa ? `— ${form.veiculo_placa}` : ""}
+              {headerTitle || "Contrato de Consignação"}
             </h1>
             <span style={{ fontSize: 12, fontWeight: 700, padding: "2px 10px", borderRadius: 20, background: cfg.bg, color: cfg.color }}>
               {cfg.label}
@@ -325,11 +342,6 @@ export default function ConsignacaoDetailPage() {
           <Field {...fv("valor_minimo_venda")} label="Valor mínimo de venda (R$)" name="valor_minimo_venda" />
           <Field {...fv("percentual_comissao")} label="Comissão da loja (%)" name="percentual_comissao" type="number" />
         </div>
-        {form.valor_minimo_venda && form.percentual_comissao && (
-          <p style={{ color: "#10b981", fontSize: 13, marginTop: 10 }}>
-            💰 Comissão estimada: R$ {(parseFloat(form.valor_minimo_venda.replace(/\./g,"").replace(",",".") || "0") * parseFloat(form.percentual_comissao) / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-          </p>
-        )}
       </div>
 
       {/* 5. Prazo */}
@@ -352,10 +364,8 @@ export default function ConsignacaoDetailPage() {
         </div>
         <Field {...fv("observacoes_vistoria")} label="Observações" name="observacoes_vistoria" as="textarea" full placeholder="Detalhes do estado do veículo..." />
 
-        {/* Upload de fotos */}
         <div style={{ marginTop: 24 }}>
           <p style={{ ...sTitle, marginBottom: 12 }}>Fotos de Vistoria ({photos.length})</p>
-
           <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap", alignItems: "flex-end" }}>
             <div style={{ flex: 1, minWidth: 180 }}>
               <label style={lbl}>Label para novas fotos</label>
@@ -369,8 +379,6 @@ export default function ConsignacaoDetailPage() {
             <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: "none" }}
               onChange={e => e.target.files && handleUpload(e.target.files)} />
           </div>
-
-          {/* Grid de fotos */}
           {photos.length === 0 ? (
             <div style={{ border: "2px dashed #2e2e2e", borderRadius: 12, padding: "32px", textAlign: "center", color: "#4b5563" }}>
               <div style={{ fontSize: 32, marginBottom: 8 }}>📸</div>
@@ -382,9 +390,7 @@ export default function ConsignacaoDetailPage() {
                 <div key={ph.id} style={{ background: "#111", borderRadius: 12, overflow: "hidden", border: "1px solid #2e2e2e" }}>
                   <div style={{ position: "relative", height: 120 }}>
                     <img src={ph.url} alt={ph.label} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                    <button
-                      onClick={() => handleDeletePhoto(ph.id)}
-                      disabled={deleting === ph.id}
+                    <button onClick={() => handleDeletePhoto(ph.id)} disabled={deleting === ph.id}
                       style={{ position: "absolute", top: 6, right: 6, width: 24, height: 24, borderRadius: "50%", background: "#dc262290", border: "none", color: "#fff", cursor: "pointer", fontSize: 12, display: "flex", alignItems: "center", justifyContent: "center" }}>
                       {deleting === ph.id ? "…" : "✕"}
                     </button>
@@ -429,9 +435,9 @@ export default function ConsignacaoDetailPage() {
             <button key={s} onClick={() => handleChange("status", s)}
               style={{
                 padding: "8px 18px", borderRadius: 20, border: "1px solid",
-                borderColor: form.status === s ? "#dc2626" : "#2e2e2e",
-                background: form.status === s ? "#dc262620" : "transparent",
-                color: form.status === s ? "#f87171" : "#9ca3af",
+                borderColor: status === s ? "#dc2626" : "#2e2e2e",
+                background: status === s ? "#dc262620" : "transparent",
+                color: status === s ? "#f87171" : "#9ca3af",
                 fontWeight: 700, fontSize: 13, cursor: "pointer", textTransform: "capitalize",
               }}>
               {s}
