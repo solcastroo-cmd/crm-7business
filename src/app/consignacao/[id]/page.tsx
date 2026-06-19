@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef, useCallback, memo } from "react";
+import { useState, useEffect, useRef, useCallback, memo, forwardRef, useImperativeHandle } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { getSupabaseBrowser } from "@/lib/supabaseBrowser";
 
@@ -28,12 +28,18 @@ type FProps = {
   label: string; name: string; type?: string; placeholder?: string;
   full?: boolean; as?: string; options?: string[];
   initialValue: string; onChangeRef: React.MutableRefObject<(k: string, v: string) => void>;
-  externalRef?: React.MutableRefObject<HTMLTextAreaElement | null>;
 };
 
+type FieldHandle = { setValue: (v: string) => void };
+
 // Campo com estado próprio — imune a re-renders do componente pai
-const Field = memo(function Field({ label, name, type = "text", placeholder = "", full = false, as: as_ = "input", options = [], initialValue, onChangeRef, externalRef }: FProps) {
+const Field = memo(forwardRef<FieldHandle, FProps>(function Field(
+  { label, name, type = "text", placeholder = "", full = false, as: as_ = "input", options = [], initialValue, onChangeRef },
+  ref
+) {
   const [value, setValue] = useState(initialValue);
+
+  useImperativeHandle(ref, () => ({ setValue }), []);
 
   const handle = useCallback((e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     setValue(e.target.value);
@@ -51,7 +57,6 @@ const Field = memo(function Field({ label, name, type = "text", placeholder = ""
         </select>
       ) : as_ === "textarea" ? (
         <textarea value={value} onChange={handle}
-          ref={externalRef as React.MutableRefObject<HTMLTextAreaElement>}
           rows={3} style={{ ...inp, resize: "vertical" }} placeholder={placeholder}
           autoComplete="off" spellCheck={false} />
       ) : (
@@ -61,7 +66,7 @@ const Field = memo(function Field({ label, name, type = "text", placeholder = ""
       )}
     </div>
   );
-});
+}));
 
 const STATUS_CFG: Record<string, { label: string; color: string; bg: string }> = {
   ativo:    { label: "Ativo",    color: "#10b981", bg: "#10b98120" },
@@ -74,7 +79,7 @@ export default function ConsignacaoDetailPage() {
   const router  = useRouter();
   const { id }  = useParams<{ id: string }>();
   const fileRef = useRef<HTMLInputElement>(null);
-  const enderecoRef = useRef<HTMLTextAreaElement | null>(null);
+  const enderecoFieldRef = useRef<FieldHandle | null>(null);
 
   const formRef = useRef<Record<string, string>>({});
 
@@ -136,7 +141,7 @@ export default function ConsignacaoDetailPage() {
       if (!d.erro) {
         const end = [d.logradouro, d.complemento, d.bairro, `${d.localidade} - ${d.uf}`, `CEP: ${digits.replace(/(\d{5})(\d{3})/, "$1-$2")}`].filter(Boolean).join(", ");
         formRef.current.proprietario_endereco = end;
-        if (enderecoRef.current) enderecoRef.current.value = end;
+        enderecoFieldRef.current?.setValue(end);
       }
     } finally {
       setCepLoading(false);
@@ -306,7 +311,7 @@ export default function ConsignacaoDetailPage() {
           <input value={cep} onChange={e => lookupCep(e.target.value)} maxLength={9}
             style={inp} placeholder="00000-000" autoComplete="off" />
         </div>
-        <Field {...fv("proprietario_endereco")} label="Endereço completo" name="proprietario_endereco" full as="textarea" externalRef={enderecoRef} />
+        <Field {...fv("proprietario_endereco")} label="Endereço completo" name="proprietario_endereco" full as="textarea" ref={enderecoFieldRef} />
       </div>
 
       {/* 2. Consignatária */}

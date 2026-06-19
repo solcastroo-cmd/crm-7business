@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef, useCallback, memo } from "react";
+import { useState, useEffect, useRef, useCallback, memo, forwardRef, useImperativeHandle } from "react";
 import { useRouter } from "next/navigation";
 import { getSupabaseBrowser } from "@/lib/supabaseBrowser";
 
@@ -42,12 +42,18 @@ type FProps = {
   label: string; name: string; type?: string; placeholder?: string;
   full?: boolean; as?: string; options?: string[];
   initialValue: string; onChangeRef: React.MutableRefObject<(k: string, v: string) => void>;
-  externalRef?: React.MutableRefObject<HTMLTextAreaElement | null>;
 };
 
+export type FieldHandle = { setValue: (v: string) => void };
+
 // Campo com estado próprio — imune a re-renders do componente pai
-const Field = memo(function Field({ label, name, type = "text", placeholder = "", full = false, as: as_ = "input", options = [], initialValue, onChangeRef, externalRef }: FProps) {
+const Field = memo(forwardRef<FieldHandle, FProps>(function Field(
+  { label, name, type = "text", placeholder = "", full = false, as: as_ = "input", options = [], initialValue, onChangeRef },
+  ref
+) {
   const [value, setValue] = useState(initialValue);
+
+  useImperativeHandle(ref, () => ({ setValue }), []);
 
   const handle = useCallback((e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     setValue(e.target.value);
@@ -65,7 +71,6 @@ const Field = memo(function Field({ label, name, type = "text", placeholder = ""
         </select>
       ) : as_ === "textarea" ? (
         <textarea value={value} onChange={handle}
-          ref={externalRef as React.MutableRefObject<HTMLTextAreaElement>}
           rows={3} style={{ ...inp, resize: "vertical" }} placeholder={placeholder}
           autoComplete="off" spellCheck={false} />
       ) : (
@@ -75,7 +80,7 @@ const Field = memo(function Field({ label, name, type = "text", placeholder = ""
       )}
     </div>
   );
-});
+}));
 
 export default function NovoConsignacaoPage() {
   const router = useRouter();
@@ -87,7 +92,7 @@ export default function NovoConsignacaoPage() {
   const [status, setStatus]         = useState("ativo");
 
   const formRef = useRef<Record<string, string>>({ ...EMPTY });
-  const enderecoRef = useRef<HTMLTextAreaElement | null>(null);
+  const enderecoFieldRef = useRef<FieldHandle | null>(null);
 
   // Ref estável para o handler — Field nunca re-renderiza por causa do pai
   const handleChangeImpl = useCallback((k: string, v: string) => {
@@ -115,7 +120,7 @@ export default function NovoConsignacaoPage() {
       if (!d.erro) {
         const end = [d.logradouro, d.complemento, d.bairro, `${d.localidade} - ${d.uf}`, `CEP: ${digits.replace(/(\d{5})(\d{3})/, "$1-$2")}`].filter(Boolean).join(", ");
         formRef.current.proprietario_endereco = end;
-        if (enderecoRef.current) enderecoRef.current.value = end;
+        enderecoFieldRef.current?.setValue(end);
       }
     } finally {
       setCepLoading(false);
@@ -127,26 +132,31 @@ export default function NovoConsignacaoPage() {
   async function handleSave() {
     if (!userId) return;
     setErr(null); setSaving(true);
-    const f = formRef.current;
-    const payload = {
-      userId,
-      ...f,
-      status,
-      veiculo_ano_fabricacao: f.veiculo_ano_fabricacao ? parseInt(f.veiculo_ano_fabricacao) : null,
-      veiculo_ano_modelo:     f.veiculo_ano_modelo     ? parseInt(f.veiculo_ano_modelo)     : null,
-      veiculo_km_atual:       f.veiculo_km_atual       ? parseInt(f.veiculo_km_atual)       : null,
-      valor_minimo_venda:     f.valor_minimo_venda     ? parseFloat(f.valor_minimo_venda.replace(/\./g, "").replace(",", ".")) : null,
-      percentual_comissao:    f.percentual_comissao    ? parseFloat(f.percentual_comissao)  : null,
-      taxa_retirada:          f.taxa_retirada          ? parseFloat(f.taxa_retirada.replace(/\./g, "").replace(",", ".")) : null,
-      data_inicio:     f.data_inicio     || null,
-      data_final:      f.data_final      || null,
-      data_assinatura: f.data_assinatura || null,
-    };
-    const r = await fetch("/api/consignacao", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-    const d = await r.json();
-    setSaving(false);
-    if (!r.ok) { setErr(d.error ?? "Erro ao salvar"); return; }
-    router.push(`/consignacao/${d.id}`);
+    try {
+      const f = formRef.current;
+      const payload = {
+        userId,
+        ...f,
+        status,
+        veiculo_ano_fabricacao: f.veiculo_ano_fabricacao ? parseInt(f.veiculo_ano_fabricacao) : null,
+        veiculo_ano_modelo:     f.veiculo_ano_modelo     ? parseInt(f.veiculo_ano_modelo)     : null,
+        veiculo_km_atual:       f.veiculo_km_atual       ? parseInt(f.veiculo_km_atual)       : null,
+        valor_minimo_venda:     f.valor_minimo_venda     ? parseFloat(f.valor_minimo_venda.replace(/\./g, "").replace(",", ".")) : null,
+        percentual_comissao:    f.percentual_comissao    ? parseFloat(f.percentual_comissao)  : null,
+        taxa_retirada:          f.taxa_retirada          ? parseFloat(f.taxa_retirada.replace(/\./g, "").replace(",", ".")) : null,
+        data_inicio:     f.data_inicio     || null,
+        data_final:      f.data_final      || null,
+        data_assinatura: f.data_assinatura || null,
+      };
+      const r = await fetch("/api/consignacao", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const d = await r.json();
+      if (!r.ok) { setErr(d.error ?? "Erro ao salvar"); return; }
+      router.push(`/consignacao/${d.id}`);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Erro de conexão ao salvar");
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -181,7 +191,7 @@ export default function NovoConsignacaoPage() {
           <input value={cep} onChange={e => lookupCep(e.target.value)} maxLength={9}
             style={inp} placeholder="00000-000" autoComplete="off" />
         </div>
-        <Field {...fv("proprietario_endereco")} label="Endereço completo" name="proprietario_endereco" placeholder="Rua, nº, bairro, cidade - UF" full as="textarea" externalRef={enderecoRef} />
+        <Field {...fv("proprietario_endereco")} label="Endereço completo" name="proprietario_endereco" placeholder="Rua, nº, bairro, cidade - UF" full as="textarea" ref={enderecoFieldRef} />
       </div>
 
       {/* 2. Consignatária */}
