@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, memo } from "react";
 import { useRouter } from "next/navigation";
 import { getSupabaseBrowser } from "@/lib/supabaseBrowser";
 
@@ -41,27 +41,41 @@ const COMB = ["Gasolina", "Etanol", "Flex", "Diesel", "Elétrico", "Híbrido", "
 type FProps = {
   label: string; name: string; type?: string; placeholder?: string;
   full?: boolean; as?: string; options?: string[];
-  defaultValue: string; onChange: (k: string, v: string) => void;
+  initialValue: string; onChangeRef: React.MutableRefObject<(k: string, v: string) => void>;
+  externalRef?: React.MutableRefObject<HTMLTextAreaElement | null>;
 };
-function Field({ label, name, type = "text", placeholder = "", full = false, as: as_ = "input", options = [], defaultValue, onChange }: FProps) {
+
+// Campo com estado próprio — imune a re-renders do componente pai
+const Field = memo(function Field({ label, name, type = "text", placeholder = "", full = false, as: as_ = "input", options = [], initialValue, onChangeRef, externalRef }: FProps) {
+  const [value, setValue] = useState(initialValue);
+
+  const handle = useCallback((e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    setValue(e.target.value);
+    onChangeRef.current(name, e.target.value);
+  }, [name, onChangeRef]);
+
   return (
     <div style={full ? { gridColumn: "1/-1" } : {}}>
       <label style={lbl}>{label}</label>
       {as_ === "select" ? (
-        <select defaultValue={defaultValue} onChange={e => onChange(name, e.target.value)} style={{ ...inp, appearance: "none" }}>
+        <select value={value} onChange={handle} style={{ ...inp, appearance: "none" }}
+          autoComplete="off">
           <option value="">— Selecione —</option>
           {options.map(o => <option key={o} value={o}>{o}</option>)}
         </select>
       ) : as_ === "textarea" ? (
-        <textarea defaultValue={defaultValue} onChange={e => onChange(name, e.target.value)}
-          rows={3} style={{ ...inp, resize: "vertical" }} placeholder={placeholder} />
+        <textarea value={value} onChange={handle}
+          ref={externalRef as React.MutableRefObject<HTMLTextAreaElement>}
+          rows={3} style={{ ...inp, resize: "vertical" }} placeholder={placeholder}
+          autoComplete="off" spellCheck={false} />
       ) : (
-        <input type={type} defaultValue={defaultValue} onChange={e => onChange(name, e.target.value)}
-          style={inp} placeholder={placeholder} />
+        <input type={type} value={value} onChange={handle}
+          style={inp} placeholder={placeholder}
+          autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} />
       )}
     </div>
   );
-}
+});
 
 export default function NovoConsignacaoPage() {
   const router = useRouter();
@@ -72,8 +86,16 @@ export default function NovoConsignacaoPage() {
   const [cepLoading, setCepLoading] = useState(false);
   const [status, setStatus]         = useState("ativo");
 
-  // Form data em ref — sem re-renders ao digitar
   const formRef = useRef<Record<string, string>>({ ...EMPTY });
+  const enderecoRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // Ref estável para o handler — Field nunca re-renderiza por causa do pai
+  const handleChangeImpl = useCallback((k: string, v: string) => {
+    formRef.current[k] = v;
+    if (k === "status") setStatus(v);
+  }, []);
+  const onChangeRef = useRef(handleChangeImpl);
+  onChangeRef.current = handleChangeImpl;
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -81,11 +103,6 @@ export default function NovoConsignacaoPage() {
       setUserId(data.user.id);
     });
   }, [router]);
-
-  const handleChange = useCallback((k: string, v: string) => {
-    formRef.current[k] = v;
-    if (k === "status") setStatus(v);
-  }, []);
 
   const lookupCep = useCallback(async (raw: string) => {
     const digits = raw.replace(/\D/g, "");
@@ -97,16 +114,15 @@ export default function NovoConsignacaoPage() {
       const d = await r.json();
       if (!d.erro) {
         const end = [d.logradouro, d.complemento, d.bairro, `${d.localidade} - ${d.uf}`, `CEP: ${digits.replace(/(\d{5})(\d{3})/, "$1-$2")}`].filter(Boolean).join(", ");
-        handleChange("proprietario_endereco", end);
-        const el = document.querySelector<HTMLTextAreaElement>('[data-field="proprietario_endereco"]');
-        if (el) el.value = end;
+        formRef.current.proprietario_endereco = end;
+        if (enderecoRef.current) enderecoRef.current.value = end;
       }
     } finally {
       setCepLoading(false);
     }
-  }, [handleChange]);
+  }, []);
 
-  const fv = (name: string) => ({ defaultValue: formRef.current[name] ?? "", onChange: handleChange });
+  const fv = (name: string) => ({ initialValue: formRef.current[name] ?? "", onChangeRef });
 
   async function handleSave() {
     if (!userId) return;
@@ -163,9 +179,9 @@ export default function NovoConsignacaoPage() {
         <div style={{ marginBottom: 12 }}>
           <label style={lbl}>CEP {cepLoading && <span style={{ color: "#6b7280", fontWeight: 400 }}>buscando...</span>}</label>
           <input value={cep} onChange={e => lookupCep(e.target.value)} maxLength={9}
-            style={inp} placeholder="00000-000" />
+            style={inp} placeholder="00000-000" autoComplete="off" />
         </div>
-        <Field {...fv("proprietario_endereco")} label="Endereço completo" name="proprietario_endereco" placeholder="Rua, nº, bairro, cidade - UF" full />
+        <Field {...fv("proprietario_endereco")} label="Endereço completo" name="proprietario_endereco" placeholder="Rua, nº, bairro, cidade - UF" full as="textarea" externalRef={enderecoRef} />
       </div>
 
       {/* 2. Consignatária */}
@@ -252,7 +268,7 @@ export default function NovoConsignacaoPage() {
         <p style={sTitle}>Status</p>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           {["ativo","vendido","retirado","vencido"].map(s => (
-            <button key={s} onClick={() => handleChange("status", s)}
+            <button key={s} onClick={() => { formRef.current.status = s; setStatus(s); }}
               style={{
                 padding: "8px 18px", borderRadius: 20, border: "1px solid",
                 borderColor: status === s ? "#dc2626" : "#2e2e2e",

@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, memo } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { getSupabaseBrowser } from "@/lib/supabaseBrowser";
 
@@ -27,27 +27,41 @@ const COMB = ["Gasolina", "Etanol", "Flex", "Diesel", "Elétrico", "Híbrido", "
 type FProps = {
   label: string; name: string; type?: string; placeholder?: string;
   full?: boolean; as?: string; options?: string[];
-  defaultValue: string; onChange: (k: string, v: string) => void;
+  initialValue: string; onChangeRef: React.MutableRefObject<(k: string, v: string) => void>;
+  externalRef?: React.MutableRefObject<HTMLTextAreaElement | null>;
 };
-function Field({ label, name, type = "text", placeholder = "", full = false, as: as_ = "input", options = [], defaultValue, onChange }: FProps) {
+
+// Campo com estado próprio — imune a re-renders do componente pai
+const Field = memo(function Field({ label, name, type = "text", placeholder = "", full = false, as: as_ = "input", options = [], initialValue, onChangeRef, externalRef }: FProps) {
+  const [value, setValue] = useState(initialValue);
+
+  const handle = useCallback((e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    setValue(e.target.value);
+    onChangeRef.current(name, e.target.value);
+  }, [name, onChangeRef]);
+
   return (
     <div style={full ? { gridColumn: "1/-1" } : {}}>
       <label style={lbl}>{label}</label>
       {as_ === "select" ? (
-        <select defaultValue={defaultValue} onChange={e => onChange(name, e.target.value)} style={{ ...inp, appearance: "none" }}>
+        <select value={value} onChange={handle} style={{ ...inp, appearance: "none" }}
+          autoComplete="off">
           <option value="">— Selecione —</option>
           {options.map(o => <option key={o} value={o}>{o}</option>)}
         </select>
       ) : as_ === "textarea" ? (
-        <textarea defaultValue={defaultValue} onChange={e => onChange(name, e.target.value)}
-          rows={3} style={{ ...inp, resize: "vertical" }} placeholder={placeholder} />
+        <textarea value={value} onChange={handle}
+          ref={externalRef as React.MutableRefObject<HTMLTextAreaElement>}
+          rows={3} style={{ ...inp, resize: "vertical" }} placeholder={placeholder}
+          autoComplete="off" spellCheck={false} />
       ) : (
-        <input type={type} defaultValue={defaultValue} onChange={e => onChange(name, e.target.value)}
-          style={inp} placeholder={placeholder} />
+        <input type={type} value={value} onChange={handle}
+          style={inp} placeholder={placeholder}
+          autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} />
       )}
     </div>
   );
-}
+});
 
 const STATUS_CFG: Record<string, { label: string; color: string; bg: string }> = {
   ativo:    { label: "Ativo",    color: "#10b981", bg: "#10b98120" },
@@ -60,8 +74,8 @@ export default function ConsignacaoDetailPage() {
   const router  = useRouter();
   const { id }  = useParams<{ id: string }>();
   const fileRef = useRef<HTMLInputElement>(null);
+  const enderecoRef = useRef<HTMLTextAreaElement | null>(null);
 
-  // Form data stored in ref — sem re-renders ao digitar
   const formRef = useRef<Record<string, string>>({});
 
   const [userId, setUserId]     = useState<string | null>(null);
@@ -76,10 +90,16 @@ export default function ConsignacaoDetailPage() {
   const [editingLabel, setEditingLabel] = useState<{ id: string; val: string } | null>(null);
   const [cep, setCep]               = useState("");
   const [cepLoading, setCepLoading] = useState(false);
-
-  // Estado reativo apenas para campos que precisam atualizar a UI
   const [status, setStatus]     = useState("ativo");
   const [headerTitle, setHeaderTitle] = useState("");
+
+  // Ref estável para o handler — Field nunca re-renderiza por causa do pai
+  const handleChangeImpl = useCallback((k: string, v: string) => {
+    formRef.current[k] = v;
+    if (k === "status") setStatus(v);
+  }, []);
+  const onChangeRef = useRef(handleChangeImpl);
+  onChangeRef.current = handleChangeImpl;
 
   const load = useCallback(async () => {
     const r = await fetch(`/api/consignacao/${id}`);
@@ -105,12 +125,6 @@ export default function ConsignacaoDetailPage() {
     });
   }, [router, load]);
 
-  // handleChange grava no ref sem causar re-render
-  const handleChange = useCallback((k: string, v: string) => {
-    formRef.current[k] = v;
-    if (k === "status") setStatus(v);
-  }, []);
-
   const lookupCep = useCallback(async (raw: string) => {
     const digits = raw.replace(/\D/g, "");
     setCep(digits.replace(/(\d{5})(\d{3})/, "$1-$2"));
@@ -121,18 +135,15 @@ export default function ConsignacaoDetailPage() {
       const d = await r.json();
       if (!d.erro) {
         const end = [d.logradouro, d.complemento, d.bairro, `${d.localidade} - ${d.uf}`, `CEP: ${digits.replace(/(\d{5})(\d{3})/, "$1-$2")}`].filter(Boolean).join(", ");
-        handleChange("proprietario_endereco", end);
-        // Atualiza o textarea via DOM diretamente
-        const el = document.querySelector<HTMLTextAreaElement>('[data-field="proprietario_endereco"]');
-        if (el) el.value = end;
+        formRef.current.proprietario_endereco = end;
+        if (enderecoRef.current) enderecoRef.current.value = end;
       }
     } finally {
       setCepLoading(false);
     }
-  }, [handleChange]);
+  }, []);
 
-  // fv passa defaultValue (valor inicial) para o Field — sem re-render ao digitar
-  const fv = (name: string) => ({ defaultValue: formRef.current[name] ?? "", onChange: handleChange });
+  const fv = (name: string) => ({ initialValue: formRef.current[name] ?? "", onChangeRef });
 
   async function handleSave() {
     setErr(null); setSaving(true); setSaved(false);
@@ -293,9 +304,9 @@ export default function ConsignacaoDetailPage() {
         <div style={{ marginBottom: 12 }}>
           <label style={lbl}>CEP {cepLoading && <span style={{ color: "#6b7280", fontWeight: 400 }}>buscando...</span>}</label>
           <input value={cep} onChange={e => lookupCep(e.target.value)} maxLength={9}
-            style={inp} placeholder="00000-000" />
+            style={inp} placeholder="00000-000" autoComplete="off" />
         </div>
-        <Field {...fv("proprietario_endereco")} label="Endereço completo" name="proprietario_endereco" full />
+        <Field {...fv("proprietario_endereco")} label="Endereço completo" name="proprietario_endereco" full as="textarea" externalRef={enderecoRef} />
       </div>
 
       {/* 2. Consignatária */}
@@ -370,7 +381,8 @@ export default function ConsignacaoDetailPage() {
             <div style={{ flex: 1, minWidth: 180 }}>
               <label style={lbl}>Label para novas fotos</label>
               <input value={newLabel} onChange={e => setNewLabel(e.target.value)}
-                style={{ ...inp }} placeholder="Ex: Frente, Motor, Interior..." />
+                style={{ ...inp }} placeholder="Ex: Frente, Motor, Interior..."
+                autoComplete="off" />
             </div>
             <button onClick={() => fileRef.current?.click()} disabled={uploading}
               style={{ padding: "10px 18px", borderRadius: 10, border: "1px dashed #555", background: "transparent", color: uploading ? "#555" : "#9ca3af", cursor: uploading ? "not-allowed" : "pointer", fontSize: 14, fontWeight: 600, whiteSpace: "nowrap" }}>
@@ -399,7 +411,7 @@ export default function ConsignacaoDetailPage() {
                     {editingLabel?.id === ph.id ? (
                       <div style={{ display: "flex", gap: 4 }}>
                         <input value={editingLabel.val} onChange={e => setEditingLabel({ id: ph.id, val: e.target.value })}
-                          style={{ ...inp, fontSize: 11, padding: "4px 8px", flex: 1 }} />
+                          style={{ ...inp, fontSize: 11, padding: "4px 8px", flex: 1 }} autoComplete="off" />
                         <button onClick={() => handleSaveLabel(ph.id, editingLabel.val)}
                           style={{ background: "#10b981", border: "none", borderRadius: 6, color: "#fff", padding: "4px 8px", cursor: "pointer", fontSize: 11 }}>✓</button>
                       </div>
@@ -432,7 +444,7 @@ export default function ConsignacaoDetailPage() {
         <p style={sTitle}>Status do Contrato</p>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           {["ativo","vendido","retirado","vencido"].map(s => (
-            <button key={s} onClick={() => handleChange("status", s)}
+            <button key={s} onClick={() => { formRef.current.status = s; setStatus(s); }}
               style={{
                 padding: "8px 18px", borderRadius: 20, border: "1px solid",
                 borderColor: status === s ? "#dc2626" : "#2e2e2e",
