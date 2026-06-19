@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, memo } from "react";
 import { useRouter } from "next/navigation";
 import { getSupabaseBrowser } from "@/lib/supabaseBrowser";
 
@@ -38,12 +38,39 @@ const grid3: React.CSSProperties = { display: "grid", gridTemplateColumns: "1fr 
 const COND = ["Ótima", "Boa", "Regular", "Ruim"];
 const COMB = ["Gasolina", "Etanol", "Flex", "Diesel", "Elétrico", "Híbrido", "GNV"];
 
+type FProps = {
+  label: string; name: string; type?: string; placeholder?: string;
+  full?: boolean; as?: string; options?: string[];
+  value: string; onChange: (k: string, v: string) => void;
+};
+const Field = memo(function Field({ label, name, type = "text", placeholder = "", full = false, as: as_ = "input", options = [], value, onChange }: FProps) {
+  return (
+    <div style={full ? { gridColumn: "1/-1" } : {}}>
+      <label style={lbl}>{label}</label>
+      {as_ === "select" ? (
+        <select value={value} onChange={e => onChange(name, e.target.value)} style={{ ...inp, appearance: "none" }}>
+          <option value="">— Selecione —</option>
+          {options.map(o => <option key={o} value={o}>{o}</option>)}
+        </select>
+      ) : as_ === "textarea" ? (
+        <textarea value={value} onChange={e => onChange(name, e.target.value)}
+          rows={3} style={{ ...inp, resize: "vertical" }} placeholder={placeholder} />
+      ) : (
+        <input type={type} value={value} onChange={e => onChange(name, e.target.value)}
+          style={inp} placeholder={placeholder} />
+      )}
+    </div>
+  );
+});
+
 export default function NovoConsignacaoPage() {
   const router = useRouter();
   const [userId, setUserId] = useState<string | null>(null);
   const [form, setForm]     = useState({ ...EMPTY });
-  const [saving, setSaving] = useState(false);
-  const [err, setErr]       = useState<string | null>(null);
+  const [saving, setSaving]         = useState(false);
+  const [err, setErr]               = useState<string | null>(null);
+  const [cep, setCep]               = useState("");
+  const [cepLoading, setCepLoading] = useState(false);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -52,25 +79,26 @@ export default function NovoConsignacaoPage() {
     });
   }, [router]);
 
-  const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
+  const handleChange = useCallback((k: string, v: string) => setForm(f => ({ ...f, [k]: v })), []);
 
-  const F = ({ label, name, type = "text", placeholder = "", full = false, as: as_ = "input", options = [] as string[] }: { label: string; name: string; type?: string; placeholder?: string; full?: boolean; as?: string; options?: string[] }) => (
-    <div style={full ? { gridColumn: "1/-1" } : {}}>
-      <label style={lbl}>{label}</label>
-      {as_ === "select" ? (
-        <select value={(form as Record<string, string>)[name]} onChange={e => set(name, e.target.value)} style={{ ...inp, appearance: "none" }}>
-          <option value="">— Selecione —</option>
-          {options.map(o => <option key={o} value={o}>{o}</option>)}
-        </select>
-      ) : as_ === "textarea" ? (
-        <textarea value={(form as Record<string, string>)[name]} onChange={e => set(name, e.target.value)}
-          rows={3} style={{ ...inp, resize: "vertical" }} placeholder={placeholder} />
-      ) : (
-        <input type={type} value={(form as Record<string, string>)[name]} onChange={e => set(name, e.target.value)}
-          style={inp} placeholder={placeholder} />
-      )}
-    </div>
-  );
+  const lookupCep = useCallback(async (raw: string) => {
+    const digits = raw.replace(/\D/g, "");
+    setCep(digits.replace(/(\d{5})(\d{3})/, "$1-$2"));
+    if (digits.length !== 8) return;
+    setCepLoading(true);
+    try {
+      const r = await fetch(`https://viacep.com.br/ws/${digits}/json/`);
+      const d = await r.json();
+      if (!d.erro) {
+        const end = [d.logradouro, d.complemento, d.bairro, `${d.localidade} - ${d.uf}`, `CEP: ${digits.replace(/(\d{5})(\d{3})/, "$1-$2")}`].filter(Boolean).join(", ");
+        handleChange("proprietario_endereco", end);
+      }
+    } finally {
+      setCepLoading(false);
+    }
+  }, [handleChange]);
+
+  const fv = (name: string) => ({ value: (form as Record<string, string>)[name] ?? "", onChange: handleChange });
 
   async function handleSave() {
     if (!userId) return;
@@ -109,32 +137,37 @@ export default function NovoConsignacaoPage() {
       <div style={section}>
         <p style={sTitle}>1. Consignante — Proprietário do Veículo</p>
         <div style={{ ...grid2, marginBottom: 12 }}>
-          <F label="Nome / Razão Social *" name="proprietario_nome" placeholder="Nome completo" />
-          <F label="Telefone" name="proprietario_telefone" placeholder="(00) 00000-0000" />
+          <Field {...fv("proprietario_nome")} label="Nome / Razão Social *" name="proprietario_nome" placeholder="Nome completo" />
+          <Field {...fv("proprietario_telefone")} label="Telefone" name="proprietario_telefone" placeholder="(00) 00000-0000" />
         </div>
         <div style={{ ...grid3, marginBottom: 12 }}>
-          <F label="Nacionalidade" name="proprietario_nacionalidade" />
-          <F label="Estado Civil" name="proprietario_estado_civil" as="select" options={["Solteiro(a)","Casado(a)","Divorciado(a)","Viúvo(a)","União Estável"]} />
-          <F label="Profissão" name="proprietario_profissao" />
+          <Field {...fv("proprietario_nacionalidade")} label="Nacionalidade" name="proprietario_nacionalidade" />
+          <Field {...fv("proprietario_estado_civil")} label="Estado Civil" name="proprietario_estado_civil" as="select" options={["Solteiro(a)","Casado(a)","Divorciado(a)","Viúvo(a)","União Estável"]} />
+          <Field {...fv("proprietario_profissao")} label="Profissão" name="proprietario_profissao" />
         </div>
         <div style={{ ...grid3, marginBottom: 12 }}>
-          <F label="RG" name="proprietario_rg" placeholder="0000000" />
-          <F label="CPF / CNPJ" name="proprietario_cpf_cnpj" placeholder="000.000.000-00" />
-          <F label="E-mail" name="proprietario_email" type="email" placeholder="email@exemplo.com" />
+          <Field {...fv("proprietario_rg")} label="RG" name="proprietario_rg" placeholder="0000000" />
+          <Field {...fv("proprietario_cpf_cnpj")} label="CPF / CNPJ" name="proprietario_cpf_cnpj" placeholder="000.000.000-00" />
+          <Field {...fv("proprietario_email")} label="E-mail" name="proprietario_email" type="email" placeholder="email@exemplo.com" />
         </div>
-        <F label="Endereço completo" name="proprietario_endereco" placeholder="Rua, nº, bairro, cidade - UF" full />
+        <div style={{ marginBottom: 12 }}>
+          <label style={lbl}>CEP {cepLoading && <span style={{ color: "#6b7280", fontWeight: 400 }}>buscando...</span>}</label>
+          <input value={cep} onChange={e => lookupCep(e.target.value)} maxLength={9}
+            style={inp} placeholder="00000-000" />
+        </div>
+        <Field {...fv("proprietario_endereco")} label="Endereço completo" name="proprietario_endereco" placeholder="Rua, nº, bairro, cidade - UF" full />
       </div>
 
       {/* 2. Consignatária */}
       <div style={section}>
         <p style={sTitle}>2. Consignatária — Loja</p>
         <div style={{ ...grid2, marginBottom: 12 }}>
-          <F label="Razão Social" name="loja_razao_social" />
-          <F label="Nome Fantasia" name="loja_nome_fantasia" />
+          <Field {...fv("loja_razao_social")} label="Razão Social" name="loja_razao_social" />
+          <Field {...fv("loja_nome_fantasia")} label="Nome Fantasia" name="loja_nome_fantasia" />
         </div>
         <div style={grid2}>
-          <F label="CNPJ" name="loja_cnpj" placeholder="00.000.000/0001-00" />
-          <F label="Representante Legal" name="loja_responsavel" placeholder="Nome do responsável" />
+          <Field {...fv("loja_cnpj")} label="CNPJ" name="loja_cnpj" placeholder="00.000.000/0001-00" />
+          <Field {...fv("loja_responsavel")} label="Representante Legal" name="loja_responsavel" placeholder="Nome do responsável" />
         </div>
       </div>
 
@@ -142,23 +175,23 @@ export default function NovoConsignacaoPage() {
       <div style={section}>
         <p style={sTitle}>3. Dados do Veículo</p>
         <div style={{ ...grid3, marginBottom: 12 }}>
-          <F label="Marca" name="veiculo_marca" placeholder="Ex: Toyota" />
-          <F label="Modelo" name="veiculo_modelo" placeholder="Ex: Corolla" />
-          <F label="Versão" name="veiculo_versao" placeholder="Ex: XEI 2.0" />
+          <Field {...fv("veiculo_marca")} label="Marca" name="veiculo_marca" placeholder="Ex: Toyota" />
+          <Field {...fv("veiculo_modelo")} label="Modelo" name="veiculo_modelo" placeholder="Ex: Corolla" />
+          <Field {...fv("veiculo_versao")} label="Versão" name="veiculo_versao" placeholder="Ex: XEI 2.0" />
         </div>
         <div style={{ ...grid3, marginBottom: 12 }}>
-          <F label="Ano Fabricação" name="veiculo_ano_fabricacao" type="number" placeholder="2020" />
-          <F label="Ano Modelo" name="veiculo_ano_modelo" type="number" placeholder="2021" />
-          <F label="Placa" name="veiculo_placa" placeholder="ABC-1234" />
+          <Field {...fv("veiculo_ano_fabricacao")} label="Ano Fabricação" name="veiculo_ano_fabricacao" type="number" placeholder="2020" />
+          <Field {...fv("veiculo_ano_modelo")} label="Ano Modelo" name="veiculo_ano_modelo" type="number" placeholder="2021" />
+          <Field {...fv("veiculo_placa")} label="Placa" name="veiculo_placa" placeholder="ABC-1234" />
         </div>
         <div style={{ ...grid3, marginBottom: 12 }}>
-          <F label="Chassi" name="veiculo_chassi" placeholder="9BWZZZ377VT004251" />
-          <F label="Renavam" name="veiculo_renavam" placeholder="00000000000" />
-          <F label="Quilometragem" name="veiculo_km_atual" type="number" placeholder="45000" />
+          <Field {...fv("veiculo_chassi")} label="Chassi" name="veiculo_chassi" placeholder="9BWZZZ377VT004251" />
+          <Field {...fv("veiculo_renavam")} label="Renavam" name="veiculo_renavam" placeholder="00000000000" />
+          <Field {...fv("veiculo_km_atual")} label="Quilometragem" name="veiculo_km_atual" type="number" placeholder="45000" />
         </div>
         <div style={grid2}>
-          <F label="Cor" name="veiculo_cor" placeholder="Prata" />
-          <F label="Combustível" name="veiculo_combustivel" as="select" options={COMB} />
+          <Field {...fv("veiculo_cor")} label="Cor" name="veiculo_cor" placeholder="Prata" />
+          <Field {...fv("veiculo_combustivel")} label="Combustível" name="veiculo_combustivel" as="select" options={COMB} />
         </div>
       </div>
 
@@ -166,8 +199,8 @@ export default function NovoConsignacaoPage() {
       <div style={section}>
         <p style={sTitle}>4. Valor e Comissão</p>
         <div style={grid2}>
-          <F label="Valor mínimo de venda (R$)" name="valor_minimo_venda" placeholder="50.000,00" />
-          <F label="Comissão da loja (%)" name="percentual_comissao" type="number" placeholder="5" />
+          <Field {...fv("valor_minimo_venda")} label="Valor mínimo de venda (R$)" name="valor_minimo_venda" placeholder="50.000,00" />
+          <Field {...fv("percentual_comissao")} label="Comissão da loja (%)" name="percentual_comissao" type="number" placeholder="5" />
         </div>
         {form.valor_minimo_venda && form.percentual_comissao && (
           <p style={{ color: "#10b981", fontSize: 13, marginTop: 10 }}>
@@ -180,9 +213,9 @@ export default function NovoConsignacaoPage() {
       <div style={section}>
         <p style={sTitle}>5. Prazo do Contrato</p>
         <div style={grid3}>
-          <F label="Data de início" name="data_inicio" type="date" />
-          <F label="Data final" name="data_final" type="date" />
-          <F label="Taxa de retirada antecipada (R$)" name="taxa_retirada" placeholder="500,00" />
+          <Field {...fv("data_inicio")} label="Data de início" name="data_inicio" type="date" />
+          <Field {...fv("data_final")} label="Data final" name="data_final" type="date" />
+          <Field {...fv("taxa_retirada")} label="Taxa de retirada antecipada (R$)" name="taxa_retirada" placeholder="500,00" />
         </div>
       </div>
 
@@ -190,11 +223,11 @@ export default function NovoConsignacaoPage() {
       <div style={section}>
         <p style={sTitle}>6. Vistoria do Veículo</p>
         <div style={{ ...grid3, marginBottom: 12 }}>
-          <F label="Pintura" name="vistoria_pintura" as="select" options={COND} />
-          <F label="Pneus" name="vistoria_pneus" as="select" options={COND} />
-          <F label="Interior" name="vistoria_interior" as="select" options={COND} />
+          <Field {...fv("vistoria_pintura")} label="Pintura" name="vistoria_pintura" as="select" options={COND} />
+          <Field {...fv("vistoria_pneus")} label="Pneus" name="vistoria_pneus" as="select" options={COND} />
+          <Field {...fv("vistoria_interior")} label="Interior" name="vistoria_interior" as="select" options={COND} />
         </div>
-        <F label="Observações da vistoria" name="observacoes_vistoria" as="textarea" full placeholder="Detalhes sobre o estado do veículo, avarias, acessórios etc." />
+        <Field {...fv("observacoes_vistoria")} label="Observações da vistoria" name="observacoes_vistoria" as="textarea" full placeholder="Detalhes sobre o estado do veículo, avarias, acessórios etc." />
         <p style={{ color: "#6b7280", fontSize: 12, marginTop: 12 }}>
           📸 Fotos de vistoria podem ser adicionadas após salvar o contrato.
         </p>
@@ -204,8 +237,8 @@ export default function NovoConsignacaoPage() {
       <div style={section}>
         <p style={sTitle}>7. Foro e Assinatura</p>
         <div style={grid2}>
-          <F label="Cidade do Foro" name="cidade_foro" />
-          <F label="Data de assinatura" name="data_assinatura" type="date" />
+          <Field {...fv("cidade_foro")} label="Cidade do Foro" name="cidade_foro" />
+          <Field {...fv("data_assinatura")} label="Data de assinatura" name="data_assinatura" type="date" />
         </div>
       </div>
 
@@ -214,7 +247,7 @@ export default function NovoConsignacaoPage() {
         <p style={sTitle}>Status</p>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           {["ativo","vendido","retirado","vencido"].map(s => (
-            <button key={s} onClick={() => set("status", s)}
+            <button key={s} onClick={() => handleChange("status", s)}
               style={{
                 padding: "8px 18px", borderRadius: 20, border: "1px solid",
                 borderColor: form.status === s ? "#dc2626" : "#2e2e2e",
