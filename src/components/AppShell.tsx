@@ -3,7 +3,6 @@
 import { usePathname } from "next/navigation";
 
 const NO_SHELL_PATHS = ["/login", "/pricing"];
-const NO_BANNER_PATHS = ["/consignacao/novo"];
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -11,10 +10,6 @@ interface AppShellProps {
   banner:   React.ReactNode;
 }
 
-/**
- * AppShell — decide se renderiza Sidebar + TrialBanner.
- * Páginas públicas (/login, /pricing) recebem só o children.
- */
 export function AppShell({ children, sidebar, banner }: AppShellProps) {
   const pathname = usePathname();
   const isPublic = NO_SHELL_PATHS.some(p => pathname.startsWith(p));
@@ -23,13 +18,11 @@ export function AppShell({ children, sidebar, banner }: AppShellProps) {
     return <>{children}</>;
   }
 
-  const hideBanner = NO_BANNER_PATHS.some(p => pathname.startsWith(p));
-
   return (
     <div className="flex min-h-screen">
       {sidebar}
       <div className="flex-1 min-w-0 flex flex-col">
-        {hideBanner ? null : banner}
+        {banner}
         {children}
       </div>
     </div>

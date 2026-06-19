@@ -2,10 +2,8 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { getSupabaseBrowser } from "@/lib/supabaseBrowser";
-
-const supabase = getSupabaseBrowser();
 
 const NAV = [
   { href: "/",              icon: "⚡", label: "Funil de Leads" },
@@ -14,25 +12,36 @@ const NAV = [
   { href: "/consignacao",   icon: "📋", label: "Consignação"    },
   { href: "/atendimentos",  icon: "💬", label: "Atendimentos"   },
   { href: "/inventory",     icon: "🚗", label: "Estoque"        },
-  { href: "/financeiro",      icon: "💰", label: "Financeiro"     },
-  { href: "/financeiro-loja",        icon: "🏪", label: "Fin. da Loja"   },
-  { href: "/despesas-implantacao",   icon: "🏗️", label: "Implantação"    },
-  { href: "/integrations",    icon: "🔗", label: "Integracoes"    },
+  { href: "/financeiro",    icon: "💰", label: "Financeiro"     },
+  { href: "/financeiro-loja",       icon: "🏪", label: "Fin. da Loja"   },
+  { href: "/despesas-implantacao",  icon: "🏗️", label: "Implantação"    },
+  { href: "/integrations",  icon: "🔗", label: "Integracoes"    },
   { href: "/settings",      icon: "⚙️", label: "Configuracoes"  },
 ];
 
-interface SidebarContentProps {
-  logoUrl: string | null;
+export interface SidebarProps {
   storeName: string | null;
+  logoUrl:   string | null;
   userEmail: string | null;
-  isAdmin: boolean;
-  pathname: string;
-  isActive: (href: string) => boolean;
-  handleLogout: () => void;
+  isAdmin:   boolean;
 }
 
-function SidebarContent({ logoUrl, storeName, userEmail, isAdmin, isActive, handleLogout }: SidebarContentProps) {
-  return (
+function SidebarContent({ storeName, logoUrl, userEmail, isAdmin }: SidebarProps) {
+  const pathname = usePathname();
+  const router   = useRouter();
+  const [open, setOpen] = useState(false);
+
+  if (pathname === "/login") return null;
+
+  const isActive = (href: string) =>
+    href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(href + "/");
+
+  async function handleLogout() {
+    await getSupabaseBrowser().auth.signOut();
+    router.push("/login");
+  }
+
+  const nav = (
     <div className="flex flex-col h-full" style={{ background: "#111827", borderRight: "1px solid #1f2937" }}>
       <div className="px-5 py-5" style={{ borderBottom: "1px solid #1f2937" }}>
         <div className="flex items-center gap-3">
@@ -95,50 +104,11 @@ function SidebarContent({ logoUrl, storeName, userEmail, isAdmin, isActive, hand
       </div>
     </div>
   );
-}
-
-export function Sidebar() {
-  const pathname = usePathname();
-  const router   = useRouter();
-  const [open, setOpen]           = useState(false);
-  const [storeName, setStoreName] = useState<string | null>(null);
-  const [logoUrl,   setLogoUrl]   = useState<string | null>(null);
-  const [userEmail, setUserEmail] = useState<string | null>(null);
-  const [isAdmin, setIsAdmin]     = useState(false);
-
-  useEffect(() => { setOpen(false); }, [pathname]);
-
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      if (!data?.user) return;
-      setUserEmail(data.user.email ?? null);
-      fetch(`/api/settings?userId=${data.user.id}`)
-        .then(r => r.ok ? r.json() : null)
-        .then(d => {
-          if (d?.business_name) setStoreName(d.business_name);
-          if (d?.logo_url)      setLogoUrl(d.logo_url);
-          if (d?.is_admin)      setIsAdmin(true);
-        })
-        .catch(() => {});
-    });
-  }, []);
-
-  if (pathname === "/login") return null;
-
-  async function handleLogout() {
-    await supabase.auth.signOut();
-    router.push("/login");
-  }
-
-  const isActive = (href: string) =>
-    href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(href + "/");
-
-  const contentProps: SidebarContentProps = { logoUrl, storeName, userEmail, isAdmin, pathname, isActive, handleLogout };
 
   return (
     <>
       <aside className="hidden lg:flex flex-col w-56 flex-shrink-0 sticky top-0 h-screen">
-        <SidebarContent {...contentProps} />
+        {nav}
       </aside>
 
       <div className="lg:hidden">
@@ -149,9 +119,13 @@ export function Sidebar() {
         </button>
         {open && <div className="fixed inset-0 bg-black/60 z-40 backdrop-blur-sm" onClick={() => setOpen(false)} />}
         <aside className={`fixed top-0 left-0 h-full w-56 z-50 flex flex-col transition-transform duration-200 ${open ? "translate-x-0" : "-translate-x-full"}`}>
-          <SidebarContent {...contentProps} />
+          {nav}
         </aside>
       </div>
     </>
   );
+}
+
+export function Sidebar(props: SidebarProps) {
+  return <SidebarContent {...props} />;
 }
