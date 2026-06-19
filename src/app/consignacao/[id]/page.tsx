@@ -1,31 +1,11 @@
 "use client";
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { getSupabaseBrowser } from "@/lib/supabaseBrowser";
 
 const supabase = getSupabaseBrowser();
 
 type Photo = { id: string; url: string; label: string };
-type Contract = Record<string, string | number | null | Photo[]> & {
-  id: string; status: string; consignment_photos: Photo[];
-};
-
-const INIT = {
-  proprietario_nome: "", proprietario_nacionalidade: "",
-  proprietario_estado_civil: "", proprietario_profissao: "",
-  proprietario_rg: "", proprietario_cpf_cnpj: "",
-  proprietario_endereco: "", proprietario_telefone: "", proprietario_email: "",
-  loja_razao_social: "", loja_nome_fantasia: "", loja_cnpj: "", loja_responsavel: "",
-  veiculo_marca: "", veiculo_modelo: "", veiculo_versao: "",
-  veiculo_ano_fabricacao: "", veiculo_ano_modelo: "",
-  veiculo_placa: "", veiculo_chassi: "", veiculo_renavam: "",
-  veiculo_cor: "", veiculo_combustivel: "", veiculo_km_atual: "",
-  valor_minimo_venda: "", percentual_comissao: "",
-  data_inicio: "", data_final: "", taxa_retirada: "",
-  vistoria_pintura: "", vistoria_pneus: "", vistoria_interior: "",
-  observacoes_vistoria: "", cidade_foro: "", data_assinatura: "",
-  status: "ativo",
-};
 
 const inp: React.CSSProperties = {
   width: "100%", padding: "10px 12px", background: "#111",
@@ -54,35 +34,110 @@ export default function ConsignacaoDetailPage() {
   const { id }  = useParams<{ id: string }>();
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const [form, setForm]         = useState({ ...INIT });
-  const [userId, setUserId]     = useState<string | null>(null);
-  const [photos, setPhotos]     = useState<Photo[]>([]);
-  const [loading, setLoading]   = useState(true);
-  const [saving, setSaving]     = useState(false);
+  const [loading,   setLoading]   = useState(true);
+  const [saving,    setSaving]    = useState(false);
+  const [saved,     setSaved]     = useState(false);
+  const [err,       setErr]       = useState<string | null>(null);
+  const [userId,    setUserId]    = useState<string | null>(null);
+  const [photos,    setPhotos]    = useState<Photo[]>([]);
   const [uploading, setUploading] = useState(false);
-  const [err, setErr]           = useState<string | null>(null);
-  const [saved, setSaved]       = useState(false);
-  const [newLabel, setNewLabel] = useState("Foto");
-  const [deleting, setDeleting] = useState<string | null>(null);
+  const [newLabel,  setNewLabel]  = useState("Foto");
+  const [deleting,  setDeleting]  = useState<string | null>(null);
   const [editingLabel, setEditingLabel] = useState<{ id: string; val: string } | null>(null);
-  const [cep, setCep]           = useState("");
+  const [cep,        setCep]        = useState("");
   const [cepLoading, setCepLoading] = useState(false);
-  const [headerTitle, setHeaderTitle] = useState("");
+  const [headerTitle,setHeaderTitle]= useState("");
 
-  // Mesmo padrão do settings/page.tsx
-  const set = (field: keyof typeof INIT) =>
-    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
-      setForm(prev => ({ ...prev, [field]: e.target.value }));
+  /* ── campos individuais (mesmo padrão do settings) ── */
+  const [proprietarioNome,          setProprietarioNome]          = useState("");
+  const [proprietarioTelefone,      setProprietarioTelefone]      = useState("");
+  const [proprietarioNacionalidade, setProprietarioNacionalidade] = useState("");
+  const [proprietarioEstadoCivil,   setProprietarioEstadoCivil]   = useState("");
+  const [proprietarioProfissao,     setProprietarioProfissao]     = useState("");
+  const [proprietarioRg,            setProprietarioRg]            = useState("");
+  const [proprietarioCpfCnpj,       setProprietarioCpfCnpj]       = useState("");
+  const [proprietarioEmail,         setProprietarioEmail]         = useState("");
+  const [proprietarioEndereco,      setProprietarioEndereco]      = useState("");
+
+  const [lojaRazaoSocial,  setLojaRazaoSocial]  = useState("");
+  const [lojaNomeFantasia, setLojaNomeFantasia]  = useState("");
+  const [lojaCnpj,         setLojaCnpj]          = useState("");
+  const [lojaResponsavel,  setLojaResponsavel]   = useState("");
+
+  const [veiculoMarca,         setVeiculoMarca]         = useState("");
+  const [veiculoModelo,        setVeiculoModelo]        = useState("");
+  const [veiculoVersao,        setVeiculoVersao]        = useState("");
+  const [veiculoAnoFabricacao, setVeiculoAnoFabricacao] = useState("");
+  const [veiculoAnoModelo,     setVeiculoAnoModelo]     = useState("");
+  const [veiculoPlaca,         setVeiculoPlaca]         = useState("");
+  const [veiculoChassi,        setVeiculoChassi]        = useState("");
+  const [veiculoRenavam,       setVeiculoRenavam]       = useState("");
+  const [veiculoKmAtual,       setVeiculoKmAtual]       = useState("");
+  const [veiculoCor,           setVeiculoCor]           = useState("");
+  const [veiculoCombustivel,   setVeiculoCombustivel]   = useState("");
+
+  const [valorMinimoVenda,   setValorMinimoVenda]   = useState("");
+  const [percentualComissao, setPercentualComissao] = useState("");
+
+  const [dataInicio,   setDataInicio]   = useState("");
+  const [dataFinal,    setDataFinal]    = useState("");
+  const [taxaRetirada, setTaxaRetirada] = useState("");
+
+  const [vistoriaPintura,    setVistoriaPintura]    = useState("");
+  const [vistoriaPneus,      setVistoriaPneus]      = useState("");
+  const [vistoriaInterior,   setVistoriaInterior]   = useState("");
+  const [observacoesVistoria,setObservacoesVistoria]= useState("");
+
+  const [cidadeForo,     setCidadeForo]     = useState("");
+  const [dataAssinatura, setDataAssinatura] = useState("");
+  const [status,         setStatus]         = useState("ativo");
 
   const load = useCallback(async () => {
     const r = await fetch(`/api/consignacao/${id}`);
     const d = await r.json();
     if (!r.ok) { router.push("/consignacao"); return; }
-    const { consignment_photos, ...rest } = d as Contract;
-    const flat: Record<string, string> = {};
-    for (const [k, v] of Object.entries(rest)) flat[k] = v == null ? "" : String(v);
-    setForm(prev => ({ ...prev, ...flat }));
-    setHeaderTitle(`${flat.veiculo_marca ?? ""} ${flat.veiculo_modelo ?? ""}`.trim());
+
+    const { consignment_photos, ...rest } = d;
+    const s = (k: string) => rest[k] == null ? "" : String(rest[k]);
+
+    setProprietarioNome(s("proprietario_nome"));
+    setProprietarioTelefone(s("proprietario_telefone"));
+    setProprietarioNacionalidade(s("proprietario_nacionalidade"));
+    setProprietarioEstadoCivil(s("proprietario_estado_civil"));
+    setProprietarioProfissao(s("proprietario_profissao"));
+    setProprietarioRg(s("proprietario_rg"));
+    setProprietarioCpfCnpj(s("proprietario_cpf_cnpj"));
+    setProprietarioEmail(s("proprietario_email"));
+    setProprietarioEndereco(s("proprietario_endereco"));
+    setLojaRazaoSocial(s("loja_razao_social"));
+    setLojaNomeFantasia(s("loja_nome_fantasia"));
+    setLojaCnpj(s("loja_cnpj"));
+    setLojaResponsavel(s("loja_responsavel"));
+    setVeiculoMarca(s("veiculo_marca"));
+    setVeiculoModelo(s("veiculo_modelo"));
+    setVeiculoVersao(s("veiculo_versao"));
+    setVeiculoAnoFabricacao(s("veiculo_ano_fabricacao"));
+    setVeiculoAnoModelo(s("veiculo_ano_modelo"));
+    setVeiculoPlaca(s("veiculo_placa"));
+    setVeiculoChassi(s("veiculo_chassi"));
+    setVeiculoRenavam(s("veiculo_renavam"));
+    setVeiculoKmAtual(s("veiculo_km_atual"));
+    setVeiculoCor(s("veiculo_cor"));
+    setVeiculoCombustivel(s("veiculo_combustivel"));
+    setValorMinimoVenda(s("valor_minimo_venda"));
+    setPercentualComissao(s("percentual_comissao"));
+    setDataInicio(s("data_inicio"));
+    setDataFinal(s("data_final"));
+    setTaxaRetirada(s("taxa_retirada"));
+    setVistoriaPintura(s("vistoria_pintura"));
+    setVistoriaPneus(s("vistoria_pneus"));
+    setVistoriaInterior(s("vistoria_interior"));
+    setObservacoesVistoria(s("observacoes_vistoria"));
+    setCidadeForo(s("cidade_foro"));
+    setDataAssinatura(s("data_assinatura"));
+    setStatus(s("status") || "ativo");
+
+    setHeaderTitle(`${s("veiculo_marca")} ${s("veiculo_modelo")}`.trim());
     setPhotos(Array.isArray(consignment_photos) ? consignment_photos : []);
     setLoading(false);
   }, [id, router]);
@@ -104,55 +159,56 @@ export default function ConsignacaoDetailPage() {
       const r = await fetch(`https://viacep.com.br/ws/${digits}/json/`);
       const d = await r.json();
       if (!d.erro) {
-        const end = [d.logradouro, d.complemento, d.bairro, `${d.localidade} - ${d.uf}`, `CEP: ${digits.replace(/(\d{5})(\d{3})/, "$1-$2")}`].filter(Boolean).join(", ");
-        setForm(prev => ({ ...prev, proprietario_endereco: end }));
+        const end = [d.logradouro, d.complemento, d.bairro, `${d.localidade} - ${d.uf}`,
+          `CEP: ${digits.replace(/(\d{5})(\d{3})/, "$1-$2")}`].filter(Boolean).join(", ");
+        setProprietarioEndereco(end);
       }
     } finally { setCepLoading(false); }
   }, []);
 
-  async function handleSave() {
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
     setErr(null); setSaving(true); setSaved(false);
     try {
-      const f = form;
       const num = (v: string) => v ? parseFloat(v.replace(/\./g, "").replace(",", ".")) : null;
       const int = (v: string) => v ? parseInt(v) : null;
       const payload = {
-        proprietario_nome: f.proprietario_nome || null,
-        proprietario_nacionalidade: f.proprietario_nacionalidade || null,
-        proprietario_estado_civil: f.proprietario_estado_civil || null,
-        proprietario_profissao: f.proprietario_profissao || null,
-        proprietario_rg: f.proprietario_rg || null,
-        proprietario_cpf_cnpj: f.proprietario_cpf_cnpj || null,
-        proprietario_endereco: f.proprietario_endereco || null,
-        proprietario_telefone: f.proprietario_telefone || null,
-        proprietario_email: f.proprietario_email || null,
-        loja_razao_social: f.loja_razao_social || null,
-        loja_nome_fantasia: f.loja_nome_fantasia || null,
-        loja_cnpj: f.loja_cnpj || null,
-        loja_responsavel: f.loja_responsavel || null,
-        veiculo_marca: f.veiculo_marca || null,
-        veiculo_modelo: f.veiculo_modelo || null,
-        veiculo_versao: f.veiculo_versao || null,
-        veiculo_ano_fabricacao: int(f.veiculo_ano_fabricacao),
-        veiculo_ano_modelo: int(f.veiculo_ano_modelo),
-        veiculo_placa: f.veiculo_placa || null,
-        veiculo_chassi: f.veiculo_chassi || null,
-        veiculo_renavam: f.veiculo_renavam || null,
-        veiculo_cor: f.veiculo_cor || null,
-        veiculo_combustivel: f.veiculo_combustivel || null,
-        veiculo_km_atual: int(f.veiculo_km_atual),
-        valor_minimo_venda: num(f.valor_minimo_venda),
-        percentual_comissao: num(f.percentual_comissao),
-        taxa_retirada: num(f.taxa_retirada),
-        data_inicio: f.data_inicio || null,
-        data_final: f.data_final || null,
-        data_assinatura: f.data_assinatura || null,
-        vistoria_pintura: f.vistoria_pintura || null,
-        vistoria_pneus: f.vistoria_pneus || null,
-        vistoria_interior: f.vistoria_interior || null,
-        observacoes_vistoria: f.observacoes_vistoria || null,
-        cidade_foro: f.cidade_foro || null,
-        status: f.status || "ativo",
+        proprietario_nome:          proprietarioNome          || null,
+        proprietario_nacionalidade: proprietarioNacionalidade || null,
+        proprietario_estado_civil:  proprietarioEstadoCivil   || null,
+        proprietario_profissao:     proprietarioProfissao     || null,
+        proprietario_rg:            proprietarioRg            || null,
+        proprietario_cpf_cnpj:      proprietarioCpfCnpj       || null,
+        proprietario_endereco:      proprietarioEndereco      || null,
+        proprietario_telefone:      proprietarioTelefone      || null,
+        proprietario_email:         proprietarioEmail         || null,
+        loja_razao_social:          lojaRazaoSocial           || null,
+        loja_nome_fantasia:         lojaNomeFantasia          || null,
+        loja_cnpj:                  lojaCnpj                  || null,
+        loja_responsavel:           lojaResponsavel           || null,
+        veiculo_marca:              veiculoMarca              || null,
+        veiculo_modelo:             veiculoModelo             || null,
+        veiculo_versao:             veiculoVersao             || null,
+        veiculo_ano_fabricacao:     int(veiculoAnoFabricacao),
+        veiculo_ano_modelo:         int(veiculoAnoModelo),
+        veiculo_placa:              veiculoPlaca              || null,
+        veiculo_chassi:             veiculoChassi             || null,
+        veiculo_renavam:            veiculoRenavam            || null,
+        veiculo_cor:                veiculoCor                || null,
+        veiculo_combustivel:        veiculoCombustivel        || null,
+        veiculo_km_atual:           int(veiculoKmAtual),
+        valor_minimo_venda:         num(valorMinimoVenda),
+        percentual_comissao:        num(percentualComissao),
+        taxa_retirada:              num(taxaRetirada),
+        data_inicio:                dataInicio    || null,
+        data_final:                 dataFinal     || null,
+        data_assinatura:            dataAssinatura|| null,
+        vistoria_pintura:           vistoriaPintura   || null,
+        vistoria_pneus:             vistoriaPneus     || null,
+        vistoria_interior:          vistoriaInterior  || null,
+        observacoes_vistoria:       observacoesVistoria|| null,
+        cidade_foro:                cidadeForo    || null,
+        status:                     status        || "ativo",
       };
       const r = await fetch(`/api/consignacao/${id}`, {
         method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
@@ -201,13 +257,6 @@ export default function ConsignacaoDetailPage() {
     router.push("/consignacao");
   }
 
-  const sel = (field: keyof typeof INIT, options: string[]) => (
-    <select value={form[field]} onChange={set(field)} style={{ ...inp, appearance: "none" }}>
-      <option value="">— Selecione —</option>
-      {options.map(o => <option key={o} value={o}>{o}</option>)}
-    </select>
-  );
-
   if (loading) return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "60vh" }}>
       <div style={{ width: 36, height: 36, borderRadius: "50%", border: "3px solid #dc2626", borderTopColor: "transparent", animation: "spin 0.8s linear infinite" }} />
@@ -215,7 +264,7 @@ export default function ConsignacaoDetailPage() {
     </div>
   );
 
-  const cfg = STATUS_CFG[form.status] ?? STATUS_CFG.ativo;
+  const cfg = STATUS_CFG[status] ?? STATUS_CFG.ativo;
 
   return (
     <div style={{ padding: "28px 24px", maxWidth: 860, margin: "0 auto" }}>
@@ -223,7 +272,7 @@ export default function ConsignacaoDetailPage() {
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <button onClick={() => router.push("/consignacao")}
+          <button type="button" onClick={() => router.push("/consignacao")}
             style={{ background: "transparent", border: "1px solid #333", borderRadius: 8, padding: "6px 14px", color: "#9ca3af", cursor: "pointer", fontSize: 13 }}>
             ← Voltar
           </button>
@@ -237,206 +286,326 @@ export default function ConsignacaoDetailPage() {
           </div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={() => window.open(`/consignacao/${id}/imprimir`, "_blank")}
+          <button type="button" onClick={() => window.open(`/consignacao/${id}/imprimir`, "_blank")}
             style={{ background: "transparent", border: "1px solid #374151", borderRadius: 8, padding: "6px 14px", color: "#9ca3af", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
             🖨 Imprimir
           </button>
-          <button onClick={handleDelete}
+          <button type="button" onClick={handleDelete}
             style={{ background: "#7f1d1d20", border: "1px solid #7f1d1d", borderRadius: 8, padding: "6px 14px", color: "#fca5a5", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
             🗑 Excluir
           </button>
         </div>
       </div>
 
-      {/* 1. Proprietário */}
-      <div style={sec}>
-        <p style={stl}>1. Consignante — Proprietário</p>
-        <div style={{ ...g2, marginBottom: 12 }}>
-          <div><label style={lbl}>Nome / Razão Social</label><input value={form.proprietario_nome} onChange={set("proprietario_nome")} style={inp} /></div>
-          <div><label style={lbl}>Telefone</label><input value={form.proprietario_telefone} onChange={set("proprietario_telefone")} style={inp} placeholder="(00) 00000-0000" /></div>
-        </div>
-        <div style={{ ...g3, marginBottom: 12 }}>
-          <div><label style={lbl}>Nacionalidade</label><input value={form.proprietario_nacionalidade} onChange={set("proprietario_nacionalidade")} style={inp} /></div>
-          <div><label style={lbl}>Estado Civil</label>{sel("proprietario_estado_civil", EC)}</div>
-          <div><label style={lbl}>Profissão</label><input value={form.proprietario_profissao} onChange={set("proprietario_profissao")} style={inp} /></div>
-        </div>
-        <div style={{ ...g3, marginBottom: 12 }}>
-          <div><label style={lbl}>RG</label><input value={form.proprietario_rg} onChange={set("proprietario_rg")} style={inp} /></div>
-          <div><label style={lbl}>CPF / CNPJ</label><input value={form.proprietario_cpf_cnpj} onChange={set("proprietario_cpf_cnpj")} style={inp} /></div>
-          <div><label style={lbl}>E-mail</label><input type="email" value={form.proprietario_email} onChange={set("proprietario_email")} style={inp} /></div>
-        </div>
-        <div style={{ marginBottom: 12 }}>
-          <label style={lbl}>CEP {cepLoading && <span style={{ color: "#6b7280", fontWeight: 400 }}>buscando...</span>}</label>
-          <input value={cep} onChange={e => lookupCep(e.target.value)} maxLength={9} style={inp} placeholder="00000-000" />
-        </div>
-        <div>
-          <label style={lbl}>Endereço completo</label>
-          <textarea value={form.proprietario_endereco} onChange={set("proprietario_endereco")} rows={3} style={{ ...inp, resize: "vertical" }} />
-        </div>
-      </div>
+      <form onSubmit={handleSave}>
 
-      {/* 2. Loja */}
-      <div style={sec}>
-        <p style={stl}>2. Consignatária — Loja</p>
-        <div style={{ ...g2, marginBottom: 12 }}>
-          <div><label style={lbl}>Razão Social</label><input value={form.loja_razao_social} onChange={set("loja_razao_social")} style={inp} /></div>
-          <div><label style={lbl}>Nome Fantasia</label><input value={form.loja_nome_fantasia} onChange={set("loja_nome_fantasia")} style={inp} /></div>
-        </div>
-        <div style={g2}>
-          <div><label style={lbl}>CNPJ</label><input value={form.loja_cnpj} onChange={set("loja_cnpj")} style={inp} /></div>
-          <div><label style={lbl}>Representante Legal</label><input value={form.loja_responsavel} onChange={set("loja_responsavel")} style={inp} /></div>
-        </div>
-      </div>
-
-      {/* 3. Veículo */}
-      <div style={sec}>
-        <p style={stl}>3. Dados do Veículo</p>
-        <div style={{ ...g3, marginBottom: 12 }}>
-          <div><label style={lbl}>Marca</label><input value={form.veiculo_marca} onChange={set("veiculo_marca")} style={inp} /></div>
-          <div><label style={lbl}>Modelo</label><input value={form.veiculo_modelo} onChange={set("veiculo_modelo")} style={inp} /></div>
-          <div><label style={lbl}>Versão</label><input value={form.veiculo_versao} onChange={set("veiculo_versao")} style={inp} /></div>
-        </div>
-        <div style={{ ...g3, marginBottom: 12 }}>
-          <div><label style={lbl}>Ano Fabricação</label><input type="number" value={form.veiculo_ano_fabricacao} onChange={set("veiculo_ano_fabricacao")} style={inp} /></div>
-          <div><label style={lbl}>Ano Modelo</label><input type="number" value={form.veiculo_ano_modelo} onChange={set("veiculo_ano_modelo")} style={inp} /></div>
-          <div><label style={lbl}>Placa</label><input value={form.veiculo_placa} onChange={set("veiculo_placa")} style={inp} /></div>
-        </div>
-        <div style={{ ...g3, marginBottom: 12 }}>
-          <div><label style={lbl}>Chassi</label><input value={form.veiculo_chassi} onChange={set("veiculo_chassi")} style={inp} /></div>
-          <div><label style={lbl}>Renavam</label><input value={form.veiculo_renavam} onChange={set("veiculo_renavam")} style={inp} /></div>
-          <div><label style={lbl}>Quilometragem</label><input type="number" value={form.veiculo_km_atual} onChange={set("veiculo_km_atual")} style={inp} /></div>
-        </div>
-        <div style={g2}>
-          <div><label style={lbl}>Cor</label><input value={form.veiculo_cor} onChange={set("veiculo_cor")} style={inp} /></div>
-          <div><label style={lbl}>Combustível</label>{sel("veiculo_combustivel", COMB)}</div>
-        </div>
-      </div>
-
-      {/* 4. Valor */}
-      <div style={sec}>
-        <p style={stl}>4. Valor e Comissão</p>
-        <div style={g2}>
-          <div><label style={lbl}>Valor mínimo de venda (R$)</label><input value={form.valor_minimo_venda} onChange={set("valor_minimo_venda")} style={inp} /></div>
-          <div><label style={lbl}>Comissão da loja (%)</label><input type="number" value={form.percentual_comissao} onChange={set("percentual_comissao")} style={inp} /></div>
-        </div>
-      </div>
-
-      {/* 5. Prazo */}
-      <div style={sec}>
-        <p style={stl}>5. Prazo</p>
-        <div style={g3}>
-          <div><label style={lbl}>Data de início</label><input type="date" value={form.data_inicio} onChange={set("data_inicio")} style={inp} /></div>
-          <div><label style={lbl}>Data final</label><input type="date" value={form.data_final} onChange={set("data_final")} style={inp} /></div>
-          <div><label style={lbl}>Taxa retirada antecipada (R$)</label><input value={form.taxa_retirada} onChange={set("taxa_retirada")} style={inp} /></div>
-        </div>
-      </div>
-
-      {/* 6. Vistoria */}
-      <div style={sec}>
-        <p style={stl}>6. Vistoria</p>
-        <div style={{ ...g3, marginBottom: 12 }}>
-          <div><label style={lbl}>Pintura</label>{sel("vistoria_pintura", COND)}</div>
-          <div><label style={lbl}>Pneus</label>{sel("vistoria_pneus", COND)}</div>
-          <div><label style={lbl}>Interior</label>{sel("vistoria_interior", COND)}</div>
-        </div>
-        <div>
-          <label style={lbl}>Observações</label>
-          <textarea value={form.observacoes_vistoria} onChange={set("observacoes_vistoria")} rows={3} style={{ ...inp, resize: "vertical" }} placeholder="Detalhes do estado do veículo..." />
-        </div>
-
-        {/* Fotos */}
-        <div style={{ marginTop: 24 }}>
-          <p style={{ ...stl, marginBottom: 12 }}>Fotos de Vistoria ({photos.length})</p>
-          <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap", alignItems: "flex-end" }}>
-            <div style={{ flex: 1, minWidth: 180 }}>
-              <label style={lbl}>Label para novas fotos</label>
-              <input value={newLabel} onChange={e => setNewLabel(e.target.value)} style={inp} placeholder="Ex: Frente, Motor, Interior..." />
+        {/* 1. Proprietário */}
+        <div style={sec}>
+          <p style={stl}>1. Consignante — Proprietário</p>
+          <div style={{ ...g2, marginBottom: 12 }}>
+            <div>
+              <label style={lbl}>Nome / Razão Social</label>
+              <input value={proprietarioNome} onChange={e => setProprietarioNome(e.target.value)} style={inp} />
             </div>
-            <button onClick={() => fileRef.current?.click()} disabled={uploading}
-              style={{ padding: "10px 18px", borderRadius: 10, border: "1px dashed #555", background: "transparent", color: uploading ? "#555" : "#9ca3af", cursor: uploading ? "not-allowed" : "pointer", fontSize: 14, fontWeight: 600, whiteSpace: "nowrap" }}>
-              {uploading ? "Enviando..." : "📷 Adicionar Fotos"}
-            </button>
-            <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: "none" }}
-              onChange={e => e.target.files && handleUpload(e.target.files)} />
+            <div>
+              <label style={lbl}>Telefone</label>
+              <input value={proprietarioTelefone} onChange={e => setProprietarioTelefone(e.target.value)} style={inp} placeholder="(00) 00000-0000" />
+            </div>
           </div>
-          {photos.length === 0 ? (
-            <div style={{ border: "2px dashed #2e2e2e", borderRadius: 12, padding: "32px", textAlign: "center", color: "#4b5563" }}>
-              <div style={{ fontSize: 32, marginBottom: 8 }}>📸</div>
-              <p style={{ fontSize: 13 }}>Nenhuma foto adicionada ainda.</p>
+          <div style={{ ...g3, marginBottom: 12 }}>
+            <div>
+              <label style={lbl}>Nacionalidade</label>
+              <input value={proprietarioNacionalidade} onChange={e => setProprietarioNacionalidade(e.target.value)} style={inp} />
             </div>
-          ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 12 }}>
-              {photos.map(ph => (
-                <div key={ph.id} style={{ background: "#111", borderRadius: 12, overflow: "hidden", border: "1px solid #2e2e2e" }}>
-                  <div style={{ position: "relative", height: 120 }}>
-                    <img src={ph.url} alt={ph.label} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                    <button onClick={() => handleDeletePhoto(ph.id)} disabled={deleting === ph.id}
-                      style={{ position: "absolute", top: 6, right: 6, width: 24, height: 24, borderRadius: "50%", background: "#dc262290", border: "none", color: "#fff", cursor: "pointer", fontSize: 12, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                      {deleting === ph.id ? "…" : "✕"}
-                    </button>
-                  </div>
-                  <div style={{ padding: "8px 10px" }}>
-                    {editingLabel?.id === ph.id ? (
-                      <div style={{ display: "flex", gap: 4 }}>
-                        <input value={editingLabel.val} onChange={e => setEditingLabel({ id: ph.id, val: e.target.value })}
-                          style={{ ...inp, fontSize: 11, padding: "4px 8px", flex: 1 }} />
-                        <button onClick={() => handleSaveLabel(ph.id, editingLabel.val)}
-                          style={{ background: "#10b981", border: "none", borderRadius: 6, color: "#fff", padding: "4px 8px", cursor: "pointer", fontSize: 11 }}>✓</button>
-                      </div>
-                    ) : (
-                      <p onClick={() => setEditingLabel({ id: ph.id, val: ph.label })}
-                        style={{ fontSize: 11, color: "#9ca3af", margin: 0, cursor: "pointer", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}
-                        title="Clique para editar">✏ {ph.label}</p>
-                    )}
-                  </div>
-                </div>
-              ))}
+            <div>
+              <label style={lbl}>Estado Civil</label>
+              <select value={proprietarioEstadoCivil} onChange={e => setProprietarioEstadoCivil(e.target.value)} style={{ ...inp, appearance: "none" }}>
+                <option value="">— Selecione —</option>
+                {EC.map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
             </div>
-          )}
+            <div>
+              <label style={lbl}>Profissão</label>
+              <input value={proprietarioProfissao} onChange={e => setProprietarioProfissao(e.target.value)} style={inp} />
+            </div>
+          </div>
+          <div style={{ ...g3, marginBottom: 12 }}>
+            <div>
+              <label style={lbl}>RG</label>
+              <input value={proprietarioRg} onChange={e => setProprietarioRg(e.target.value)} style={inp} />
+            </div>
+            <div>
+              <label style={lbl}>CPF / CNPJ</label>
+              <input value={proprietarioCpfCnpj} onChange={e => setProprietarioCpfCnpj(e.target.value)} style={inp} />
+            </div>
+            <div>
+              <label style={lbl}>E-mail</label>
+              <input type="email" value={proprietarioEmail} onChange={e => setProprietarioEmail(e.target.value)} style={inp} />
+            </div>
+          </div>
+          <div style={{ marginBottom: 12 }}>
+            <label style={lbl}>CEP {cepLoading && <span style={{ color: "#6b7280", fontWeight: 400 }}>buscando...</span>}</label>
+            <input value={cep} onChange={e => lookupCep(e.target.value)} maxLength={9} style={inp} placeholder="00000-000" />
+          </div>
+          <div>
+            <label style={lbl}>Endereço completo</label>
+            <textarea value={proprietarioEndereco} onChange={e => setProprietarioEndereco(e.target.value)} rows={3}
+              style={{ ...inp, resize: "vertical" }} />
+          </div>
         </div>
-      </div>
 
-      {/* 7. Foro */}
-      <div style={sec}>
-        <p style={stl}>7. Foro e Assinatura</p>
-        <div style={g2}>
-          <div><label style={lbl}>Cidade do Foro</label><input value={form.cidade_foro} onChange={set("cidade_foro")} style={inp} /></div>
-          <div><label style={lbl}>Data de assinatura</label><input type="date" value={form.data_assinatura} onChange={set("data_assinatura")} style={inp} /></div>
+        {/* 2. Loja */}
+        <div style={sec}>
+          <p style={stl}>2. Consignatária — Loja</p>
+          <div style={{ ...g2, marginBottom: 12 }}>
+            <div>
+              <label style={lbl}>Razão Social</label>
+              <input value={lojaRazaoSocial} onChange={e => setLojaRazaoSocial(e.target.value)} style={inp} />
+            </div>
+            <div>
+              <label style={lbl}>Nome Fantasia</label>
+              <input value={lojaNomeFantasia} onChange={e => setLojaNomeFantasia(e.target.value)} style={inp} />
+            </div>
+          </div>
+          <div style={g2}>
+            <div>
+              <label style={lbl}>CNPJ</label>
+              <input value={lojaCnpj} onChange={e => setLojaCnpj(e.target.value)} style={inp} />
+            </div>
+            <div>
+              <label style={lbl}>Representante Legal</label>
+              <input value={lojaResponsavel} onChange={e => setLojaResponsavel(e.target.value)} style={inp} />
+            </div>
+          </div>
         </div>
-      </div>
 
-      {/* Status */}
-      <div style={sec}>
-        <p style={stl}>Status do Contrato</p>
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          {["ativo", "vendido", "retirado", "vencido"].map(s => (
-            <button key={s} onClick={() => setForm(prev => ({ ...prev, status: s }))}
-              style={{
-                padding: "8px 18px", borderRadius: 20, border: "1px solid",
-                borderColor: form.status === s ? "#dc2626" : "#2e2e2e",
-                background: form.status === s ? "#dc262620" : "transparent",
-                color: form.status === s ? "#f87171" : "#9ca3af",
-                fontWeight: 700, fontSize: 13, cursor: "pointer", textTransform: "capitalize",
-              }}>
-              {s}
-            </button>
-          ))}
+        {/* 3. Veículo */}
+        <div style={sec}>
+          <p style={stl}>3. Dados do Veículo</p>
+          <div style={{ ...g3, marginBottom: 12 }}>
+            <div>
+              <label style={lbl}>Marca</label>
+              <input value={veiculoMarca} onChange={e => setVeiculoMarca(e.target.value)} style={inp} />
+            </div>
+            <div>
+              <label style={lbl}>Modelo</label>
+              <input value={veiculoModelo} onChange={e => setVeiculoModelo(e.target.value)} style={inp} />
+            </div>
+            <div>
+              <label style={lbl}>Versão</label>
+              <input value={veiculoVersao} onChange={e => setVeiculoVersao(e.target.value)} style={inp} />
+            </div>
+          </div>
+          <div style={{ ...g3, marginBottom: 12 }}>
+            <div>
+              <label style={lbl}>Ano Fabricação</label>
+              <input type="number" value={veiculoAnoFabricacao} onChange={e => setVeiculoAnoFabricacao(e.target.value)} style={inp} />
+            </div>
+            <div>
+              <label style={lbl}>Ano Modelo</label>
+              <input type="number" value={veiculoAnoModelo} onChange={e => setVeiculoAnoModelo(e.target.value)} style={inp} />
+            </div>
+            <div>
+              <label style={lbl}>Placa</label>
+              <input value={veiculoPlaca} onChange={e => setVeiculoPlaca(e.target.value)} style={inp} />
+            </div>
+          </div>
+          <div style={{ ...g3, marginBottom: 12 }}>
+            <div>
+              <label style={lbl}>Chassi</label>
+              <input value={veiculoChassi} onChange={e => setVeiculoChassi(e.target.value)} style={inp} />
+            </div>
+            <div>
+              <label style={lbl}>Renavam</label>
+              <input value={veiculoRenavam} onChange={e => setVeiculoRenavam(e.target.value)} style={inp} />
+            </div>
+            <div>
+              <label style={lbl}>Quilometragem</label>
+              <input type="number" value={veiculoKmAtual} onChange={e => setVeiculoKmAtual(e.target.value)} style={inp} />
+            </div>
+          </div>
+          <div style={g2}>
+            <div>
+              <label style={lbl}>Cor</label>
+              <input value={veiculoCor} onChange={e => setVeiculoCor(e.target.value)} style={inp} />
+            </div>
+            <div>
+              <label style={lbl}>Combustível</label>
+              <select value={veiculoCombustivel} onChange={e => setVeiculoCombustivel(e.target.value)} style={{ ...inp, appearance: "none" }}>
+                <option value="">— Selecione —</option>
+                {COMB.map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
+          </div>
         </div>
-      </div>
 
-      {err   && <p style={{ color: "#ef4444", fontSize: 13, marginBottom: 12 }}>⚠ {err}</p>}
-      {saved && <p style={{ color: "#10b981", fontSize: 13, marginBottom: 12 }}>✓ Contrato salvo com sucesso!</p>}
+        {/* 4. Valor */}
+        <div style={sec}>
+          <p style={stl}>4. Valor e Comissão</p>
+          <div style={g2}>
+            <div>
+              <label style={lbl}>Valor mínimo de venda (R$)</label>
+              <input value={valorMinimoVenda} onChange={e => setValorMinimoVenda(e.target.value)} style={inp} />
+            </div>
+            <div>
+              <label style={lbl}>Comissão da loja (%)</label>
+              <input type="number" value={percentualComissao} onChange={e => setPercentualComissao(e.target.value)} style={inp} />
+            </div>
+          </div>
+        </div>
 
-      <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
-        <button onClick={() => router.push("/consignacao")}
-          style={{ padding: "12px 24px", borderRadius: 10, border: "1px solid #333", background: "transparent", color: "#9ca3af", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
-          Cancelar
-        </button>
-        <button onClick={handleSave} disabled={saving}
-          style={{ padding: "12px 28px", borderRadius: 10, border: "none", background: saving ? "#444" : "#dc2626", color: "#fff", fontWeight: 700, fontSize: 14, cursor: saving ? "not-allowed" : "pointer" }}>
-          {saving ? "Salvando..." : "Salvar Alterações"}
-        </button>
-      </div>
+        {/* 5. Prazo */}
+        <div style={sec}>
+          <p style={stl}>5. Prazo</p>
+          <div style={g3}>
+            <div>
+              <label style={lbl}>Data de início</label>
+              <input type="date" value={dataInicio} onChange={e => setDataInicio(e.target.value)} style={inp} />
+            </div>
+            <div>
+              <label style={lbl}>Data final</label>
+              <input type="date" value={dataFinal} onChange={e => setDataFinal(e.target.value)} style={inp} />
+            </div>
+            <div>
+              <label style={lbl}>Taxa retirada antecipada (R$)</label>
+              <input value={taxaRetirada} onChange={e => setTaxaRetirada(e.target.value)} style={inp} />
+            </div>
+          </div>
+        </div>
+
+        {/* 6. Vistoria */}
+        <div style={sec}>
+          <p style={stl}>6. Vistoria</p>
+          <div style={{ ...g3, marginBottom: 12 }}>
+            <div>
+              <label style={lbl}>Pintura</label>
+              <select value={vistoriaPintura} onChange={e => setVistoriaPintura(e.target.value)} style={{ ...inp, appearance: "none" }}>
+                <option value="">— Selecione —</option>
+                {COND.map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={lbl}>Pneus</label>
+              <select value={vistoriaPneus} onChange={e => setVistoriaPneus(e.target.value)} style={{ ...inp, appearance: "none" }}>
+                <option value="">— Selecione —</option>
+                {COND.map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={lbl}>Interior</label>
+              <select value={vistoriaInterior} onChange={e => setVistoriaInterior(e.target.value)} style={{ ...inp, appearance: "none" }}>
+                <option value="">— Selecione —</option>
+                {COND.map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
+          </div>
+          <div style={{ marginBottom: 24 }}>
+            <label style={lbl}>Observações</label>
+            <textarea value={observacoesVistoria} onChange={e => setObservacoesVistoria(e.target.value)} rows={3}
+              style={{ ...inp, resize: "vertical" }} placeholder="Detalhes do estado do veículo..." />
+          </div>
+
+          {/* Fotos */}
+          <div>
+            <p style={{ ...stl, marginBottom: 12 }}>Fotos de Vistoria ({photos.length})</p>
+            <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap", alignItems: "flex-end" }}>
+              <div style={{ flex: 1, minWidth: 180 }}>
+                <label style={lbl}>Label para novas fotos</label>
+                <input value={newLabel} onChange={e => setNewLabel(e.target.value)} style={inp} placeholder="Ex: Frente, Motor, Interior..." />
+              </div>
+              <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading}
+                style={{ padding: "10px 18px", borderRadius: 10, border: "1px dashed #555", background: "transparent", color: uploading ? "#555" : "#9ca3af", cursor: uploading ? "not-allowed" : "pointer", fontSize: 14, fontWeight: 600, whiteSpace: "nowrap" }}>
+                {uploading ? "Enviando..." : "📷 Adicionar Fotos"}
+              </button>
+              <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: "none" }}
+                onChange={e => e.target.files && handleUpload(e.target.files)} />
+            </div>
+            {photos.length === 0 ? (
+              <div style={{ border: "2px dashed #2e2e2e", borderRadius: 12, padding: "32px", textAlign: "center", color: "#4b5563" }}>
+                <div style={{ fontSize: 32, marginBottom: 8 }}>📸</div>
+                <p style={{ fontSize: 13 }}>Nenhuma foto adicionada ainda.</p>
+              </div>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 12 }}>
+                {photos.map(ph => (
+                  <div key={ph.id} style={{ background: "#111", borderRadius: 12, overflow: "hidden", border: "1px solid #2e2e2e" }}>
+                    <div style={{ position: "relative", height: 120 }}>
+                      <img src={ph.url} alt={ph.label} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      <button type="button" onClick={() => handleDeletePhoto(ph.id)} disabled={deleting === ph.id}
+                        style={{ position: "absolute", top: 6, right: 6, width: 24, height: 24, borderRadius: "50%", background: "#dc262290", border: "none", color: "#fff", cursor: "pointer", fontSize: 12, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        {deleting === ph.id ? "…" : "✕"}
+                      </button>
+                    </div>
+                    <div style={{ padding: "8px 10px" }}>
+                      {editingLabel?.id === ph.id ? (
+                        <div style={{ display: "flex", gap: 4 }}>
+                          <input value={editingLabel.val} onChange={e => setEditingLabel({ id: ph.id, val: e.target.value })}
+                            style={{ ...inp, fontSize: 11, padding: "4px 8px", flex: 1 }} />
+                          <button type="button" onClick={() => handleSaveLabel(ph.id, editingLabel.val)}
+                            style={{ background: "#10b981", border: "none", borderRadius: 6, color: "#fff", padding: "4px 8px", cursor: "pointer", fontSize: 11 }}>✓</button>
+                        </div>
+                      ) : (
+                        <p onClick={() => setEditingLabel({ id: ph.id, val: ph.label })}
+                          style={{ fontSize: 11, color: "#9ca3af", margin: 0, cursor: "pointer", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}
+                          title="Clique para editar">✏ {ph.label}</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* 7. Foro */}
+        <div style={sec}>
+          <p style={stl}>7. Foro e Assinatura</p>
+          <div style={g2}>
+            <div>
+              <label style={lbl}>Cidade do Foro</label>
+              <input value={cidadeForo} onChange={e => setCidadeForo(e.target.value)} style={inp} />
+            </div>
+            <div>
+              <label style={lbl}>Data de assinatura</label>
+              <input type="date" value={dataAssinatura} onChange={e => setDataAssinatura(e.target.value)} style={inp} />
+            </div>
+          </div>
+        </div>
+
+        {/* Status */}
+        <div style={sec}>
+          <p style={stl}>Status do Contrato</p>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            {["ativo", "vendido", "retirado", "vencido"].map(s => (
+              <button type="button" key={s} onClick={() => setStatus(s)}
+                style={{
+                  padding: "8px 18px", borderRadius: 20, border: "1px solid",
+                  borderColor: status === s ? "#dc2626" : "#2e2e2e",
+                  background: status === s ? "#dc262620" : "transparent",
+                  color: status === s ? "#f87171" : "#9ca3af",
+                  fontWeight: 700, fontSize: 13, cursor: "pointer", textTransform: "capitalize",
+                }}>
+                {s}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {err   && <p style={{ color: "#ef4444", fontSize: 13, marginBottom: 12 }}>⚠ {err}</p>}
+        {saved && <p style={{ color: "#10b981", fontSize: 13, marginBottom: 12 }}>✓ Contrato salvo com sucesso!</p>}
+
+        <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
+          <button type="button" onClick={() => router.push("/consignacao")}
+            style={{ padding: "12px 24px", borderRadius: 10, border: "1px solid #333", background: "transparent", color: "#9ca3af", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
+            Cancelar
+          </button>
+          <button type="submit" disabled={saving}
+            style={{ padding: "12px 28px", borderRadius: 10, border: "none", background: saving ? "#444" : "#dc2626", color: "#fff", fontWeight: 700, fontSize: 14, cursor: saving ? "not-allowed" : "pointer" }}>
+            {saving ? "Salvando..." : "Salvar Alterações"}
+          </button>
+        </div>
+
+      </form>
     </div>
   );
 }

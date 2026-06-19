@@ -9,3 +9,4 @@ dist/
 .DS_Store
 tsconfig.tsbuildinfo
 .whatsapp-session/
+.vercel
