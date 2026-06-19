@@ -2,7 +2,7 @@
 
 import { usePathname } from "next/navigation";
 
-const NO_SHELL_PATHS = ["/login", "/pricing"];
+const NO_SHELL_PATHS = ["/login", "/pricing", "/consignacao/novo"];
 
 interface AppShellProps {
   children: React.ReactNode;
