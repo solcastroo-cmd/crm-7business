@@ -8,13 +8,14 @@ const FIELDS = [
   "fuel","transmission","body_type","doors","end_plate",
   "renavam","chassis","ipva_paid","single_owner","has_manual","has_key",
   "optional_items","description","status","user_id",
+  "publish_to_site","featured",
 ] as const;
 
 function buildPayload(body: Record<string, unknown>): Record<string, unknown> {
   const p: Record<string, unknown> = {};
   for (const f of FIELDS) {
     if (body[f] === undefined) continue;
-    if (["ipva_paid","single_owner","has_manual","has_key"].includes(f)) {
+    if (["ipva_paid","single_owner","has_manual","has_key","publish_to_site","featured"].includes(f)) {
       p[f] = Boolean(body[f]);
     } else if (f === "optional_items") {
       p[f] = Array.isArray(body[f]) ? body[f] : null;

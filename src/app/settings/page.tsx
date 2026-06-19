@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useId } from "react";
 import { getSupabaseBrowser } from "@/lib/supabaseBrowser";
 
 const supabase = getSupabaseBrowser();
@@ -437,6 +437,12 @@ export default function SettingsPage() {
   const [newSeller, setNewSeller] = useState("");
   const [plan,      setPlan]      = useState<string|null>(null);
 
+  /* logo */
+  const [logoUrl,       setLogoUrl]       = useState<string|null>(null);
+  const [logoUploading, setLogoUploading] = useState(false);
+  const [logoErr,       setLogoErr]       = useState<string|null>(null);
+  const logoInputId = useId();
+
   /* IA */
   const [aiEnabled,     setAiEnabled]     = useState(false);
   const [aiName,        setAiName]        = useState("Paulo");
@@ -453,6 +459,7 @@ export default function SettingsPage() {
     setNotifyPh(d.notify_phone ?? "");
     setSellers(Array.isArray(d.sellers) ? d.sellers : []);
     setPlan(d.plan ?? null);
+    setLogoUrl(d.logo_url ?? null);
     setAiEnabled(d.ai_enabled ?? false);
     setAiName(d.ai_name ?? "Paulo");
     setAiPersonality(d.ai_personality ?? "");
@@ -493,6 +500,28 @@ export default function SettingsPage() {
     finally { setSaving(false); }
   }
 
+  async function handleLogoUpload(file: File) {
+    if (!userId) return;
+    setLogoErr(null); setLogoUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("userId", userId);
+      const r = await fetch("/api/settings/logo", { method: "POST", body: fd });
+      const d = await r.json();
+      if (!r.ok) { setLogoErr(d.error ?? "Erro ao enviar imagem"); return; }
+      setLogoUrl(d.logo_url);
+    } catch { setLogoErr("Erro de rede"); }
+    finally { setLogoUploading(false); }
+  }
+
+  async function handleLogoRemove() {
+    if (!userId || !confirm("Remover a logo da loja?")) return;
+    setLogoUploading(true);
+    await fetch(`/api/settings/logo?userId=${userId}`, { method: "DELETE" });
+    setLogoUrl(null); setLogoUploading(false);
+  }
+
   function addSeller() {
     const n = newSeller.trim();
     if (!n || sellers.includes(n) || sellers.length >= 15) return;
@@ -526,6 +555,56 @@ export default function SettingsPage() {
           {/* ── Dados da loja ── */}
           <div style={card}>
             <p style={sectionTitle}>Dados da loja</p>
+
+            {/* Logo */}
+            <div style={{ marginBottom: 20 }}>
+              <label style={lbl}>Logo da empresa</label>
+              <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                {/* Preview */}
+                <div style={{
+                  width: 72, height: 72, borderRadius: 14, background: "#111",
+                  border: "1px solid #2e2e2e", flexShrink: 0, overflow: "hidden",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}>
+                  {logoUrl
+                    ? <img src={logoUrl} alt="Logo" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    : <span style={{ fontSize: 28, color: "#333" }}>🏪</span>
+                  }
+                </div>
+
+                <div style={{ flex: 1 }}>
+                  <input
+                    id={logoInputId}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    style={{ display: "none" }}
+                    onChange={e => { const f = e.target.files?.[0]; if (f) handleLogoUpload(f); e.target.value = ""; }}
+                  />
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <label htmlFor={logoInputId}
+                      style={{
+                        padding: "8px 16px", borderRadius: 10, border: "1px solid #374151",
+                        background: "transparent", color: logoUploading ? "#555" : "#9ca3af",
+                        fontSize: 13, fontWeight: 600, cursor: logoUploading ? "not-allowed" : "pointer",
+                        pointerEvents: logoUploading ? "none" : "auto",
+                      }}>
+                      {logoUploading ? "Enviando..." : logoUrl ? "Trocar logo" : "📁 Enviar logo"}
+                    </label>
+                    {logoUrl && !logoUploading && (
+                      <button type="button" onClick={handleLogoRemove}
+                        style={{ padding: "8px 14px", borderRadius: 10, border: "1px solid #7f1d1d", background: "transparent", color: "#fca5a5", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                        Remover
+                      </button>
+                    )}
+                  </div>
+                  <p style={{ color: "#444", fontSize: 11, marginTop: 6, marginBottom: 0 }}>
+                    PNG, JPG ou WebP · máx. 2 MB · aparece na barra lateral do CRM
+                  </p>
+                  {logoErr && <p style={{ color: "#f87171", fontSize: 12, marginTop: 4 }}>{logoErr}</p>}
+                </div>
+              </div>
+            </div>
+
             {field("Nome da loja", bizName, setBizName, "Auto Prime Fortaleza")}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               {field("CNPJ", cnpj, setCnpj, "00.000.000/0001-00")}
