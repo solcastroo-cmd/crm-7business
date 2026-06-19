@@ -2,7 +2,8 @@
 
 import { usePathname } from "next/navigation";
 
-const NO_SHELL_PATHS = ["/login", "/pricing", "/consignacao/novo"];
+const NO_SHELL_PATHS = ["/login", "/pricing"];
+const NO_BANNER_PATHS = ["/consignacao/novo"];
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -22,11 +23,13 @@ export function AppShell({ children, sidebar, banner }: AppShellProps) {
     return <>{children}</>;
   }
 
+  const hideBanner = NO_BANNER_PATHS.some(p => pathname.startsWith(p));
+
   return (
     <div className="flex min-h-screen">
       {sidebar}
       <div className="flex-1 min-w-0 flex flex-col">
-        {banner}
+        {hideBanner ? null : banner}
         {children}
       </div>
     </div>
