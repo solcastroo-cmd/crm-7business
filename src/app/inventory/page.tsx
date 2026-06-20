@@ -26,7 +26,15 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }
   vendido:    { label: "Vendido",    color: "#6366f1", bg: "#ede9fe" },
 };
 
-const BRANDS = ["Toyota","Honda","Volkswagen","Chevrolet","Ford","Fiat","Hyundai","Nissan","Jeep","Renault","Mitsubishi","BMW","Mercedes-Benz","Audi","Outros"];
+const BRANDS = [
+  // Tradicionais
+  "Toyota","Honda","Volkswagen","Chevrolet","Ford","Fiat","Hyundai","Nissan",
+  "Jeep","Renault","Mitsubishi","BMW","Mercedes-Benz","Audi",
+  // Elétricas e Híbridas
+  "BYD","Volvo","Kia","GWM","Lexus","Peugeot","Citroën",
+  "Porsche","Land Rover","Mini","Chery","Caoa Chery","JAC",
+  "Outros",
+];
 
 const EMPTY: Omit<Vehicle,"id"|"created_at"|"photos"> = {
   brand:"",model:"",year: new Date().getFullYear(),plate:"",price:undefined,price_fipe:undefined,
