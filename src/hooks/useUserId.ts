@@ -11,7 +11,7 @@ export function useUserId() {
 
   useEffect(() => {
     const supabase = getSupabaseBrowser();
-    supabase.auth.getUser().then(({ data }) => {
+    supabase.auth.getUser().then(({ data }: Awaited<ReturnType<typeof supabase.auth.getUser>>) => {
       if (data?.user) {
         setUserId(data.user.id);
       } else {

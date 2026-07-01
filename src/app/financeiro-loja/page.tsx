@@ -219,7 +219,7 @@ export default function FinanceiroLojaPage() {
 
   /* ── auth ── */
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
+    supabase.auth.getUser().then(({ data }: Awaited<ReturnType<typeof supabase.auth.getUser>>) => {
       if (!data?.user) return;
       setUserId(data.user.id);
       fetch(`/api/settings?userId=${data.user.id}`)

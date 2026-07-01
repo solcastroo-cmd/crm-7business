@@ -45,7 +45,7 @@ export default function ConsignacaoPage() {
   const [filter, setFilter]       = useState("todos");
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
+    supabase.auth.getUser().then(({ data }: Awaited<ReturnType<typeof supabase.auth.getUser>>) => {
       if (!data?.user) { router.push("/login"); return; }
       setUserId(data.user.id);
       fetch(`/api/consignacao?userId=${data.user.id}`)

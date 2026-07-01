@@ -52,7 +52,7 @@ export default function AdminPage() {
   const [search, setSearch]   = useState("");
 
   useEffect(() => {
-    supabase.auth.getUser().then(async ({ data }) => {
+    supabase.auth.getUser().then(async ({ data }: Awaited<ReturnType<typeof supabase.auth.getUser>>) => {
       if (!data?.user) { router.push("/login"); return; }
       setUserId(data.user.id);
       const r = await fetch(`/api/admin/users?userId=${data.user.id}`);

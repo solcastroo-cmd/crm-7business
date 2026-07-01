@@ -64,7 +64,7 @@ export default function ConsignacaoDetailPage() {
   }, [id, router]);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
+    supabase.auth.getUser().then(({ data }: Awaited<ReturnType<typeof supabase.auth.getUser>>) => {
       if (!data?.user) { router.push("/login"); return; }
       setUserId(data.user.id);
       load();

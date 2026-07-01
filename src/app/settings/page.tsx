@@ -466,7 +466,7 @@ export default function SettingsPage() {
   }, []);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
+    supabase.auth.getUser().then(({ data }: Awaited<ReturnType<typeof supabase.auth.getUser>>) => {
       if (!data?.user) { window.location.href = "/login"; return; }
       setUserId(data.user.id);
       load(data.user.id).finally(() => setLoading(false));

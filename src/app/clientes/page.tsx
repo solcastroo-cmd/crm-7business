@@ -40,7 +40,7 @@ export default function ClientesPage() {
       .eq("store_id", userId)
       .eq("stage", "VENDIDO!")
       .order("updated_at", { ascending: false })
-      .then(({ data }) => {
+      .then(({ data }: { data: unknown }) => {
         setClientes((data as Cliente[]) ?? []);
         setLoading(false);
       });

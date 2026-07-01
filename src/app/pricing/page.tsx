@@ -35,7 +35,7 @@ function PricingContent() {
   const [portalLoading, setPortalLoading] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getUser().then(async ({ data }) => {
+    supabase.auth.getUser().then(async ({ data }: Awaited<ReturnType<typeof supabase.auth.getUser>>) => {
       if (!data?.user) return;
       setUserId(data.user.id);
       const r = await fetch(`/api/trial?userId=${data.user.id}`);

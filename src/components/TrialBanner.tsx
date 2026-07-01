@@ -18,7 +18,7 @@ export function TrialBanner() {
   const router = useRouter();
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
+    supabase.auth.getUser().then(({ data }: Awaited<ReturnType<typeof supabase.auth.getUser>>) => {
       const userId = data?.user?.id;
       if (!userId) return;
       if (data.user?.id) localStorage.setItem("crm_userId", data.user.id);

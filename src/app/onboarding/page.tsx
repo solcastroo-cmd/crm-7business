@@ -58,7 +58,7 @@ export default function OnboardingPage() {
   const [done, setDone] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
+    supabase.auth.getUser().then(({ data }: Awaited<ReturnType<typeof supabase.auth.getUser>>) => {
       if (!data?.user) { router.replace("/login"); return; }
       setUserId(data.user.id);
     });

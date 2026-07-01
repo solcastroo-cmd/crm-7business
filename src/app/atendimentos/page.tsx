@@ -25,6 +25,8 @@ type Contact = {
   unread: number;
 };
 
+type LeadRow = { id: string; name: string | null; phone: string };
+
 function fmtTime(iso: string) {
   const d = new Date(iso);
   const today = new Date();
@@ -50,7 +52,7 @@ export default function AtendimentosPage() {
       .from("leads")
       .select("id,name,phone")
       .eq("store_id", userId)
-      .then(async ({ data: leads }) => {
+      .then(async ({ data: leads }: { data: LeadRow[] | null }) => {
         if (!leads?.length) { setLoading(false); return; }
 
         const { data: msgs } = await supabase
