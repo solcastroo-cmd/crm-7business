@@ -23,6 +23,16 @@ const COND = ["Ótima", "Boa", "Regular", "Ruim"];
 const COMB = ["Gasolina", "Etanol", "Flex", "Diesel", "Elétrico", "Híbrido", "GNV"];
 const EC   = ["Solteiro(a)", "Casado(a)", "Divorciado(a)", "Viúvo(a)", "União Estável"];
 
+/* select com defaultValue — definido fora do componente para não remontar a cada render */
+function Sel({ name, options, dv }: { name: string; options: string[]; dv: string }) {
+  return (
+    <select name={name} defaultValue={dv} style={{ ...inp, appearance: "none" }}>
+      <option value="">— Selecione —</option>
+      {options.map(o => <option key={o} value={o}>{o}</option>)}
+    </select>
+  );
+}
+
 const STATUS_CFG: Record<string, { label: string; color: string; bg: string }> = {
   ativo:    { label: "Ativo",    color: "#10b981", bg: "#10b98120" },
   vendido:  { label: "Vendido",  color: "#3b82f6", bg: "#3b82f620" },
@@ -193,14 +203,6 @@ export default function ConsignacaoDetailPage() {
 
   const cfg = STATUS_CFG[status] ?? STATUS_CFG.ativo;
   const headerTitle = `${d.veiculo_marca ?? ""} ${d.veiculo_modelo ?? ""}`.trim() || "Contrato de Consignação";
-
-  /* helper: select com defaultValue */
-  const Sel = ({ name, options, dv }: { name: string; options: string[]; dv: string }) => (
-    <select name={name} defaultValue={dv} style={{ ...inp, appearance: "none" }}>
-      <option value="">— Selecione —</option>
-      {options.map(o => <option key={o} value={o}>{o}</option>)}
-    </select>
-  );
 
   return (
     <div style={{ padding: "28px 24px", maxWidth: 860, margin: "0 auto" }}>
