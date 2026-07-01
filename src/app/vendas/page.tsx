@@ -20,6 +20,7 @@ type Sale = {
   buyer_cpf?: string;
   buyer_phone?: string;
   buyer_address?: string;
+  buyer_cep?: string;
   payment_method: string;
   total_value: number;
   down_payment?: number;
@@ -70,7 +71,7 @@ const CANCEL_REASON_LABEL: Record<string, string> = {
 
 const EMPTY_FORM = {
   vehicle_id: "", buyer_name: "", buyer_cpf: "", buyer_phone: "",
-  buyer_address: "", payment_method: "avista", total_value: "",
+  buyer_cep: "", buyer_address: "", payment_method: "avista", total_value: "",
   down_payment: "", installments_count: "1", installment_value: "",
   closing_date: new Date().toISOString().split("T")[0],
   status: "pago", notes: "",
@@ -86,6 +87,26 @@ function fmtDate(iso: string) {
 function vehicleLabel(v?: VehicleSnap | null) {
   if (!v) return "Veículo removido";
   return `${v.brand} ${v.model}${v.year ? " " + v.year : ""}${v.plate ? " · " + v.plate : ""}`;
+}
+function fmtCep(cep: string) {
+  const d = cep.replace(/\D/g, "").slice(0, 8);
+  return d.length > 5 ? `${d.slice(0, 5)}-${d.slice(5)}` : d;
+}
+async function buscarEnderecoPorCep(cep: string): Promise<string | null> {
+  const digits = cep.replace(/\D/g, "");
+  if (digits.length !== 8) return null;
+  try {
+    const res = await fetch(`https://viacep.com.br/ws/${digits}/json/`);
+    if (!res.ok) return null;
+    const d = await res.json();
+    if (d.erro) return null;
+    return [
+      [d.logradouro, d.bairro].filter(Boolean).join(", "),
+      [d.localidade, d.uf].filter(Boolean).join(" - "),
+    ].filter(Boolean).join(" · ");
+  } catch {
+    return null;
+  }
 }
 
 /* ── Receipt PDF ────────────────────────────────────────────────────── */
@@ -146,7 +167,8 @@ function printReceipt(sale: Sale, storeName: string) {
         <div class="field"><div class="label">Nome Completo</div><div class="value">${sale.buyer_name}</div></div>
         <div class="field"><div class="label">CPF / CNPJ</div><div class="value">${sale.buyer_cpf ?? "-"}</div></div>
         <div class="field"><div class="label">Telefone</div><div class="value">${sale.buyer_phone ?? "-"}</div></div>
-        <div class="field"><div class="label">Endereço</div><div class="value">${sale.buyer_address ?? "-"}</div></div>
+        <div class="field"><div class="label">CEP</div><div class="value">${sale.buyer_cep ?? "-"}</div></div>
+        <div class="field" style="grid-column:1/-1"><div class="label">Endereço</div><div class="value">${sale.buyer_address ?? "-"}</div></div>
       </div>
     </div>
 
@@ -219,6 +241,30 @@ export default function VendasPage() {
   const [cancelReason, setCancelReason]       = useState("");
   const [cancelNotes, setCancelNotes]         = useState("");
   const [cancelling, setCancelling]           = useState(false);
+
+  // busca de CEP
+  const [cepLoadingNew, setCepLoadingNew]   = useState(false);
+  const [cepLoadingEdit, setCepLoadingEdit] = useState(false);
+
+  async function handleCepChangeNew(rawCep: string) {
+    const formatted = fmtCep(rawCep);
+    setForm(f => ({ ...f, buyer_cep: formatted }));
+    if (formatted.replace(/\D/g, "").length !== 8) return;
+    setCepLoadingNew(true);
+    const endereco = await buscarEnderecoPorCep(formatted);
+    setCepLoadingNew(false);
+    if (endereco) setForm(f => ({ ...f, buyer_address: endereco }));
+  }
+
+  async function handleCepChangeEdit(rawCep: string) {
+    const formatted = fmtCep(rawCep);
+    setEditForm(prev => ({ ...prev, buyer_cep: formatted }));
+    if (formatted.replace(/\D/g, "").length !== 8) return;
+    setCepLoadingEdit(true);
+    const endereco = await buscarEnderecoPorCep(formatted);
+    setCepLoadingEdit(false);
+    if (endereco) setEditForm(prev => ({ ...prev, buyer_address: endereco }));
+  }
 
   /* ── auth ── */
   useEffect(() => {
@@ -320,6 +366,7 @@ export default function VendasPage() {
       buyer_name: sale.buyer_name,
       buyer_cpf: sale.buyer_cpf ?? "",
       buyer_phone: sale.buyer_phone ?? "",
+      buyer_cep: sale.buyer_cep ?? "",
       buyer_address: sale.buyer_address ?? "",
       payment_method: sale.payment_method,
       total_value: sale.total_value,
@@ -694,7 +741,6 @@ export default function VendasPage() {
                     { label: "Nome Completo *", key: "buyer_name", required: true, placeholder: "Ex: João da Silva" },
                     { label: "CPF / CNPJ",       key: "buyer_cpf",  required: false, placeholder: "000.000.000-00" },
                     { label: "Telefone",          key: "buyer_phone",required: false, placeholder: "(85) 99999-0000" },
-                    { label: "Endereço",          key: "buyer_address", required: false, placeholder: "Rua, número, bairro..." },
                   ].map(({ label, key, required, placeholder }) => (
                     <div key={key}>
                       <label className="block text-[10px] font-semibold mb-1" style={{ color: "#6b7280" }}>{label}</label>
@@ -705,6 +751,24 @@ export default function VendasPage() {
                         style={{ background: "#111827", borderColor: "#374151" }} />
                     </div>
                   ))}
+                  <div>
+                    <label className="block text-[10px] font-semibold mb-1" style={{ color: "#6b7280" }}>
+                      CEP {cepLoadingNew && <span style={{ color: "#f59e0b" }}>· buscando...</span>}
+                    </label>
+                    <input type="text" placeholder="00000-000" maxLength={9}
+                      value={form.buyer_cep}
+                      onChange={e => handleCepChangeNew(e.target.value)}
+                      className="w-full rounded-xl px-3 py-2 text-sm text-white border focus:outline-none focus:border-red-500"
+                      style={{ background: "#111827", borderColor: "#374151" }} />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-[10px] font-semibold mb-1" style={{ color: "#6b7280" }}>Endereço</label>
+                    <input type="text" placeholder="Rua, número, bairro..."
+                      value={form.buyer_address}
+                      onChange={e => setForm(f => ({ ...f, buyer_address: e.target.value }))}
+                      className="w-full rounded-xl px-3 py-2 text-sm text-white border focus:outline-none focus:border-red-500"
+                      style={{ background: "#111827", borderColor: "#374151" }} />
+                  </div>
                 </div>
               </div>
 
@@ -926,7 +990,6 @@ export default function VendasPage() {
                       { key: "buyer_name",    label: "Nome *",     type: "text" },
                       { key: "buyer_cpf",     label: "CPF/CNPJ",   type: "text" },
                       { key: "buyer_phone",   label: "Telefone",   type: "text" },
-                      { key: "buyer_address", label: "Endereço",   type: "text" },
                     ] as { key: keyof typeof editForm; label: string; type: string }[]).map(f => (
                       <div key={f.key}>
                         <label className="block text-[10px] font-semibold mb-1" style={{ color: "#6b7280" }}>{f.label}</label>
@@ -936,6 +999,23 @@ export default function VendasPage() {
                           style={{ background: "#111827", borderColor: "#374151" }} />
                       </div>
                     ))}
+                    <div>
+                      <label className="block text-[10px] font-semibold mb-1" style={{ color: "#6b7280" }}>
+                        CEP {cepLoadingEdit && <span style={{ color: "#f59e0b" }}>· buscando...</span>}
+                      </label>
+                      <input type="text" placeholder="00000-000" maxLength={9}
+                        value={String(editForm.buyer_cep ?? "")}
+                        onChange={e => handleCepChangeEdit(e.target.value)}
+                        className="w-full rounded-xl px-3 py-2 text-sm text-white border focus:outline-none focus:border-red-500"
+                        style={{ background: "#111827", borderColor: "#374151" }} />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="block text-[10px] font-semibold mb-1" style={{ color: "#6b7280" }}>Endereço</label>
+                      <input type="text" value={String(editForm.buyer_address ?? "")}
+                        onChange={e => setEditForm(prev => ({ ...prev, buyer_address: e.target.value }))}
+                        className="w-full rounded-xl px-3 py-2 text-sm text-white border focus:outline-none focus:border-red-500"
+                        style={{ background: "#111827", borderColor: "#374151" }} />
+                    </div>
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 gap-3">
@@ -943,6 +1023,7 @@ export default function VendasPage() {
                       { label: "Nome",     value: detail.buyer_name },
                       { label: "CPF/CNPJ",  value: detail.buyer_cpf    ?? "—" },
                       { label: "Telefone",  value: detail.buyer_phone   ?? "—" },
+                      { label: "CEP",       value: detail.buyer_cep     ?? "—" },
                       { label: "Endereço",  value: detail.buyer_address ?? "—" },
                     ].map(f => (
                       <div key={f.label}>

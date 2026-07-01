@@ -33,7 +33,7 @@ export async function GET(_req: NextRequest) {
 export async function POST(req: NextRequest) {
   const body = await req.json();
   const {
-    vehicle_id, store_id, buyer_name, buyer_cpf, buyer_phone, buyer_address,
+    vehicle_id, store_id, buyer_name, buyer_cpf, buyer_phone, buyer_address, buyer_cep,
     payment_method, total_value, down_payment, installments_count,
     installment_value, closing_date, status, notes,
   } = body;
@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
   const { data, error } = await supabaseAdmin
     .from("sales")
     .insert({
-      vehicle_id, store_id, buyer_name, buyer_cpf, buyer_phone, buyer_address,
+      vehicle_id, store_id, buyer_name, buyer_cpf, buyer_phone, buyer_address, buyer_cep,
       payment_method, total_value: Number(total_value),
       down_payment: down_payment ? Number(down_payment) : 0,
       installments_count: installments_count ? Number(installments_count) : 1,
@@ -81,7 +81,7 @@ export async function PATCH(req: NextRequest) {
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
   const allowed = [
-    "buyer_name","buyer_cpf","buyer_phone","buyer_address",
+    "buyer_name","buyer_cpf","buyer_phone","buyer_address","buyer_cep",
     "payment_method","total_value","down_payment","installments_count",
     "installment_value","closing_date","status","notes",
     "cancellation_reason","cancellation_notes",
