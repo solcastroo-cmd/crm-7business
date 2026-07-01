@@ -30,6 +30,9 @@ type Sale = {
   notes?: string;
   created_at: string;
   vehicle?: VehicleSnap | null;
+  cancelled_at?: string | null;
+  cancellation_reason?: string | null;
+  cancellation_notes?: string | null;
 };
 
 type StockVehicle = {
@@ -54,6 +57,15 @@ const STATUS_CFG: Record<string, { label: string; color: string; bg: string }> =
   pago:      { label: "Pago",      color: "#10b981", bg: "#10b98122" },
   parcelado: { label: "Parcelado", color: "#f59e0b", bg: "#f59e0b22" },
   pendente:  { label: "Pendente",  color: "#ef4444", bg: "#ef444422" },
+  cancelada: { label: "Cancelada", color: "#64748b", bg: "#64748b22" },
+};
+
+const CANCEL_REASON_LABEL: Record<string, string> = {
+  financiamento_reprovado: "Financiamento Reprovado",
+  desistencia_cliente:     "Desistência do Cliente",
+  problema_veiculo:        "Problema no Veículo",
+  erro_negociacao:         "Erro de Negociação",
+  outro:                   "Outro",
 };
 
 const EMPTY_FORM = {
@@ -182,10 +194,14 @@ export default function VendasPage() {
   const [stock, setStock]         = useState<StockVehicle[]>([]);
   const [loading, setLoading]     = useState(true);
 
+  // tabs
+  const [activeTab, setActiveTab] = useState<"vendas" | "cancelamentos">("vendas");
+
   // filters
   const [search, setSearch]             = useState("");
   const [filterStatus, setFilterStatus] = useState("todos");
   const [filterPayment, setFilterPayment] = useState("todos");
+  const [filterReason, setFilterReason] = useState("todos");
 
   // modals
   const [showNew, setShowNew]   = useState(false);
@@ -197,6 +213,12 @@ export default function VendasPage() {
   const [saving, setSaving]     = useState(false);
   const [sortCol, setSortCol]   = useState<keyof Sale>("closing_date");
   const [sortAsc, setSortAsc]   = useState(false);
+
+  // cancelamento
+  const [showCancel, setShowCancel]           = useState(false);
+  const [cancelReason, setCancelReason]       = useState("");
+  const [cancelNotes, setCancelNotes]         = useState("");
+  const [cancelling, setCancelling]           = useState(false);
 
   /* ── auth ── */
   useEffect(() => {
@@ -232,10 +254,18 @@ export default function VendasPage() {
 
   /* ── filtered + sorted ── */
   const filtered = useMemo(() => {
-    return sales
+    const base = activeTab === "cancelamentos"
+      ? sales.filter(s => s.status === "cancelada")
+      : sales.filter(s => s.status !== "cancelada");
+
+    return base
       .filter(s => {
-        if (filterStatus  !== "todos" && s.status         !== filterStatus)  return false;
-        if (filterPayment !== "todos" && s.payment_method !== filterPayment) return false;
+        if (activeTab === "vendas") {
+          if (filterStatus  !== "todos" && s.status         !== filterStatus)  return false;
+          if (filterPayment !== "todos" && s.payment_method !== filterPayment) return false;
+        } else {
+          if (filterReason !== "todos" && s.cancellation_reason !== filterReason) return false;
+        }
         if (search) {
           const q = search.toLowerCase();
           const vLabel = vehicleLabel(s.vehicle).toLowerCase();
@@ -254,7 +284,14 @@ export default function VendasPage() {
           ? String(av).localeCompare(String(bv))
           : String(bv).localeCompare(String(av));
       });
-  }, [sales, filterStatus, filterPayment, search, sortCol, sortAsc]);
+  }, [sales, activeTab, filterStatus, filterPayment, filterReason, search, sortCol, sortAsc]);
+
+  /* ── indicador global de cancelamento (independe da aba) ── */
+  const cancelStats = useMemo(() => {
+    const total = sales.length;
+    const cancelled = sales.filter(s => s.status === "cancelada").length;
+    return { cancelled, rate: total > 0 ? (cancelled / total) * 100 : 0 };
+  }, [sales]);
 
   function toggleSort(col: keyof Sale) {
     if (sortCol === col) setSortAsc(a => !a);
@@ -275,7 +312,10 @@ export default function VendasPage() {
   /* ── nova venda ── */
   function openDetail(sale: Sale) {
     setDetail(sale);
-    setEditMode(true);
+    setEditMode(sale.status !== "cancelada");
+    setShowCancel(false);
+    setCancelReason("");
+    setCancelNotes("");
     setEditForm({
       buyer_name: sale.buyer_name,
       buyer_cpf: sale.buyer_cpf ?? "",
@@ -311,6 +351,34 @@ export default function VendasPage() {
     const updatedWithVehicle: Sale = { ...updated, vehicle: detail.vehicle };
     setDetail(updatedWithVehicle);
     setSales(prev => prev.map(s => s.id === detail.id ? updatedWithVehicle : s));
+  }
+
+  async function handleCancelSale() {
+    if (!detail || !cancelReason) return;
+    setCancelling(true);
+    const res = await fetch("/api/vendas", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: detail.id,
+        status: "cancelada",
+        cancellation_reason: cancelReason,
+        cancellation_notes: cancelNotes,
+      }),
+    });
+    setCancelling(false);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: "Erro desconhecido" }));
+      alert(`Erro ao cancelar: ${err.error}`);
+      return;
+    }
+    const updated: Sale = await res.json();
+    const updatedWithVehicle: Sale = { ...updated, vehicle: detail.vehicle };
+    setDetail(updatedWithVehicle);
+    setSales(prev => prev.map(s => s.id === detail.id ? updatedWithVehicle : s));
+    setEditMode(false);
+    setShowCancel(false);
+    fetchStock();
   }
 
   async function handleNewSale(e: React.FormEvent) {
@@ -364,14 +432,41 @@ export default function VendasPage() {
           </button>
         </div>
 
+        {/* Tabs */}
+        <div className="flex gap-2 border-b" style={{ borderColor: "#1f2937" }}>
+          {[
+            { key: "vendas" as const,       label: "🤝 Vendas" },
+            { key: "cancelamentos" as const, label: "❌ Cancelamentos" },
+          ].map(t => (
+            <button key={t.key} onClick={() => setActiveTab(t.key)}
+              className="px-4 py-2.5 text-sm font-semibold transition-colors border-b-2 -mb-px"
+              style={{
+                color: activeTab === t.key ? "#ffffff" : "#6b7280",
+                borderColor: activeTab === t.key ? "#e63946" : "transparent",
+              }}>
+              {t.label}
+              {t.key === "cancelamentos" && cancelStats.cancelled > 0 && (
+                <span className="ml-2 text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "#64748b22", color: "#94a3b8" }}>
+                  {cancelStats.cancelled}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+
         {/* KPI Cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          {[
+          {(activeTab === "vendas" ? [
             { label: "Total de Vendas",  value: totals.count.toString(),  color: "#3b82f6", icon: "🤝" },
             { label: "Receita Total",     value: brl(totals.total),        color: "#10b981", icon: "💰" },
             { label: "Pagas",            value: totals.pagos.toString(),   color: "#10b981", icon: "✅" },
-            { label: "Em Aberto",        value: totals.pendente.toString(),color: "#f59e0b", icon: "⏳" },
-          ].map(c => (
+            { label: "Taxa de Cancelamento", value: `${cancelStats.rate.toFixed(1)}%`, color: "#64748b", icon: "❌" },
+          ] : [
+            { label: "Total Cancelado",      value: totals.count.toString(), color: "#64748b", icon: "❌" },
+            { label: "Valor Perdido",        value: brl(totals.total),       color: "#ef4444", icon: "💸" },
+            { label: "Taxa de Cancelamento", value: `${cancelStats.rate.toFixed(1)}%`, color: "#64748b", icon: "📉" },
+            { label: "Total Geral de Vendas", value: sales.length.toString(), color: "#3b82f6", icon: "🤝" },
+          ]).map(c => (
             <div key={c.label} className="rounded-2xl p-4" style={{ background: "#111827", border: "1px solid #1f2937" }}>
               <p className="text-xs font-medium mb-1" style={{ color: "#6b7280" }}>{c.icon} {c.label}</p>
               <p className="text-xl font-black" style={{ color: c.color }}>{c.value}</p>
@@ -385,23 +480,34 @@ export default function VendasPage() {
             value={search} onChange={e => setSearch(e.target.value)}
             className="flex-1 min-w-48 rounded-xl px-4 py-2.5 text-sm text-white placeholder-gray-600 border focus:outline-none focus:border-red-500"
             style={{ background: "#111827", borderColor: "#1f2937" }} />
-          <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
-            className="rounded-xl px-4 py-2.5 text-sm text-white border focus:outline-none"
-            style={{ background: "#111827", borderColor: "#1f2937" }}>
-            <option value="todos">Todos os status</option>
-            <option value="pago">Pago</option>
-            <option value="parcelado">Parcelado</option>
-            <option value="pendente">Pendente</option>
-          </select>
-          <select value={filterPayment} onChange={e => setFilterPayment(e.target.value)}
-            className="rounded-xl px-4 py-2.5 text-sm text-white border focus:outline-none"
-            style={{ background: "#111827", borderColor: "#1f2937" }}>
-            <option value="todos">Todos os pagamentos</option>
-            <option value="avista">À Vista</option>
-            <option value="financiado">Financiado</option>
-            <option value="parcelado">Parcelado</option>
-            <option value="troca">Troca</option>
-          </select>
+          {activeTab === "vendas" ? <>
+            <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+              className="rounded-xl px-4 py-2.5 text-sm text-white border focus:outline-none"
+              style={{ background: "#111827", borderColor: "#1f2937" }}>
+              <option value="todos">Todos os status</option>
+              <option value="pago">Pago</option>
+              <option value="parcelado">Parcelado</option>
+              <option value="pendente">Pendente</option>
+            </select>
+            <select value={filterPayment} onChange={e => setFilterPayment(e.target.value)}
+              className="rounded-xl px-4 py-2.5 text-sm text-white border focus:outline-none"
+              style={{ background: "#111827", borderColor: "#1f2937" }}>
+              <option value="todos">Todos os pagamentos</option>
+              <option value="avista">À Vista</option>
+              <option value="financiado">Financiado</option>
+              <option value="parcelado">Parcelado</option>
+              <option value="troca">Troca</option>
+            </select>
+          </> : (
+            <select value={filterReason} onChange={e => setFilterReason(e.target.value)}
+              className="rounded-xl px-4 py-2.5 text-sm text-white border focus:outline-none"
+              style={{ background: "#111827", borderColor: "#1f2937" }}>
+              <option value="todos">Todos os motivos</option>
+              {Object.entries(CANCEL_REASON_LABEL).map(([k, label]) => (
+                <option key={k} value={k}>{label}</option>
+              ))}
+            </select>
+          )}
         </div>
 
         {/* Table */}
@@ -410,9 +516,71 @@ export default function VendasPage() {
             <div className="py-16 text-center text-gray-500">Carregando vendas...</div>
           ) : filtered.length === 0 ? (
             <div className="py-16 text-center" style={{ color: "#6b7280" }}>
-              <p className="text-4xl mb-3">🤝</p>
-              <p className="font-semibold">Nenhuma venda encontrada</p>
-              <p className="text-sm mt-1">Clique em "+ Nova Venda" para registrar</p>
+              <p className="text-4xl mb-3">{activeTab === "cancelamentos" ? "❌" : "🤝"}</p>
+              <p className="font-semibold">
+                {activeTab === "cancelamentos" ? "Nenhuma venda cancelada" : "Nenhuma venda encontrada"}
+              </p>
+              <p className="text-sm mt-1">
+                {activeTab === "cancelamentos" ? "Vendas canceladas aparecerão aqui" : 'Clique em "+ Nova Venda" para registrar'}
+              </p>
+            </div>
+          ) : activeTab === "cancelamentos" ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr style={{ borderBottom: "1px solid #1f2937" }}>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider" style={{ color: "#6b7280" }}>Veículo</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider" style={{ color: "#6b7280" }}>Comprador</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider" style={{ color: "#6b7280" }}>Data Cancelamento</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider" style={{ color: "#6b7280" }}>Motivo</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider" style={{ color: "#6b7280" }}>Valor</th>
+                    <th className="px-4 py-3" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((s, i) => (
+                    <tr key={s.id}
+                      className="cursor-pointer transition-colors"
+                      style={{ borderBottom: "1px solid #1f2937", background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.02)" }}
+                      onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = "rgba(230,57,70,0.07)"}
+                      onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.02)"}
+                      onClick={() => openDetail(s)}>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          {s.vehicle?.photos?.[0]
+                            ? <img src={s.vehicle.photos[0]} className="w-8 h-8 rounded-lg object-cover flex-shrink-0" alt="" />
+                            : <div className="w-8 h-8 rounded-lg flex items-center justify-center text-sm flex-shrink-0" style={{ background: "#1f2937" }}>🚗</div>}
+                          <div>
+                            <p className="font-semibold text-white text-xs leading-tight">
+                              {s.vehicle ? `${s.vehicle.brand} ${s.vehicle.model}` : "—"}
+                            </p>
+                            <p className="text-[10px]" style={{ color: "#6b7280" }}>
+                              {[s.vehicle?.year, s.vehicle?.plate].filter(Boolean).join(" · ")}
+                            </p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 font-medium text-white">{s.buyer_name}</td>
+                      <td className="px-4 py-3 text-xs" style={{ color: "#9ca3af" }}>
+                        {s.cancelled_at ? new Date(s.cancelled_at).toLocaleDateString("pt-BR") : "-"}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: "#64748b22", color: "#94a3b8" }}>
+                          {CANCEL_REASON_LABEL[s.cancellation_reason ?? ""] ?? s.cancellation_reason ?? "-"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-sm font-black" style={{ color: "#ef4444" }}>{brl(Number(s.total_value))}</td>
+                      <td className="px-4 py-3">
+                        <button onClick={e => { e.stopPropagation(); openDetail(s); }}
+                          className="text-xs px-3 py-1.5 rounded-lg font-semibold transition-all"
+                          style={{ background: "#1f2937", color: "#9ca3af" }}>
+                          Ver detalhes
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -671,16 +839,25 @@ export default function VendasPage() {
                 </p>
               </div>
               <div className="flex gap-2 items-center">
-                <button onClick={saveEdit} disabled={savingEdit}
-                  className="rounded-xl px-4 py-2 text-sm font-bold text-white flex items-center gap-1.5 transition-all hover:opacity-90 disabled:opacity-50"
-                  style={{ background: "#10b981" }}>
-                  {savingEdit ? "Salvando…" : "✓ Salvar"}
-                </button>
+                {detail.status !== "cancelada" && (
+                  <button onClick={saveEdit} disabled={savingEdit}
+                    className="rounded-xl px-4 py-2 text-sm font-bold text-white flex items-center gap-1.5 transition-all hover:opacity-90 disabled:opacity-50"
+                    style={{ background: "#10b981" }}>
+                    {savingEdit ? "Salvando…" : "✓ Salvar"}
+                  </button>
+                )}
                 <button onClick={() => printReceipt(detail, storeName)}
                   className="rounded-xl px-4 py-2 text-sm font-bold text-white flex items-center gap-1.5 transition-all hover:opacity-90"
                   style={{ background: "#e63946" }}>
                   🖨️ Recibo
                 </button>
+                {detail.status !== "cancelada" && (
+                  <button onClick={() => setShowCancel(true)}
+                    className="rounded-xl px-4 py-2 text-sm font-bold text-white flex items-center gap-1.5 transition-all hover:opacity-90"
+                    style={{ background: "#64748b" }}>
+                    ❌ Cancelar Venda
+                  </button>
+                )}
                 <button onClick={() => { setDetail(null); setEditMode(false); }}
                   className="w-9 h-9 rounded-xl flex items-center justify-center text-gray-400 hover:text-white"
                   style={{ background: "#1f2937" }}>✕</button>
@@ -688,6 +865,33 @@ export default function VendasPage() {
             </div>
 
             <div className="px-6 py-5 space-y-5">
+
+              {/* Aviso de venda cancelada */}
+              {detail.status === "cancelada" && (
+                <div className="rounded-2xl p-4" style={{ background: "#64748b15", border: "1px solid #64748b30" }}>
+                  <p className="text-xs font-bold uppercase tracking-wider mb-2" style={{ color: "#94a3b8" }}>❌ Venda Cancelada</p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    <div>
+                      <p className="text-[10px] font-semibold mb-0.5" style={{ color: "#6b7280" }}>Data do Cancelamento</p>
+                      <p className="text-sm font-semibold text-white">
+                        {detail.cancelled_at ? new Date(detail.cancelled_at).toLocaleString("pt-BR") : "—"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-semibold mb-0.5" style={{ color: "#6b7280" }}>Motivo</p>
+                      <p className="text-sm font-semibold text-white">
+                        {CANCEL_REASON_LABEL[detail.cancellation_reason ?? ""] ?? detail.cancellation_reason ?? "—"}
+                      </p>
+                    </div>
+                    {detail.cancellation_notes && (
+                      <div className="col-span-2 sm:col-span-3">
+                        <p className="text-[10px] font-semibold mb-0.5" style={{ color: "#6b7280" }}>Observação</p>
+                        <p className="text-sm" style={{ color: "#d1d5db" }}>{detail.cancellation_notes}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Dados do Veículo — sempre somente leitura */}
               <div className="rounded-2xl p-4" style={{ background: "#0f172a", border: "1px solid #1f2937" }}>
@@ -896,6 +1100,11 @@ export default function VendasPage() {
                   {[
                     { icon: "✅", label: "Venda registrada",              date: detail.created_at },
                     { icon: "🚗", label: "Veículo marcado como vendido",  date: detail.closing_date },
+                    ...(detail.status === "cancelada" ? [{
+                      icon: "❌",
+                      label: `Venda cancelada — ${CANCEL_REASON_LABEL[detail.cancellation_reason ?? ""] ?? detail.cancellation_reason}`,
+                      date: detail.cancelled_at ?? detail.created_at,
+                    }] : []),
                   ].map((ev, i) => (
                     <div key={i} className="flex items-center gap-3 text-xs">
                       <span>{ev.icon}</span>
@@ -912,6 +1121,62 @@ export default function VendasPage() {
                 style={{ background: "#e63946" }}>
                 🖨️ Visualizar e Imprimir Recibo em PDF
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ MODAL CONFIRMAR CANCELAMENTO ═══ */}
+      {showCancel && detail && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.85)", backdropFilter: "blur(4px)" }}
+          onClick={e => { if (e.target === e.currentTarget) setShowCancel(false); }}>
+          <div className="w-full max-w-md rounded-2xl"
+            style={{ background: "#111827", border: "1px solid #1f2937" }}>
+            <div className="px-6 py-4" style={{ borderBottom: "1px solid #1f2937" }}>
+              <h2 className="text-lg font-black text-white">❌ Cancelar Venda</h2>
+              <p className="text-xs mt-1" style={{ color: "#6b7280" }}>
+                {vehicleLabel(detail.vehicle)} · {detail.buyer_name}
+              </p>
+            </div>
+
+            <div className="px-6 py-5 space-y-4">
+              <div className="rounded-xl p-3 text-xs" style={{ background: "#ef444415", border: "1px solid #ef444430", color: "#fca5a5" }}>
+                Esta ação não pode ser desfeita. O veículo voltará automaticamente para o estoque como <b>Disponível</b>.
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-semibold mb-1" style={{ color: "#6b7280" }}>Motivo do Cancelamento *</label>
+                <select required value={cancelReason} onChange={e => setCancelReason(e.target.value)}
+                  className="w-full rounded-xl px-3 py-2 text-sm text-white border focus:outline-none"
+                  style={{ background: "#0f172a", borderColor: "#374151" }}>
+                  <option value="">Selecionar motivo...</option>
+                  {Object.entries(CANCEL_REASON_LABEL).map(([k, label]) => (
+                    <option key={k} value={k}>{label}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-semibold mb-1" style={{ color: "#6b7280" }}>Observação</label>
+                <textarea rows={3} placeholder="Detalhes adicionais sobre o cancelamento..."
+                  value={cancelNotes} onChange={e => setCancelNotes(e.target.value)}
+                  className="w-full rounded-xl px-3 py-2 text-sm text-white border focus:outline-none resize-none"
+                  style={{ background: "#0f172a", borderColor: "#374151" }} />
+              </div>
+
+              <div className="flex gap-3 pt-1">
+                <button onClick={handleCancelSale} disabled={!cancelReason || cancelling}
+                  className="flex-1 rounded-xl py-3 text-sm font-bold text-white transition-all hover:opacity-90 disabled:opacity-50"
+                  style={{ background: "#64748b" }}>
+                  {cancelling ? "Cancelando…" : "Confirmar Cancelamento"}
+                </button>
+                <button type="button" onClick={() => setShowCancel(false)}
+                  className="rounded-xl px-6 py-3 text-sm font-semibold transition-all"
+                  style={{ background: "#1f2937", color: "#9ca3af" }}>
+                  Voltar
+                </button>
+              </div>
             </div>
           </div>
         </div>

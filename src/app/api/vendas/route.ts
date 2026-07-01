@@ -71,6 +71,10 @@ export async function POST(req: NextRequest) {
   return NextResponse.json(data, { status: 201 });
 }
 
+const CANCELLATION_REASONS = [
+  "financiamento_reprovado", "desistencia_cliente", "problema_veiculo", "erro_negociacao", "outro",
+];
+
 export async function PATCH(req: NextRequest) {
   const body = await req.json();
   const { id, ...fields } = body;
@@ -80,10 +84,22 @@ export async function PATCH(req: NextRequest) {
     "buyer_name","buyer_cpf","buyer_phone","buyer_address",
     "payment_method","total_value","down_payment","installments_count",
     "installment_value","closing_date","status","notes",
+    "cancellation_reason","cancellation_notes",
   ];
   const payload: Record<string, unknown> = {};
   for (const k of allowed) {
     if (fields[k] !== undefined) payload[k] = fields[k];
+  }
+
+  const isCancelling = payload.status === "cancelada";
+  if (isCancelling) {
+    if (!CANCELLATION_REASONS.includes(String(payload.cancellation_reason))) {
+      return NextResponse.json(
+        { error: "cancellation_reason é obrigatório e deve ser um motivo válido" },
+        { status: 400 }
+      );
+    }
+    payload.cancelled_at = new Date().toISOString();
   }
 
   const { data, error } = await supabaseAdmin
@@ -94,6 +110,14 @@ export async function PATCH(req: NextRequest) {
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  if (isCancelling) {
+    await supabaseAdmin
+      .from("vehicles")
+      .update({ status: "disponivel" })
+      .eq("id", data.vehicle_id);
+  }
+
   return NextResponse.json(data);
 }
 
