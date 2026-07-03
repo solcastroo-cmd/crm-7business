@@ -86,17 +86,18 @@ function proximoVencimento(dataVencimento: string, parcelas: number) {
   }
   return { parcela: parcelas, data: addMonths(dataVencimento, parcelas - 1) };
 }
-function expandParcelas(d: Despesa): { date: string; valor: number }[] {
+function expandParcelas(d: Despesa): { date: string; valor: number; label: string }[] {
   const parcelas = d.parcelas ?? 1;
   if (d.forma_pagamento === "cartao_credito" && d.data_vencimento && parcelas > 1) {
     const valorParcela = d.valor_parcela ?? Number(d.valor) / parcelas;
     return Array.from({ length: parcelas }, (_, i) => ({
       date: addMonths(d.data_vencimento!, i),
       valor: Number(valorParcela),
+      label: `${d.descricao} (parcela ${i + 1}/${parcelas})`,
     }));
   }
   const dataBase = d.forma_pagamento === "cartao_credito" && d.data_vencimento ? d.data_vencimento : d.data_despesa;
-  return [{ date: dataBase, valor: Number(d.valor) }];
+  return [{ date: dataBase, valor: Number(d.valor), label: d.descricao }];
 }
 function monthKey(iso: string) { return iso.slice(0, 7); }
 function monthLabel(key: string) {
@@ -136,12 +137,22 @@ function exportCSV(
   const bypagto: Record<string, number> = {};
   despesas.forEach(d => { const k = d.forma_pagamento ?? "avista"; bypagto[k] = (bypagto[k] ?? 0) + Number(d.valor); });
 
-  const bymonth: Record<string, number> = {};
+  const bymonth: Record<string, { label: string; valor: number }[]> = {};
   despesas.forEach(d => {
-    expandParcelas(d).forEach(({ date, valor }) => {
+    expandParcelas(d).forEach(({ date, valor, label }) => {
       const k = monthKey(date);
-      bymonth[k] = (bymonth[k] ?? 0) + valor;
+      (bymonth[k] ??= []).push({ label, valor });
     });
+  });
+  const monthEntries = Object.entries(bymonth).sort((a, b) => a[0].localeCompare(b[0]));
+  const monthLines = monthEntries.flatMap(([k, itens]) => {
+    const totalMes = itens.reduce((s, i) => s + i.valor, 0);
+    return [
+      `"${monthLabel(k)}";"${totalMes.toFixed(2).replace(".", ",")}"`,
+      ...[...itens].sort((a, b) => b.valor - a.valor).map(
+        i => `"  ${i.label.replace(/"/g, '""')}";"${i.valor.toFixed(2).replace(".", ",")}"`,
+      ),
+    ];
   });
 
   const lines = [
@@ -160,10 +171,8 @@ function exportCSV(
       ([p, val]) => `"${PAGTO_LABEL[p] ?? p}";"${val.toFixed(2).replace(".", ",")}"`,
     ),
     "",
-    "POR VENCIMENTO (MES A MES)",
-    ...Object.entries(bymonth).sort((a, b) => a[0].localeCompare(b[0])).map(
-      ([k, val]) => `"${monthLabel(k)}";"${val.toFixed(2).replace(".", ",")}"`,
-    ),
+    "POR VENCIMENTO (MES A MES) - com detalhe de cada lancamento",
+    ...monthLines,
     "",
     `"TOTAL GERAL";;;;;;;"${total.toFixed(2).replace(".", ",")}"`,
   ];
@@ -213,16 +222,22 @@ function printReport(
     .map(([p, val]) => `<tr><td>${PAGTO_LABEL[p] ?? p}</td><td style="text-align:right;font-weight:700">${brl(val)}</td></tr>`)
     .join("");
 
-  const bymonth: Record<string, number> = {};
+  const bymonth: Record<string, { label: string; valor: number }[]> = {};
   despesas.forEach(d => {
-    expandParcelas(d).forEach(({ date, valor }) => {
+    expandParcelas(d).forEach(({ date, valor, label }) => {
       const k = monthKey(date);
-      bymonth[k] = (bymonth[k] ?? 0) + valor;
+      (bymonth[k] ??= []).push({ label, valor });
     });
   });
   const monthRows = Object.entries(bymonth)
     .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([k, val]) => `<tr><td>${monthLabel(k)}</td><td style="text-align:right;font-weight:700">${brl(val)}</td></tr>`)
+    .map(([k, itens]) => {
+      const totalMes = itens.reduce((s, i) => s + i.valor, 0);
+      const itemRows = [...itens].sort((a, b) => b.valor - a.valor)
+        .map(i => `<tr><td style="padding-left:20px;color:#666">${i.label}</td><td style="text-align:right;color:#666">${brl(i.valor)}</td></tr>`)
+        .join("");
+      return `<tr><td style="font-weight:700;background:#fafafa">${monthLabel(k)}</td><td style="text-align:right;font-weight:700;background:#fafafa">${brl(totalMes)}</td></tr>${itemRows}`;
+    })
     .join("");
 
   const filterDesc = [
@@ -769,27 +784,42 @@ export default function DespesasImplantacaoPage() {
               <div className="rounded-2xl p-5" style={sectionBg}>
                 <p className="text-sm font-bold text-white mb-1">📅 Por Vencimento (mês a mês)</p>
                 <p className="text-[11px] mb-4" style={{ color: "#6b7280" }}>
-                  Quanto sai do caixa a cada mês, considerando o vencimento real das parcelas do cartão
+                  Quanto sai do caixa a cada mês, com o detalhe de cada lançamento que compõe o total
                 </p>
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                <div className="space-y-4">
                   {(() => {
-                    const mm: Record<string, number> = {};
+                    const mm: Record<string, { label: string; valor: number }[]> = {};
                     filtered.forEach(d => {
-                      expandParcelas(d).forEach(({ date, valor }) => {
+                      expandParcelas(d).forEach(({ date, valor, label }) => {
                         const k = monthKey(date);
-                        mm[k] = (mm[k] ?? 0) + valor;
+                        (mm[k] ??= []).push({ label, valor });
                       });
                     });
                     const entries = Object.entries(mm).sort((a, b) => a[0].localeCompare(b[0]));
                     if (!entries.length) return (
-                      <p className="col-span-4 text-sm text-center py-4" style={{ color: "#6b7280" }}>Sem dados de vencimento</p>
+                      <p className="text-sm text-center py-4" style={{ color: "#6b7280" }}>Sem dados de vencimento</p>
                     );
-                    return entries.map(([k, v]) => (
-                      <div key={k} className="rounded-xl p-3" style={{ background: "#111827" }}>
-                        <p className="text-[10px] font-semibold mb-1" style={{ color: "#6b7280" }}>{monthLabel(k)}</p>
-                        <p className="text-base font-black" style={{ color: "#3b82f6" }}>{brl(v)}</p>
-                      </div>
-                    ));
+                    return entries.map(([k, itens]) => {
+                      const totalMes = itens.reduce((s, i) => s + i.valor, 0);
+                      const ordenados = [...itens].sort((a, b) => b.valor - a.valor);
+                      return (
+                        <div key={k} className="rounded-xl overflow-hidden" style={{ background: "#111827" }}>
+                          <div className="flex justify-between items-center px-4 py-2.5" style={{ background: "#1f2937" }}>
+                            <span className="text-xs font-bold text-white">{monthLabel(k)}</span>
+                            <span className="text-sm font-black" style={{ color: "#3b82f6" }}>{brl(totalMes)}</span>
+                          </div>
+                          <div>
+                            {ordenados.map((i, idx) => (
+                              <div key={idx} className="flex justify-between items-center px-4 py-2"
+                                style={{ borderTop: idx > 0 ? "1px solid #1f293780" : "none" }}>
+                                <span className="text-xs truncate pr-3" style={{ color: "#9ca3af" }}>{i.label}</span>
+                                <span className="text-xs font-semibold text-white whitespace-nowrap">{brl(i.valor)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    });
                   })()}
                 </div>
               </div>
