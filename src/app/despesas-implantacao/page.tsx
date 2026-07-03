@@ -17,6 +17,7 @@ type Despesa = {
   forma_pagamento?: string;
   parcelas?: number;
   valor_parcela?: number;
+  data_vencimento?: string;
   created_at: string;
   updated_at: string;
 };
@@ -62,6 +63,7 @@ const EMPTY_FORM = {
   forma_pagamento: "avista",
   parcelas: "1",
   valor_parcela: "",
+  data_vencimento: "",
 };
 
 /* ── Helpers ────────────────────────────────────────────────────────── */
@@ -70,6 +72,19 @@ function brl(v: number) {
 }
 function fmtDate(iso: string) {
   return new Date(iso + "T12:00:00").toLocaleDateString("pt-BR");
+}
+function addMonths(iso: string, n: number) {
+  const d = new Date(iso + "T12:00:00");
+  d.setMonth(d.getMonth() + n);
+  return d.toISOString().split("T")[0];
+}
+function proximoVencimento(dataVencimento: string, parcelas: number) {
+  const hoje = new Date().toISOString().split("T")[0];
+  for (let i = 0; i < parcelas; i++) {
+    const venc = addMonths(dataVencimento, i);
+    if (venc >= hoje) return { parcela: i + 1, data: venc };
+  }
+  return { parcela: parcelas, data: addMonths(dataVencimento, parcelas - 1) };
 }
 function monthKey(iso: string) { return iso.slice(0, 7); }
 function monthLabel(key: string) {
@@ -322,6 +337,7 @@ export default function DespesasImplantacaoPage() {
       forma_pagamento: d.forma_pagamento ?? "avista",
       parcelas:        String(d.parcelas ?? 1),
       valor_parcela:   d.valor_parcela ? String(d.valor_parcela) : "",
+      data_vencimento: d.data_vencimento ?? "",
     });
     setShowModal(true);
   }
@@ -340,6 +356,7 @@ export default function DespesasImplantacaoPage() {
       forma_pagamento: form.forma_pagamento,
       parcelas:        isCartao ? Number(form.parcelas) : 1,
       valor_parcela:   isCartao && form.valor_parcela ? Number(form.valor_parcela) : null,
+      data_vencimento: isCartao && form.data_vencimento ? form.data_vencimento : null,
     };
 
     const res = editing
@@ -530,6 +547,16 @@ export default function DespesasImplantacaoPage() {
                               💳 {d.parcelas}x {d.valor_parcela ? `de ${brl(Number(d.valor_parcela))}` : ""}
                             </div>
                           )}
+                          {d.forma_pagamento === "cartao_credito" && d.data_vencimento && (() => {
+                            const hoje = new Date().toISOString().split("T")[0];
+                            const prox = proximoVencimento(d.data_vencimento!, d.parcelas ?? 1);
+                            const quitado = prox.data < hoje;
+                            return (
+                              <div className="text-[10px] mt-0.5" style={{ color: quitado ? "#6b7280" : "#3b82f6" }}>
+                                📅 {quitado ? "Quitado" : `venc. ${fmtDate(prox.data)} (${prox.parcela}/${d.parcelas ?? 1})`}
+                              </div>
+                            );
+                          })()}
                         </td>
                         <td className="px-4 py-3 font-bold text-white whitespace-nowrap">
                           {brl(Number(d.valor))}
@@ -774,7 +801,12 @@ export default function DespesasImplantacaoPage() {
                 <select value={form.forma_pagamento}
                   onChange={e => {
                     const fp = e.target.value;
-                    setForm(f => ({ ...f, forma_pagamento: fp, parcelas: fp === "cartao_credito" ? f.parcelas : "1", valor_parcela: "" }));
+                    setForm(f => ({
+                      ...f, forma_pagamento: fp,
+                      parcelas: fp === "cartao_credito" ? f.parcelas : "1",
+                      valor_parcela: "",
+                      data_vencimento: fp === "cartao_credito" ? f.data_vencimento : "",
+                    }));
                   }}
                   className="w-full rounded-xl px-3 py-2 text-sm text-white border focus:outline-none"
                   style={inputStyle}>
@@ -810,6 +842,18 @@ export default function DespesasImplantacaoPage() {
                       onChange={e => setForm(f => ({ ...f, valor_parcela: e.target.value }))}
                       className="w-full rounded-xl px-3 py-2 text-sm text-white border focus:outline-none"
                       style={inputStyle} />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-[10px] font-semibold mb-1" style={{ color: "#6b7280" }}>
+                      📅 Vencimento da 1ª Parcela
+                    </label>
+                    <input type="date" value={form.data_vencimento}
+                      onChange={e => setForm(f => ({ ...f, data_vencimento: e.target.value }))}
+                      className="w-full rounded-xl px-3 py-2 text-sm text-white border focus:outline-none"
+                      style={inputStyle} />
+                    <p className="text-[10px] mt-1" style={{ color: "#6b7280" }}>
+                      As demais parcelas vencem automaticamente no mesmo dia, mês a mês.
+                    </p>
                   </div>
                 </div>
               )}

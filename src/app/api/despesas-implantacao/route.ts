@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { loja_id, descricao, categoria, valor, data_despesa, observacao, forma_pagamento, parcelas, valor_parcela } = body;
+  const { loja_id, descricao, categoria, valor, data_despesa, observacao, forma_pagamento, parcelas, valor_parcela, data_vencimento } = body;
 
   if (!loja_id || !descricao || !categoria || !valor) {
     return NextResponse.json(
@@ -41,6 +41,7 @@ export async function POST(req: NextRequest) {
       forma_pagamento: forma_pagamento ?? "avista",
       parcelas: parcelas ?? 1,
       valor_parcela: valor_parcela ?? null,
+      data_vencimento: data_vencimento ?? null,
     })
     .select()
     .single();
@@ -54,7 +55,7 @@ export async function PATCH(req: NextRequest) {
   const { id, ...fields } = body;
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
-  const allowed = ["descricao", "categoria", "valor", "data_despesa", "observacao", "forma_pagamento", "parcelas", "valor_parcela"];
+  const allowed = ["descricao", "categoria", "valor", "data_despesa", "observacao", "forma_pagamento", "parcelas", "valor_parcela", "data_vencimento"];
   const payload: Record<string, unknown> = { updated_at: new Date().toISOString() };
   for (const k of allowed) {
     if (fields[k] !== undefined) payload[k] = fields[k];
