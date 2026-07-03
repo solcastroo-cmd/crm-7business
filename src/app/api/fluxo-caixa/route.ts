@@ -54,12 +54,6 @@ export async function GET(req: NextRequest) {
     expensesByVehicle[e.vehicle_id] = (expensesByVehicle[e.vehicle_id] ?? 0) + Number(e.amount);
   }
 
-  // veículos já vendidos (pago) têm compra + despesas embutidas no lucro/prejuízo da venda,
-  // então não entram de novo como saída avulsa — evita contar o mesmo gasto duas vezes
-  const veiculosVendidosPagos = new Set(
-    (salesRes.data ?? []).filter(s => s.status === "pago").map(s => s.vehicle_id),
-  );
-
   for (const s of salesRes.data ?? []) {
     if (s.status !== "pago" || !s.closing_date) continue;
     const veiculo = vehicleMap[s.vehicle_id];
@@ -83,15 +77,8 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  for (const e of vehicleExpRes.data ?? []) {
-    if (!e.date) continue;
-    if (veiculosVendidosPagos.has(e.vehicle_id)) continue;
-    entries.push({
-      id: e.id, date: e.date, type: "saida",
-      description: e.description || e.category, category: e.category,
-      amount: Number(e.amount), source: "despesa_veiculo", status: "pago",
-    });
-  }
+  // despesas de veículo (funilaria, pneus, etc.) não entram soltas no fluxo de caixa —
+  // ficam só no módulo Financeiro e entram aqui embutidas no Lucro/Prejuízo, no fechamento da venda
 
   entries.sort((a, b) => a.date.localeCompare(b.date));
 
