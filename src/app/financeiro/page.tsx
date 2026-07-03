@@ -326,6 +326,106 @@ export default function FinanceiroPage() {
     );
   }, [relVehicles]);
 
+  /* ── HTML de um único veículo (reaproveitado no relatório geral e na impressão individual) ── */
+  function vehicleBlockHTML(v: VehicleFinancial) {
+    const { investimento, lucro, margem } = calcFinancials(v);
+    const expRows = (v.expenses ?? []).map(e => `
+      <tr>
+        <td>${fmtDate(e.date)}</td>
+        <td>${e.category}</td>
+        <td>${e.description ?? "-"}</td>
+        <td style="text-align:right;font-weight:600;color:#b45309">${brl(Number(e.amount))}</td>
+      </tr>`).join("");
+
+    const expSection = v.expenses?.length
+      ? `<table class="exp-table">
+          <thead><tr>
+            <th>Data</th><th>Categoria</th><th>Descrição</th><th style="text-align:right">Valor</th>
+          </tr></thead>
+          <tbody>${expRows}</tbody>
+          <tfoot><tr>
+            <td colspan="3" style="font-weight:700">Total Despesas</td>
+            <td style="text-align:right;font-weight:700;color:#b45309">${brl(v.total_expenses)}</td>
+          </tr></tfoot>
+         </table>`
+      : `<p style="color:#888;font-size:11px;margin:4px 0 0 8px">Nenhuma despesa lançada</p>`;
+
+    return `
+      <div class="vehicle-block">
+        <div class="vehicle-header">
+          <span class="vehicle-title">${v.brand} ${v.model} ${v.year ?? ""}</span>
+          <span class="plate">${v.plate ?? ""}</span>
+          <span class="status-badge">${STATUS_LABEL[v.status] ?? v.status}</span>
+        </div>
+        <div class="vehicle-body">
+          <div class="values-row">
+            <span>💵 Valor de Compra: <strong>${brl(v.purchase_price ?? 0)}</strong></span>
+            <span>🏷️ Valor de Venda: <strong>${v.actual_sale_price ? brl(v.actual_sale_price) : "—"}</strong></span>
+            <span>📦 Investimento Total: <strong>${brl(investimento)}</strong></span>
+            <span style="color:${lucro == null ? "#888" : lucro >= 0 ? "green" : "red"}">
+              ${lucro == null ? "⏳ Aguardando venda" : lucro >= 0
+                ? `✅ Lucro: <strong>${brl(lucro)}</strong> (${margem?.toFixed(1)}%)`
+                : `❌ Prejuízo: <strong>${brl(lucro)}</strong> (${margem?.toFixed(1)}%)`}
+            </span>
+          </div>
+          <p style="font-size:11px;font-weight:700;color:#555;margin:10px 0 4px">DESPESAS DETALHADAS</p>
+          ${expSection}
+        </div>
+      </div>`;
+  }
+
+  const REPORT_STYLES = `
+    *{box-sizing:border-box}
+    body{font-family:Arial,sans-serif;padding:28px;color:#1a1a1a;font-size:13px}
+    .header{border-bottom:3px solid #c1121f;padding-bottom:12px;margin-bottom:20px}
+    .header h1{color:#c1121f;margin:0;font-size:20px}
+    .header .meta{color:#666;font-size:12px;margin-top:4px}
+    .summary{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:24px}
+    .summary-card{background:#f8f8f8;border:1px solid #e0e0e0;border-radius:8px;padding:10px;text-align:center}
+    .summary-card .label{font-size:10px;color:#888;text-transform:uppercase;letter-spacing:.5px}
+    .summary-card .value{font-size:15px;font-weight:800;margin-top:2px}
+    .vehicle-block{border:1px solid #ddd;border-radius:8px;margin-bottom:18px;overflow:hidden;page-break-inside:avoid}
+    .vehicle-header{background:#f0f0f0;padding:8px 12px;display:flex;align-items:center;gap:10px}
+    .vehicle-title{font-weight:700;font-size:13px}
+    .plate{background:#fff;border:1px solid #ccc;border-radius:4px;padding:1px 6px;font-size:11px;font-family:monospace}
+    .status-badge{font-size:10px;background:#e8e8e8;border-radius:10px;padding:2px 8px;color:#555}
+    .vehicle-body{padding:10px 12px}
+    .values-row{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;font-size:12px;margin-bottom:10px}
+    .exp-table{width:100%;border-collapse:collapse;font-size:11px}
+    .exp-table th{background:#f5f5f5;padding:5px 8px;text-align:left;border:1px solid #ddd;font-size:10px}
+    .exp-table td{padding:4px 8px;border:1px solid #eee}
+    .exp-table tfoot td{background:#fff8e7;border-top:2px solid #ddd}
+    .totals-section{background:#1a1a2e;color:#fff;border-radius:8px;padding:14px 18px;margin-top:24px}
+    .totals-section h3{margin:0 0 10px;font-size:14px;color:#ffd700}
+    .totals-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+    .total-item .tl{font-size:10px;color:#aaa}
+    .total-item .tv{font-size:16px;font-weight:800}
+    @media print{body{padding:12px}.vehicle-block{page-break-inside:avoid}}
+  `;
+
+  /* ── Impressão individual — relatório de um único veículo ── */
+  function printVehicleReport(v: VehicleFinancial) {
+    const win = window.open("", "_blank");
+    if (!win) return;
+
+    win.document.write(`<!DOCTYPE html><html><head>
+      <meta charset="UTF-8"/>
+      <title>Relatório — ${v.brand} ${v.model}</title>
+      <style>${REPORT_STYLES}</style>
+    </head><body>
+      <div class="header">
+        <h1>💰 Relatório do Veículo</h1>
+        <div class="meta">
+          <strong>${storeName}</strong> &nbsp;·&nbsp;
+          Gerado em ${new Date().toLocaleDateString("pt-BR")}
+        </div>
+      </div>
+      ${vehicleBlockHTML(v)}
+    </body></html>`);
+    win.document.close();
+    win.print();
+  }
+
   /* ── PDF export (discriminado por veículo) ── */
   function exportPDF() {
     const win = window.open("", "_blank");
@@ -335,84 +435,12 @@ export default function FinanceiroPage() {
       ? `Período: ${dateFrom ? fmtDate(dateFrom) : "início"} até ${dateTo ? fmtDate(dateTo) : "hoje"}`
       : "Todos os períodos";
 
-    const vehicleSections = relVehicles.map(v => {
-      const { investimento, lucro, margem } = calcFinancials(v);
-      const expRows = (v.expenses ?? []).map(e => `
-        <tr>
-          <td>${fmtDate(e.date)}</td>
-          <td>${e.category}</td>
-          <td>${e.description ?? "-"}</td>
-          <td style="text-align:right;font-weight:600;color:#b45309">${brl(Number(e.amount))}</td>
-        </tr>`).join("");
-
-      const expSection = v.expenses?.length
-        ? `<table class="exp-table">
-            <thead><tr>
-              <th>Data</th><th>Categoria</th><th>Descrição</th><th style="text-align:right">Valor</th>
-            </tr></thead>
-            <tbody>${expRows}</tbody>
-            <tfoot><tr>
-              <td colspan="3" style="font-weight:700">Total Despesas</td>
-              <td style="text-align:right;font-weight:700;color:#b45309">${brl(v.total_expenses)}</td>
-            </tr></tfoot>
-           </table>`
-        : `<p style="color:#888;font-size:11px;margin:4px 0 0 8px">Nenhuma despesa lançada</p>`;
-
-      return `
-        <div class="vehicle-block">
-          <div class="vehicle-header">
-            <span class="vehicle-title">${v.brand} ${v.model} ${v.year ?? ""}</span>
-            <span class="plate">${v.plate ?? ""}</span>
-            <span class="status-badge">${STATUS_LABEL[v.status] ?? v.status}</span>
-          </div>
-          <div class="vehicle-body">
-            <div class="values-row">
-              <span>💵 Valor de Compra: <strong>${brl(v.purchase_price ?? 0)}</strong></span>
-              <span>🏷️ Valor de Venda: <strong>${v.actual_sale_price ? brl(v.actual_sale_price) : "—"}</strong></span>
-              <span>📦 Investimento Total: <strong>${brl(investimento)}</strong></span>
-              <span style="color:${lucro == null ? "#888" : lucro >= 0 ? "green" : "red"}">
-                ${lucro == null ? "⏳ Aguardando venda" : lucro >= 0
-                  ? `✅ Lucro: <strong>${brl(lucro)}</strong> (${margem?.toFixed(1)}%)`
-                  : `❌ Prejuízo: <strong>${brl(lucro)}</strong> (${margem?.toFixed(1)}%)`}
-              </span>
-            </div>
-            <p style="font-size:11px;font-weight:700;color:#555;margin:10px 0 4px">DESPESAS DETALHADAS</p>
-            ${expSection}
-          </div>
-        </div>`;
-    }).join("");
+    const vehicleSections = relVehicles.map(v => vehicleBlockHTML(v)).join("");
 
     win.document.write(`<!DOCTYPE html><html><head>
       <meta charset="UTF-8"/>
       <title>Relatório Financeiro — ${storeName}</title>
-      <style>
-        *{box-sizing:border-box}
-        body{font-family:Arial,sans-serif;padding:28px;color:#1a1a1a;font-size:13px}
-        .header{border-bottom:3px solid #c1121f;padding-bottom:12px;margin-bottom:20px}
-        .header h1{color:#c1121f;margin:0;font-size:20px}
-        .header .meta{color:#666;font-size:12px;margin-top:4px}
-        .summary{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:24px}
-        .summary-card{background:#f8f8f8;border:1px solid #e0e0e0;border-radius:8px;padding:10px;text-align:center}
-        .summary-card .label{font-size:10px;color:#888;text-transform:uppercase;letter-spacing:.5px}
-        .summary-card .value{font-size:15px;font-weight:800;margin-top:2px}
-        .vehicle-block{border:1px solid #ddd;border-radius:8px;margin-bottom:18px;overflow:hidden;page-break-inside:avoid}
-        .vehicle-header{background:#f0f0f0;padding:8px 12px;display:flex;align-items:center;gap:10px}
-        .vehicle-title{font-weight:700;font-size:13px}
-        .plate{background:#fff;border:1px solid #ccc;border-radius:4px;padding:1px 6px;font-size:11px;font-family:monospace}
-        .status-badge{font-size:10px;background:#e8e8e8;border-radius:10px;padding:2px 8px;color:#555}
-        .vehicle-body{padding:10px 12px}
-        .values-row{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;font-size:12px;margin-bottom:10px}
-        .exp-table{width:100%;border-collapse:collapse;font-size:11px}
-        .exp-table th{background:#f5f5f5;padding:5px 8px;text-align:left;border:1px solid #ddd;font-size:10px}
-        .exp-table td{padding:4px 8px;border:1px solid #eee}
-        .exp-table tfoot td{background:#fff8e7;border-top:2px solid #ddd}
-        .totals-section{background:#1a1a2e;color:#fff;border-radius:8px;padding:14px 18px;margin-top:24px}
-        .totals-section h3{margin:0 0 10px;font-size:14px;color:#ffd700}
-        .totals-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
-        .total-item .tl{font-size:10px;color:#aaa}
-        .total-item .tv{font-size:16px;font-weight:800}
-        @media print{body{padding:12px}.vehicle-block{page-break-inside:avoid}}
-      </style>
+      <style>${REPORT_STYLES}</style>
     </head><body>
       <div class="header">
         <h1>💰 Relatório Financeiro</h1>
@@ -709,9 +737,22 @@ export default function FinanceiroPage() {
                   </span>
                 </p>
               </div>
-              <button onClick={closeModal}
-                className="w-9 h-9 rounded-xl flex items-center justify-center text-gray-400 hover:text-white transition-colors text-lg"
-                style={{ background: "#1f2937" }}>✕</button>
+              <div className="flex items-center gap-2">
+                <button onClick={() => printVehicleReport({
+                  ...modal,
+                  purchase_price:    purchaseInput ? parseFloat(purchaseInput) : modal.purchase_price,
+                  actual_sale_price: saleInput     ? parseFloat(saleInput)     : modal.actual_sale_price,
+                  expenses,
+                  total_expenses: totalExpenses,
+                })}
+                  className="rounded-xl px-4 py-2 text-sm font-semibold text-white transition-all hover:opacity-90 flex items-center gap-1.5"
+                  style={{ background: "#e63946" }}>
+                  🖨️ Imprimir
+                </button>
+                <button onClick={closeModal}
+                  className="w-9 h-9 rounded-xl flex items-center justify-center text-gray-400 hover:text-white transition-colors text-lg"
+                  style={{ background: "#1f2937" }}>✕</button>
+              </div>
             </div>
 
             <div className="px-6 py-5 space-y-6">
