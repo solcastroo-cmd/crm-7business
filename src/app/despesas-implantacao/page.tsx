@@ -137,11 +137,11 @@ function exportCSV(
   const bypagto: Record<string, number> = {};
   despesas.forEach(d => { const k = d.forma_pagamento ?? "avista"; bypagto[k] = (bypagto[k] ?? 0) + Number(d.valor); });
 
-  const bymonth: Record<string, { label: string; valor: number }[]> = {};
+  const bymonth: Record<string, { date: string; label: string; valor: number }[]> = {};
   despesas.forEach(d => {
     expandParcelas(d).forEach(({ date, valor, label }) => {
       const k = monthKey(date);
-      (bymonth[k] ??= []).push({ label, valor });
+      (bymonth[k] ??= []).push({ date, label, valor });
     });
   });
   const monthEntries = Object.entries(bymonth).sort((a, b) => a[0].localeCompare(b[0]));
@@ -149,8 +149,8 @@ function exportCSV(
     const totalMes = itens.reduce((s, i) => s + i.valor, 0);
     return [
       `"${monthLabel(k)}";"${totalMes.toFixed(2).replace(".", ",")}"`,
-      ...[...itens].sort((a, b) => b.valor - a.valor).map(
-        i => `"  ${i.label.replace(/"/g, '""')}";"${i.valor.toFixed(2).replace(".", ",")}"`,
+      ...[...itens].sort((a, b) => a.date.localeCompare(b.date)).map(
+        i => `"  ${fmtDate(i.date)} - ${i.label.replace(/"/g, '""')}";"${i.valor.toFixed(2).replace(".", ",")}"`,
       ),
     ];
   });
@@ -222,19 +222,19 @@ function printReport(
     .map(([p, val]) => `<tr><td>${PAGTO_LABEL[p] ?? p}</td><td style="text-align:right;font-weight:700">${brl(val)}</td></tr>`)
     .join("");
 
-  const bymonth: Record<string, { label: string; valor: number }[]> = {};
+  const bymonth: Record<string, { date: string; label: string; valor: number }[]> = {};
   despesas.forEach(d => {
     expandParcelas(d).forEach(({ date, valor, label }) => {
       const k = monthKey(date);
-      (bymonth[k] ??= []).push({ label, valor });
+      (bymonth[k] ??= []).push({ date, label, valor });
     });
   });
   const monthRows = Object.entries(bymonth)
     .sort((a, b) => a[0].localeCompare(b[0]))
     .map(([k, itens]) => {
       const totalMes = itens.reduce((s, i) => s + i.valor, 0);
-      const itemRows = [...itens].sort((a, b) => b.valor - a.valor)
-        .map(i => `<tr><td style="padding-left:20px;color:#666">${i.label}</td><td style="text-align:right;color:#666">${brl(i.valor)}</td></tr>`)
+      const itemRows = [...itens].sort((a, b) => a.date.localeCompare(b.date))
+        .map(i => `<tr><td style="padding-left:20px;color:#666">${fmtDate(i.date)} — ${i.label}</td><td style="text-align:right;color:#666">${brl(i.valor)}</td></tr>`)
         .join("");
       return `<tr><td style="font-weight:700;background:#fafafa">${monthLabel(k)}</td><td style="text-align:right;font-weight:700;background:#fafafa">${brl(totalMes)}</td></tr>${itemRows}`;
     })
@@ -788,11 +788,11 @@ export default function DespesasImplantacaoPage() {
                 </p>
                 <div className="space-y-4">
                   {(() => {
-                    const mm: Record<string, { label: string; valor: number }[]> = {};
+                    const mm: Record<string, { date: string; label: string; valor: number }[]> = {};
                     filtered.forEach(d => {
                       expandParcelas(d).forEach(({ date, valor, label }) => {
                         const k = monthKey(date);
-                        (mm[k] ??= []).push({ label, valor });
+                        (mm[k] ??= []).push({ date, label, valor });
                       });
                     });
                     const entries = Object.entries(mm).sort((a, b) => a[0].localeCompare(b[0]));
@@ -801,7 +801,7 @@ export default function DespesasImplantacaoPage() {
                     );
                     return entries.map(([k, itens]) => {
                       const totalMes = itens.reduce((s, i) => s + i.valor, 0);
-                      const ordenados = [...itens].sort((a, b) => b.valor - a.valor);
+                      const ordenados = [...itens].sort((a, b) => a.date.localeCompare(b.date));
                       return (
                         <div key={k} className="rounded-xl overflow-hidden" style={{ background: "#111827" }}>
                           <div className="flex justify-between items-center px-4 py-2.5" style={{ background: "#1f2937" }}>
@@ -812,7 +812,8 @@ export default function DespesasImplantacaoPage() {
                             {ordenados.map((i, idx) => (
                               <div key={idx} className="flex justify-between items-center px-4 py-2"
                                 style={{ borderTop: idx > 0 ? "1px solid #1f293780" : "none" }}>
-                                <span className="text-xs truncate pr-3" style={{ color: "#9ca3af" }}>{i.label}</span>
+                                <span className="text-xs shrink-0 w-16" style={{ color: "#6b7280" }}>{fmtDate(i.date)}</span>
+                                <span className="text-xs truncate flex-1 px-3" style={{ color: "#9ca3af" }}>{i.label}</span>
                                 <span className="text-xs font-semibold text-white whitespace-nowrap">{brl(i.valor)}</span>
                               </div>
                             ))}
