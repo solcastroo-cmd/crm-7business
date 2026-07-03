@@ -86,6 +86,18 @@ function proximoVencimento(dataVencimento: string, parcelas: number) {
   }
   return { parcela: parcelas, data: addMonths(dataVencimento, parcelas - 1) };
 }
+function expandParcelas(d: Despesa): { date: string; valor: number }[] {
+  const parcelas = d.parcelas ?? 1;
+  if (d.forma_pagamento === "cartao_credito" && d.data_vencimento && parcelas > 1) {
+    const valorParcela = d.valor_parcela ?? Number(d.valor) / parcelas;
+    return Array.from({ length: parcelas }, (_, i) => ({
+      date: addMonths(d.data_vencimento!, i),
+      valor: Number(valorParcela),
+    }));
+  }
+  const dataBase = d.forma_pagamento === "cartao_credito" && d.data_vencimento ? d.data_vencimento : d.data_despesa;
+  return [{ date: dataBase, valor: Number(d.valor) }];
+}
 function monthKey(iso: string) { return iso.slice(0, 7); }
 function monthLabel(key: string) {
   const [y, m] = key.split("-");
@@ -717,6 +729,35 @@ export default function DespesasImplantacaoPage() {
                       <div key={k} className="rounded-xl p-3" style={{ background: "#111827" }}>
                         <p className="text-[10px] font-semibold mb-1" style={{ color: "#6b7280" }}>{monthLabel(k)}</p>
                         <p className="text-base font-black" style={{ color: "#e63946" }}>{brl(v)}</p>
+                      </div>
+                    ));
+                  })()}
+                </div>
+              </div>
+
+              {/* Por Vencimento (mês a mês) */}
+              <div className="rounded-2xl p-5" style={sectionBg}>
+                <p className="text-sm font-bold text-white mb-1">📅 Por Vencimento (mês a mês)</p>
+                <p className="text-[11px] mb-4" style={{ color: "#6b7280" }}>
+                  Quanto sai do caixa a cada mês, considerando o vencimento real das parcelas do cartão
+                </p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                  {(() => {
+                    const mm: Record<string, number> = {};
+                    filtered.forEach(d => {
+                      expandParcelas(d).forEach(({ date, valor }) => {
+                        const k = monthKey(date);
+                        mm[k] = (mm[k] ?? 0) + valor;
+                      });
+                    });
+                    const entries = Object.entries(mm).sort((a, b) => a[0].localeCompare(b[0]));
+                    if (!entries.length) return (
+                      <p className="col-span-4 text-sm text-center py-4" style={{ color: "#6b7280" }}>Sem dados de vencimento</p>
+                    );
+                    return entries.map(([k, v]) => (
+                      <div key={k} className="rounded-xl p-3" style={{ background: "#111827" }}>
+                        <p className="text-[10px] font-semibold mb-1" style={{ color: "#6b7280" }}>{monthLabel(k)}</p>
+                        <p className="text-base font-black" style={{ color: "#3b82f6" }}>{brl(v)}</p>
                       </div>
                     ));
                   })()}
