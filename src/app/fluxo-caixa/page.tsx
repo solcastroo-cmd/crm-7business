@@ -74,10 +74,8 @@ export default function FluxoCaixaPage() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const [dateFrom, setDateFrom] = useState(() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
-  });
+  // ponto zero fixo do fluxo de caixa — histórico anterior não entra no saldo
+  const [dateFrom, setDateFrom] = useState("2026-07-01");
   const [dateTo, setDateTo] = useState(() => new Date().toISOString().split("T")[0]);
 
   const [showModal, setShowModal] = useState(false);
