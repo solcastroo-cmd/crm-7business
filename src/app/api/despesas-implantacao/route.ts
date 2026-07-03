@@ -55,7 +55,7 @@ export async function PATCH(req: NextRequest) {
   const { id, ...fields } = body;
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
-  const allowed = ["descricao", "categoria", "valor", "data_despesa", "observacao", "forma_pagamento", "parcelas", "valor_parcela", "data_vencimento"];
+  const allowed = ["descricao", "categoria", "valor", "data_despesa", "observacao", "forma_pagamento", "parcelas", "valor_parcela", "data_vencimento", "parcelas_pagas"];
   const payload: Record<string, unknown> = { updated_at: new Date().toISOString() };
   for (const k of allowed) {
     if (fields[k] !== undefined) payload[k] = fields[k];

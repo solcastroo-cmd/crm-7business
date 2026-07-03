@@ -18,6 +18,7 @@ type Despesa = {
   parcelas?: number;
   valor_parcela?: number;
   data_vencimento?: string;
+  parcelas_pagas?: number[];
   created_at: string;
   updated_at: string;
 };
@@ -78,28 +79,23 @@ function addMonths(iso: string, n: number) {
   d.setMonth(d.getMonth() + n);
   return d.toISOString().split("T")[0];
 }
-function proximoVencimento(dataVencimento: string, parcelas: number) {
-  const hoje = new Date().toISOString().split("T")[0];
-  for (let i = 0; i < parcelas; i++) {
-    const venc = addMonths(dataVencimento, i);
-    if (venc >= hoje) return { parcela: i + 1, data: venc };
-  }
-  return { parcela: parcelas, data: addMonths(dataVencimento, parcelas - 1) };
-}
-function expandParcelas(d: Despesa): { date: string; valor: number; label: string }[] {
+function expandParcelas(d: Despesa): { date: string; valor: number; label: string; parcela: number; paga: boolean }[] {
   const parcelas = d.parcelas ?? 1;
+  const pagas = d.parcelas_pagas ?? [];
   if (d.forma_pagamento === "cartao_credito" && d.data_vencimento && parcelas > 1) {
     const valorParcela = d.valor_parcela ?? Number(d.valor) / parcelas;
     return Array.from({ length: parcelas }, (_, i) => ({
       date: addMonths(d.data_vencimento!, i),
       valor: Number(valorParcela),
       label: `${d.descricao} (parcela ${i + 1}/${parcelas})`,
+      parcela: i + 1,
+      paga: pagas.includes(i + 1),
     }));
   }
   const dataBase = d.forma_pagamento === "cartao_credito" && d.data_vencimento ? d.data_vencimento : d.data_despesa;
-  return [{ date: dataBase, valor: Number(d.valor), label: d.descricao }];
+  return [{ date: dataBase, valor: Number(d.valor), label: d.descricao, parcela: 1, paga: pagas.includes(1) }];
 }
-type LinhaVencimento = { date: string; valor: number; label: string; despesa: Despesa };
+type LinhaVencimento = { date: string; valor: number; label: string; parcela: number; paga: boolean; despesa: Despesa };
 function gerarLinhasVencimento(
   despesas: Despesa[],
   dateFrom: string,
@@ -130,13 +126,14 @@ function exportCSV(
     filters.pagamento && filters.pagamento !== "todas" && PAGTO_LABEL[filters.pagamento],
   ].filter(Boolean).join(" - ") || "todos";
 
-  const header = ["Vencimento", "Descricao", "Categoria", "Forma Pagamento", "Valor (R$)", "Observacao"];
-  const rows = linhas.map(({ date, valor, label, despesa: d }) => [
+  const header = ["Vencimento", "Descricao", "Categoria", "Forma Pagamento", "Valor (R$)", "Status", "Observacao"];
+  const rows = linhas.map(({ date, valor, label, paga, despesa: d }) => [
     fmtDate(date),
     `"${label.replace(/"/g, '""')}"`,
     `"${(CAT_LABEL[d.categoria] ?? d.categoria).replace(/"/g, '""')}"`,
     `"${(PAGTO_LABEL[d.forma_pagamento ?? "avista"] ?? d.forma_pagamento ?? "").replace(/"/g, '""')}"`,
     valor.toFixed(2).replace(".", ","),
+    paga ? "Pago" : "Pendente",
     `"${(d.observacao ?? "").replace(/"/g, '""')}"`,
   ]);
 
@@ -178,7 +175,7 @@ function exportCSV(
     "POR VENCIMENTO (MES A MES) - com detalhe de cada lancamento",
     ...monthLines,
     "",
-    ["\"TOTAL GERAL\"", "", "", "", `"${total.toFixed(2).replace(".", ",")}"`, ""].join(";"),
+    ["\"TOTAL GERAL\"", "", "", "", `"${total.toFixed(2).replace(".", ",")}"`, "", ""].join(";"),
   ];
 
   const bom = "﻿";
@@ -204,13 +201,14 @@ function printReport(
   const bycat: Record<string, number> = {};
   linhas.forEach(l => { bycat[l.despesa.categoria] = (bycat[l.despesa.categoria] ?? 0) + l.valor; });
 
-  const rows = linhas.map(({ date, valor, label, despesa: d }) => `
+  const rows = linhas.map(({ date, valor, label, paga, despesa: d }) => `
     <tr>
       <td>${fmtDate(date)}</td>
       <td>${label}</td>
       <td>${CAT_LABEL[d.categoria] ?? d.categoria}</td>
       <td>${PAGTO_LABEL[d.forma_pagamento ?? "avista"] ?? d.forma_pagamento}</td>
       <td style="text-align:right">${brl(valor)}</td>
+      <td style="font-weight:700;color:${paga ? "#10b981" : "#f59e0b"}">${paga ? "Pago" : "Pendente"}</td>
       <td style="color:#6b7280;font-size:10px">${d.observacao ?? ""}</td>
     </tr>`).join("");
 
@@ -293,7 +291,7 @@ function printReport(
     </table>
     <div class="section-title">Despesas Detalhadas (por vencimento)</div>
     <table>
-      <thead><tr><th>Vencimento</th><th>Descrição</th><th>Categoria</th><th>Pagamento</th><th style="text-align:right">Valor</th><th>Observação</th></tr></thead>
+      <thead><tr><th>Vencimento</th><th>Descrição</th><th>Categoria</th><th>Pagamento</th><th style="text-align:right">Valor</th><th>Status</th><th>Observação</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
     <div class="total-box">
@@ -456,6 +454,19 @@ export default function DespesasImplantacaoPage() {
   async function deleteDespesa(id: string) {
     if (!confirm("Excluir esta despesa?")) return;
     await fetch(`/api/despesas-implantacao?id=${id}`, { method: "DELETE" });
+    fetchAll();
+  }
+
+  async function toggleBaixa(despesa: Despesa, parcela: number) {
+    const atuais = despesa.parcelas_pagas ?? [];
+    const novas = atuais.includes(parcela)
+      ? atuais.filter(p => p !== parcela)
+      : [...atuais, parcela];
+    await fetch("/api/despesas-implantacao", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: despesa.id, parcelas_pagas: novas }),
+    });
     fetchAll();
   }
 
@@ -624,12 +635,13 @@ export default function DespesasImplantacaoPage() {
                             </div>
                           )}
                           {d.forma_pagamento === "cartao_credito" && d.data_vencimento && (() => {
-                            const hoje = new Date().toISOString().split("T")[0];
-                            const prox = proximoVencimento(d.data_vencimento!, d.parcelas ?? 1);
-                            const quitado = prox.data < hoje;
+                            const linhas = expandParcelas(d);
+                            const pendente = linhas.find(l => !l.paga);
                             return (
-                              <div className="text-[10px] mt-0.5" style={{ color: quitado ? "#6b7280" : "#3b82f6" }}>
-                                📅 {quitado ? "Quitado" : `venc. ${fmtDate(prox.data)} (${prox.parcela}/${d.parcelas ?? 1})`}
+                              <div className="text-[10px] mt-0.5" style={{ color: pendente ? "#3b82f6" : "#10b981" }}>
+                                {pendente
+                                  ? `📅 venc. ${fmtDate(pendente.date)} (${pendente.parcela}/${d.parcelas ?? 1})`
+                                  : "✓ Quitado"}
                               </div>
                             );
                           })()}
@@ -786,31 +798,42 @@ export default function DespesasImplantacaoPage() {
                 </p>
                 <div className="space-y-4">
                   {(() => {
-                    const mm: Record<string, { date: string; label: string; valor: number }[]> = {};
-                    linhasRelatorio.forEach(({ date, valor, label }) => {
-                      const k = monthKey(date);
-                      (mm[k] ??= []).push({ date, label, valor });
-                    });
+                    const mm: Record<string, LinhaVencimento[]> = {};
+                    linhasRelatorio.forEach(l => { const k = monthKey(l.date); (mm[k] ??= []).push(l); });
                     const entries = Object.entries(mm).sort((a, b) => a[0].localeCompare(b[0]));
                     if (!entries.length) return (
                       <p className="text-sm text-center py-4" style={{ color: "#6b7280" }}>Sem dados de vencimento</p>
                     );
                     return entries.map(([k, itens]) => {
                       const totalMes = itens.reduce((s, i) => s + i.valor, 0);
+                      const pendenteMes = itens.filter(i => !i.paga).reduce((s, i) => s + i.valor, 0);
                       const ordenados = [...itens].sort((a, b) => a.date.localeCompare(b.date));
                       return (
                         <div key={k} className="rounded-xl overflow-hidden" style={{ background: "#111827" }}>
                           <div className="flex justify-between items-center px-4 py-2.5" style={{ background: "#1f2937" }}>
                             <span className="text-xs font-bold text-white">{monthLabel(k)}</span>
-                            <span className="text-sm font-black" style={{ color: "#3b82f6" }}>{brl(totalMes)}</span>
+                            <div className="text-right">
+                              <span className="text-sm font-black" style={{ color: "#3b82f6" }}>{brl(totalMes)}</span>
+                              {pendenteMes > 0 && pendenteMes < totalMes && (
+                                <span className="block text-[10px]" style={{ color: "#f59e0b" }}>Pendente: {brl(pendenteMes)}</span>
+                              )}
+                            </div>
                           </div>
                           <div>
                             {ordenados.map((i, idx) => (
-                              <div key={idx} className="flex justify-between items-center px-4 py-2"
+                              <div key={idx} className="flex justify-between items-center px-4 py-2 gap-2"
                                 style={{ borderTop: idx > 0 ? "1px solid #1f293780" : "none" }}>
                                 <span className="text-xs shrink-0 w-16" style={{ color: "#6b7280" }}>{fmtDate(i.date)}</span>
-                                <span className="text-xs truncate flex-1 px-3" style={{ color: "#9ca3af" }}>{i.label}</span>
+                                <span className="text-xs truncate flex-1" style={{ color: "#9ca3af" }}>{i.label}</span>
                                 <span className="text-xs font-semibold text-white whitespace-nowrap">{brl(i.valor)}</span>
+                                <button onClick={() => toggleBaixa(i.despesa, i.parcela)}
+                                  className="shrink-0 rounded-lg px-2 py-1 text-[10px] font-bold whitespace-nowrap hover:opacity-80"
+                                  style={{
+                                    background: i.paga ? "#10b98122" : "#3b82f622",
+                                    color:      i.paga ? "#10b981"   : "#3b82f6",
+                                  }}>
+                                  {i.paga ? "✓ Pago" : "Dar baixa"}
+                                </button>
                               </div>
                             ))}
                           </div>
