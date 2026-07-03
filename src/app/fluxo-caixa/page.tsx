@@ -11,7 +11,7 @@ type LedgerEntry = {
   description: string;
   category: string;
   amount: number;
-  source: "venda" | "recebimento" | "despesa_loja" | "despesa_veiculo";
+  source: "venda" | "recebimento" | "despesa_loja" | "despesa_veiculo" | "despesa_implantacao";
   saldo: number;
 };
 
@@ -46,6 +46,7 @@ const PAYMENT_METHODS = [
 
 const SOURCE_LABEL: Record<string, string> = {
   venda: "Venda", recebimento: "Recebimento", despesa_loja: "Despesa Loja", despesa_veiculo: "Despesa Veículo",
+  despesa_implantacao: "Despesa Implantação",
 };
 
 const EMPTY_FORM = {
