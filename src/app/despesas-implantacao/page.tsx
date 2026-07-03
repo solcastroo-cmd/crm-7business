@@ -99,6 +99,17 @@ function expandParcelas(d: Despesa): { date: string; valor: number; label: strin
   const dataBase = d.forma_pagamento === "cartao_credito" && d.data_vencimento ? d.data_vencimento : d.data_despesa;
   return [{ date: dataBase, valor: Number(d.valor), label: d.descricao }];
 }
+type LinhaVencimento = { date: string; valor: number; label: string; despesa: Despesa };
+function gerarLinhasVencimento(
+  despesas: Despesa[],
+  dateFrom: string,
+  dateTo: string,
+): LinhaVencimento[] {
+  return despesas
+    .flatMap(d => expandParcelas(d).map(item => ({ ...item, despesa: d })))
+    .filter(l => (!dateFrom || l.date >= dateFrom) && (!dateTo || l.date <= dateTo))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
 function monthKey(iso: string) { return iso.slice(0, 7); }
 function monthLabel(key: string) {
   const [y, m] = key.split("-");
@@ -108,7 +119,7 @@ function monthLabel(key: string) {
 
 /* ── CSV Export ─────────────────────────────────────────────────────── */
 function exportCSV(
-  despesas: Despesa[],
+  linhas: LinhaVencimento[],
   storeName: string,
   filters: { dateFrom: string; dateTo: string; categoria: string; pagamento?: string },
 ) {
@@ -119,12 +130,8 @@ function exportCSV(
     filters.pagamento && filters.pagamento !== "todas" && PAGTO_LABEL[filters.pagamento],
   ].filter(Boolean).join(" - ") || "todos";
 
-  const linhasVencimento = despesas
-    .flatMap(d => expandParcelas(d).map(item => ({ ...item, despesa: d })))
-    .sort((a, b) => a.date.localeCompare(b.date));
-
   const header = ["Vencimento", "Descricao", "Categoria", "Forma Pagamento", "Valor (R$)", "Observacao"];
-  const rows = linhasVencimento.map(({ date, valor, label, despesa: d }) => [
+  const rows = linhas.map(({ date, valor, label, despesa: d }) => [
     fmtDate(date),
     `"${label.replace(/"/g, '""')}"`,
     `"${(CAT_LABEL[d.categoria] ?? d.categoria).replace(/"/g, '""')}"`,
@@ -133,19 +140,14 @@ function exportCSV(
     `"${(d.observacao ?? "").replace(/"/g, '""')}"`,
   ]);
 
-  const total = despesas.reduce((s, d) => s + Number(d.valor), 0);
+  const total = linhas.reduce((s, l) => s + l.valor, 0);
   const bycat: Record<string, number> = {};
-  despesas.forEach(d => { bycat[d.categoria] = (bycat[d.categoria] ?? 0) + Number(d.valor); });
+  linhas.forEach(l => { bycat[l.despesa.categoria] = (bycat[l.despesa.categoria] ?? 0) + l.valor; });
   const bypagto: Record<string, number> = {};
-  despesas.forEach(d => { const k = d.forma_pagamento ?? "avista"; bypagto[k] = (bypagto[k] ?? 0) + Number(d.valor); });
+  linhas.forEach(l => { const k = l.despesa.forma_pagamento ?? "avista"; bypagto[k] = (bypagto[k] ?? 0) + l.valor; });
 
-  const bymonth: Record<string, { date: string; label: string; valor: number }[]> = {};
-  despesas.forEach(d => {
-    expandParcelas(d).forEach(({ date, valor, label }) => {
-      const k = monthKey(date);
-      (bymonth[k] ??= []).push({ date, label, valor });
-    });
-  });
+  const bymonth: Record<string, LinhaVencimento[]> = {};
+  linhas.forEach(l => { const k = monthKey(l.date); (bymonth[k] ??= []).push(l); });
   const monthEntries = Object.entries(bymonth).sort((a, b) => a[0].localeCompare(b[0]));
   const monthLines = monthEntries.flatMap(([k, itens]) => {
     const totalMes = itens.reduce((s, i) => s + i.valor, 0);
@@ -191,22 +193,18 @@ function exportCSV(
 
 /* ── PDF Report ─────────────────────────────────────────────────────── */
 function printReport(
-  despesas: Despesa[],
+  linhas: LinhaVencimento[],
   storeName: string,
   filters: { dateFrom: string; dateTo: string; categoria: string; pagamento?: string },
 ) {
   const win = window.open("", "_blank");
   if (!win) return;
 
-  const total = despesas.reduce((s, d) => s + Number(d.valor), 0);
+  const total = linhas.reduce((s, l) => s + l.valor, 0);
   const bycat: Record<string, number> = {};
-  despesas.forEach(d => { bycat[d.categoria] = (bycat[d.categoria] ?? 0) + Number(d.valor); });
+  linhas.forEach(l => { bycat[l.despesa.categoria] = (bycat[l.despesa.categoria] ?? 0) + l.valor; });
 
-  const linhasVencimento = despesas
-    .flatMap(d => expandParcelas(d).map(item => ({ ...item, despesa: d })))
-    .sort((a, b) => a.date.localeCompare(b.date));
-
-  const rows = linhasVencimento.map(({ date, valor, label, despesa: d }) => `
+  const rows = linhas.map(({ date, valor, label, despesa: d }) => `
     <tr>
       <td>${fmtDate(date)}</td>
       <td>${label}</td>
@@ -222,19 +220,14 @@ function printReport(
     .join("");
 
   const bypagto: Record<string, number> = {};
-  despesas.forEach(d => { const k = d.forma_pagamento ?? "avista"; bypagto[k] = (bypagto[k] ?? 0) + Number(d.valor); });
+  linhas.forEach(l => { const k = l.despesa.forma_pagamento ?? "avista"; bypagto[k] = (bypagto[k] ?? 0) + l.valor; });
   const pagtoRows = Object.entries(bypagto)
     .sort((a, b) => b[1] - a[1])
     .map(([p, val]) => `<tr><td>${PAGTO_LABEL[p] ?? p}</td><td style="text-align:right;font-weight:700">${brl(val)}</td></tr>`)
     .join("");
 
-  const bymonth: Record<string, { date: string; label: string; valor: number }[]> = {};
-  despesas.forEach(d => {
-    expandParcelas(d).forEach(({ date, valor, label }) => {
-      const k = monthKey(date);
-      (bymonth[k] ??= []).push({ date, label, valor });
-    });
-  });
+  const bymonth: Record<string, LinhaVencimento[]> = {};
+  linhas.forEach(l => { const k = monthKey(l.date); (bymonth[k] ??= []).push(l); });
   const monthRows = Object.entries(bymonth)
     .sort((a, b) => a[0].localeCompare(b[0]))
     .map(([k, itens]) => {
@@ -373,6 +366,26 @@ export default function DespesasImplantacaoPage() {
       return true;
     });
   }, [despesas, filterCat, dateFrom, dateTo, search]);
+
+  // para o relatorio: filtra por categoria/pagamento/busca, mas NAO por data aqui —
+  // o periodo se aplica depois, sobre a data de vencimento de cada parcela, nao a data da compra
+  const filtradoParaRelatorio = useMemo(() => {
+    return despesas.filter(d => {
+      if (filterCat   !== "todas" && d.categoria        !== filterCat)   return false;
+      if (filterPagto !== "todas" && (d.forma_pagamento ?? "avista") !== filterPagto) return false;
+      if (search) {
+        const q = search.toLowerCase();
+        if (!d.descricao.toLowerCase().includes(q) &&
+            !(d.observacao ?? "").toLowerCase().includes(q)) return false;
+      }
+      return true;
+    });
+  }, [despesas, filterCat, filterPagto, search]);
+
+  const linhasRelatorio = useMemo(
+    () => gerarLinhasVencimento(filtradoParaRelatorio, dateFrom, dateTo),
+    [filtradoParaRelatorio, dateFrom, dateTo],
+  );
 
   /* ── KPIs ── */
   const kpi = useMemo(() => {
@@ -685,12 +698,12 @@ export default function DespesasImplantacaoPage() {
                 <div className="space-y-3">
                   {(() => {
                     const catMap: Record<string, number> = {};
-                    filtered.forEach(d => { catMap[d.categoria] = (catMap[d.categoria] ?? 0) + Number(d.valor); });
+                    linhasRelatorio.forEach(l => { catMap[l.despesa.categoria] = (catMap[l.despesa.categoria] ?? 0) + l.valor; });
                     const items = Object.entries(catMap).sort((a, b) => b[1] - a[1]);
                     if (!items.length) return (
                       <p className="text-sm text-center py-4" style={{ color: "#6b7280" }}>Nenhum dado</p>
                     );
-                    const totalFiltrado = filtered.reduce((s, d) => s + Number(d.valor), 0.001);
+                    const totalFiltrado = linhasRelatorio.reduce((s, l) => s + l.valor, 0.001);
                     const max = Math.max(...items.map(i => i[1]));
                     return items.map(([cat, val]) => (
                       <div key={cat} className="flex items-center gap-3">
@@ -712,7 +725,7 @@ export default function DespesasImplantacaoPage() {
                 <div className="mt-4 flex justify-between items-center border-t pt-4" style={{ borderColor: "#1f2937" }}>
                   <span className="text-sm font-bold text-white">Total do Período</span>
                   <span className="text-2xl font-black" style={{ color: "#e63946" }}>
-                    {brl(filtered.reduce((s, d) => s + Number(d.valor), 0))}
+                    {brl(linhasRelatorio.reduce((s, l) => s + l.valor, 0))}
                   </span>
                 </div>
               </div>
@@ -722,15 +735,15 @@ export default function DespesasImplantacaoPage() {
                 <p className="text-sm font-bold text-white mb-4">💳 Total por Forma de Pagamento</p>
                 {(() => {
                   const pagMap: Record<string, number> = {};
-                  filtered.forEach(d => {
-                    const k = d.forma_pagamento ?? "avista";
-                    pagMap[k] = (pagMap[k] ?? 0) + Number(d.valor);
+                  linhasRelatorio.forEach(l => {
+                    const k = l.despesa.forma_pagamento ?? "avista";
+                    pagMap[k] = (pagMap[k] ?? 0) + l.valor;
                   });
                   const items = Object.entries(pagMap).sort((a, b) => b[1] - a[1]);
                   if (!items.length) return (
                     <p className="text-sm text-center py-4" style={{ color: "#6b7280" }}>Nenhum dado</p>
                   );
-                  const totalFiltrado = filtered.reduce((s, d) => s + Number(d.valor), 0.001);
+                  const totalFiltrado = linhasRelatorio.reduce((s, l) => s + l.valor, 0.001);
                   const max = Math.max(...items.map(i => i[1]));
                   const PAG_COLOR: Record<string, string> = {
                     avista: "#10b981", pix: "#06b6d4", cartao_credito: "#f59e0b",
@@ -757,7 +770,7 @@ export default function DespesasImplantacaoPage() {
                       <div className="mt-3 flex justify-between items-center border-t pt-3" style={{ borderColor: "#1f2937" }}>
                         <span className="text-xs font-bold" style={{ color: "#6b7280" }}>Total</span>
                         <span className="text-lg font-black" style={{ color: "#f87171" }}>
-                          {brl(filtered.reduce((s, d) => s + Number(d.valor), 0))}
+                          {brl(linhasRelatorio.reduce((s, l) => s + l.valor, 0))}
                         </span>
                       </div>
                     </div>
@@ -765,41 +778,18 @@ export default function DespesasImplantacaoPage() {
                 })()}
               </div>
 
-              {/* Totais mensais */}
-              <div className="rounded-2xl p-5" style={sectionBg}>
-                <p className="text-sm font-bold text-white mb-4">📅 Totais por Mês</p>
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                  {(() => {
-                    const mm: Record<string, number> = {};
-                    filtered.forEach(d => { const k = monthKey(d.data_despesa); mm[k] = (mm[k] ?? 0) + Number(d.valor); });
-                    const entries = Object.entries(mm).sort((a, b) => a[0].localeCompare(b[0]));
-                    if (!entries.length) return (
-                      <p className="col-span-4 text-sm text-center py-4" style={{ color: "#6b7280" }}>Sem dados mensais</p>
-                    );
-                    return entries.map(([k, v]) => (
-                      <div key={k} className="rounded-xl p-3" style={{ background: "#111827" }}>
-                        <p className="text-[10px] font-semibold mb-1" style={{ color: "#6b7280" }}>{monthLabel(k)}</p>
-                        <p className="text-base font-black" style={{ color: "#e63946" }}>{brl(v)}</p>
-                      </div>
-                    ));
-                  })()}
-                </div>
-              </div>
-
               {/* Por Vencimento (mês a mês) */}
               <div className="rounded-2xl p-5" style={sectionBg}>
                 <p className="text-sm font-bold text-white mb-1">📅 Por Vencimento (mês a mês)</p>
                 <p className="text-[11px] mb-4" style={{ color: "#6b7280" }}>
-                  Quanto sai do caixa a cada mês, com o detalhe de cada lançamento que compõe o total
+                  Quanto sai do caixa a cada mês, com o detalhe de cada lançamento que compõe o total — considerando o vencimento real, não a data da compra
                 </p>
                 <div className="space-y-4">
                   {(() => {
                     const mm: Record<string, { date: string; label: string; valor: number }[]> = {};
-                    filtered.forEach(d => {
-                      expandParcelas(d).forEach(({ date, valor, label }) => {
-                        const k = monthKey(date);
-                        (mm[k] ??= []).push({ date, label, valor });
-                      });
+                    linhasRelatorio.forEach(({ date, valor, label }) => {
+                      const k = monthKey(date);
+                      (mm[k] ??= []).push({ date, label, valor });
                     });
                     const entries = Object.entries(mm).sort((a, b) => a[0].localeCompare(b[0]));
                     if (!entries.length) return (
@@ -833,13 +823,13 @@ export default function DespesasImplantacaoPage() {
 
               <div className="flex gap-3">
                 <button
-                  onClick={() => printReport(filtered, storeName, { dateFrom, dateTo, categoria: filterCat, pagamento: filterPagto })}
+                  onClick={() => printReport(linhasRelatorio, storeName, { dateFrom, dateTo, categoria: filterCat, pagamento: filterPagto })}
                   className="flex-1 rounded-xl py-3 text-sm font-bold text-white flex items-center justify-center gap-2 hover:opacity-90"
                   style={{ background: "#e63946" }}>
                   🖨️ Exportar PDF
                 </button>
                 <button
-                  onClick={() => exportCSV(filtered, storeName, { dateFrom, dateTo, categoria: filterCat, pagamento: filterPagto })}
+                  onClick={() => exportCSV(linhasRelatorio, storeName, { dateFrom, dateTo, categoria: filterCat, pagamento: filterPagto })}
                   className="flex-1 rounded-xl py-3 text-sm font-bold text-white flex items-center justify-center gap-2 hover:opacity-90"
                   style={{ background: "#1d4ed8" }}>
                   📥 Exportar CSV
