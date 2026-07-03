@@ -119,15 +119,17 @@ function exportCSV(
     filters.pagamento && filters.pagamento !== "todas" && PAGTO_LABEL[filters.pagamento],
   ].filter(Boolean).join(" - ") || "todos";
 
-  const header = ["Data", "Descricao", "Categoria", "Forma Pagamento", "Parcelas", "Valor Parcela (R$)", "Valor Total (R$)", "Observacao"];
-  const rows = despesas.map(d => [
-    fmtDate(d.data_despesa),
-    `"${d.descricao.replace(/"/g, '""')}"`,
+  const linhasVencimento = despesas
+    .flatMap(d => expandParcelas(d).map(item => ({ ...item, despesa: d })))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  const header = ["Vencimento", "Descricao", "Categoria", "Forma Pagamento", "Valor (R$)", "Observacao"];
+  const rows = linhasVencimento.map(({ date, valor, label, despesa: d }) => [
+    fmtDate(date),
+    `"${label.replace(/"/g, '""')}"`,
     `"${(CAT_LABEL[d.categoria] ?? d.categoria).replace(/"/g, '""')}"`,
     `"${(PAGTO_LABEL[d.forma_pagamento ?? "avista"] ?? d.forma_pagamento ?? "").replace(/"/g, '""')}"`,
-    d.forma_pagamento === "cartao_credito" ? String(d.parcelas ?? 1) : "1",
-    d.forma_pagamento === "cartao_credito" && d.valor_parcela ? Number(d.valor_parcela).toFixed(2).replace(".", ",") : "",
-    Number(d.valor).toFixed(2).replace(".", ","),
+    valor.toFixed(2).replace(".", ","),
     `"${(d.observacao ?? "").replace(/"/g, '""')}"`,
   ]);
 
@@ -174,7 +176,7 @@ function exportCSV(
     "POR VENCIMENTO (MES A MES) - com detalhe de cada lancamento",
     ...monthLines,
     "",
-    `"TOTAL GERAL";;;;;;;"${total.toFixed(2).replace(".", ",")}"`,
+    ["\"TOTAL GERAL\"", "", "", "", `"${total.toFixed(2).replace(".", ",")}"`, ""].join(";"),
   ];
 
   const bom = "﻿";
@@ -200,13 +202,17 @@ function printReport(
   const bycat: Record<string, number> = {};
   despesas.forEach(d => { bycat[d.categoria] = (bycat[d.categoria] ?? 0) + Number(d.valor); });
 
-  const rows = despesas.map(d => `
+  const linhasVencimento = despesas
+    .flatMap(d => expandParcelas(d).map(item => ({ ...item, despesa: d })))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  const rows = linhasVencimento.map(({ date, valor, label, despesa: d }) => `
     <tr>
-      <td>${fmtDate(d.data_despesa)}</td>
-      <td>${d.descricao}</td>
+      <td>${fmtDate(date)}</td>
+      <td>${label}</td>
       <td>${CAT_LABEL[d.categoria] ?? d.categoria}</td>
-      <td>${PAGTO_LABEL[d.forma_pagamento ?? "avista"] ?? d.forma_pagamento}${d.forma_pagamento === "cartao_credito" && (d.parcelas ?? 1) > 1 ? ` (${d.parcelas}x)` : ""}</td>
-      <td style="text-align:right">${brl(Number(d.valor))}</td>
+      <td>${PAGTO_LABEL[d.forma_pagamento ?? "avista"] ?? d.forma_pagamento}</td>
+      <td style="text-align:right">${brl(valor)}</td>
       <td style="color:#6b7280;font-size:10px">${d.observacao ?? ""}</td>
     </tr>`).join("");
 
@@ -292,9 +298,9 @@ function printReport(
       <thead><tr><th>Mês</th><th style="text-align:right">Total</th></tr></thead>
       <tbody>${monthRows}</tbody>
     </table>
-    <div class="section-title">Despesas Detalhadas</div>
+    <div class="section-title">Despesas Detalhadas (por vencimento)</div>
     <table>
-      <thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Pagamento</th><th style="text-align:right">Valor</th><th>Observação</th></tr></thead>
+      <thead><tr><th>Vencimento</th><th>Descrição</th><th>Categoria</th><th>Pagamento</th><th style="text-align:right">Valor</th><th>Observação</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
     <div class="total-box">
