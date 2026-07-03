@@ -20,15 +20,16 @@ export async function GET(req: NextRequest) {
   const dateFrom = url.searchParams.get("dateFrom") ?? "";
   const dateTo   = url.searchParams.get("dateTo") ?? "";
 
-  const [incomeRes, salesRes, storeExpRes, vehicleExpRes, bankRes] = await Promise.all([
+  const [incomeRes, salesRes, storeExpRes, vehicleExpRes, bankRes, vehiclesRes] = await Promise.all([
     supabaseAdmin.from("store_income").select("*").order("date", { ascending: true }),
-    supabaseAdmin.from("sales").select("id,total_value,closing_date,status,buyer_name").order("closing_date", { ascending: true }),
+    supabaseAdmin.from("sales").select("id,vehicle_id,total_value,closing_date,status,buyer_name").order("closing_date", { ascending: true }),
     supabaseAdmin.from("store_expenses").select("*").order("date", { ascending: true }),
     supabaseAdmin.from("vehicle_expenses").select("id,vehicle_id,date,category,description,amount").order("date", { ascending: true }),
     supabaseAdmin.from("bank_accounts").select("id,name,balance,reference_date").order("created_at", { ascending: true }),
+    supabaseAdmin.from("vehicles").select("id,brand,model,purchase_price"),
   ]);
 
-  for (const [label, res] of Object.entries({ income: incomeRes, sales: salesRes, storeExp: storeExpRes, vehicleExp: vehicleExpRes, bank: bankRes })) {
+  for (const [label, res] of Object.entries({ income: incomeRes, sales: salesRes, storeExp: storeExpRes, vehicleExp: vehicleExpRes, bank: bankRes, vehicles: vehiclesRes })) {
     if (res.error) console.error(`[fluxo-caixa] ${label} query error:`, res.error.message);
   }
 
@@ -43,12 +44,33 @@ export async function GET(req: NextRequest) {
     });
   }
 
+  const vehicleMap: Record<string, { brand: string; model: string; purchase_price: number }> = {};
+  for (const v of vehiclesRes.data ?? []) {
+    vehicleMap[v.id] = { brand: v.brand, model: v.model, purchase_price: Number(v.purchase_price ?? 0) };
+  }
+
+  const expensesByVehicle: Record<string, number> = {};
+  for (const e of vehicleExpRes.data ?? []) {
+    expensesByVehicle[e.vehicle_id] = (expensesByVehicle[e.vehicle_id] ?? 0) + Number(e.amount);
+  }
+
+  // veículos já vendidos (pago) têm compra + despesas embutidas no lucro/prejuízo da venda,
+  // então não entram de novo como saída avulsa — evita contar o mesmo gasto duas vezes
+  const veiculosVendidosPagos = new Set(
+    (salesRes.data ?? []).filter(s => s.status === "pago").map(s => s.vehicle_id),
+  );
+
   for (const s of salesRes.data ?? []) {
     if (s.status !== "pago" || !s.closing_date) continue;
+    const veiculo = vehicleMap[s.vehicle_id];
+    const investimento = (veiculo?.purchase_price ?? 0) + (expensesByVehicle[s.vehicle_id] ?? 0);
+    const lucro = Number(s.total_value) - investimento;
+    const nomeVeiculo = veiculo ? `${veiculo.brand} ${veiculo.model}` : "veículo";
     entries.push({
-      id: s.id, date: s.closing_date, type: "entrada",
-      description: `Venda — ${s.buyer_name ?? "Cliente"}`, category: "Venda de Veículo",
-      amount: Number(s.total_value), source: "venda", status: "pago",
+      id: s.id, date: s.closing_date, type: lucro >= 0 ? "entrada" : "saida",
+      description: `Venda — ${s.buyer_name ?? "Cliente"} (${nomeVeiculo}) — ${lucro >= 0 ? "Lucro" : "Prejuízo"}`,
+      category: "Venda de Veículo",
+      amount: Math.abs(lucro), source: "venda", status: "pago",
     });
   }
 
@@ -63,6 +85,7 @@ export async function GET(req: NextRequest) {
 
   for (const e of vehicleExpRes.data ?? []) {
     if (!e.date) continue;
+    if (veiculosVendidosPagos.has(e.vehicle_id)) continue;
     entries.push({
       id: e.id, date: e.date, type: "saida",
       description: e.description || e.category, category: e.category,
