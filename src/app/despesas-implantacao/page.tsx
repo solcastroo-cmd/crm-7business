@@ -136,6 +136,14 @@ function exportCSV(
   const bypagto: Record<string, number> = {};
   despesas.forEach(d => { const k = d.forma_pagamento ?? "avista"; bypagto[k] = (bypagto[k] ?? 0) + Number(d.valor); });
 
+  const bymonth: Record<string, number> = {};
+  despesas.forEach(d => {
+    expandParcelas(d).forEach(({ date, valor }) => {
+      const k = monthKey(date);
+      bymonth[k] = (bymonth[k] ?? 0) + valor;
+    });
+  });
+
   const lines = [
     `"${storeName} - Despesas de Implantacao (${filterDesc})"`,
     "",
@@ -150,6 +158,11 @@ function exportCSV(
     "TOTAL POR FORMA DE PAGAMENTO",
     ...Object.entries(bypagto).sort((a, b) => b[1] - a[1]).map(
       ([p, val]) => `"${PAGTO_LABEL[p] ?? p}";"${val.toFixed(2).replace(".", ",")}"`,
+    ),
+    "",
+    "POR VENCIMENTO (MES A MES)",
+    ...Object.entries(bymonth).sort((a, b) => a[0].localeCompare(b[0])).map(
+      ([k, val]) => `"${monthLabel(k)}";"${val.toFixed(2).replace(".", ",")}"`,
     ),
     "",
     `"TOTAL GERAL";;;;;;;"${total.toFixed(2).replace(".", ",")}"`,
@@ -200,6 +213,18 @@ function printReport(
     .map(([p, val]) => `<tr><td>${PAGTO_LABEL[p] ?? p}</td><td style="text-align:right;font-weight:700">${brl(val)}</td></tr>`)
     .join("");
 
+  const bymonth: Record<string, number> = {};
+  despesas.forEach(d => {
+    expandParcelas(d).forEach(({ date, valor }) => {
+      const k = monthKey(date);
+      bymonth[k] = (bymonth[k] ?? 0) + valor;
+    });
+  });
+  const monthRows = Object.entries(bymonth)
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([k, val]) => `<tr><td>${monthLabel(k)}</td><td style="text-align:right;font-weight:700">${brl(val)}</td></tr>`)
+    .join("");
+
   const filterDesc = [
     filters.dateFrom && `De: ${fmtDate(filters.dateFrom)}`,
     filters.dateTo   && `Até: ${fmtDate(filters.dateTo)}`,
@@ -247,6 +272,11 @@ function printReport(
         </table>
       </div>
     </div>
+    <div class="section-title">📅 Por Vencimento (mês a mês)</div>
+    <table>
+      <thead><tr><th>Mês</th><th style="text-align:right">Total</th></tr></thead>
+      <tbody>${monthRows}</tbody>
+    </table>
     <div class="section-title">Despesas Detalhadas</div>
     <table>
       <thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Pagamento</th><th style="text-align:right">Valor</th><th>Observação</th></tr></thead>
