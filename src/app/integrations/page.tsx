@@ -198,8 +198,8 @@ function InstagramCard({ userId }: { userId: string | null }) {
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl" style={{ background: "#500724" }}>📸</div>
           <div>
-            <h2 className="text-sm font-bold text-white">Instagram DM</h2>
-            <p className="text-xs text-gray-500">Receba mensagens diretas como leads</p>
+            <h2 className="text-sm font-bold text-white">Instagram</h2>
+            <p className="text-xs text-gray-500">Receba DMs como leads e poste veículos no feed</p>
           </div>
         </div>
         <StatusBadge active={connected} />
@@ -225,7 +225,8 @@ function InstagramCard({ userId }: { userId: string | null }) {
             <p className="font-semibold text-gray-300">Como obter o token:</p>
             <p>1. Acesse <code className="text-pink-400">developers.facebook.com</code></p>
             <p>2. Crie um App → Produto Instagram</p>
-            <p>3. Gere o Page Access Token com <code className="text-pink-400">instagram_manage_messages</code></p>
+            <p>3. Gere o Page Access Token com <code className="text-pink-400">instagram_manage_messages</code>, <code className="text-pink-400">instagram_content_publish</code>, <code className="text-pink-400">instagram_basic</code> e <code className="text-pink-400">pages_show_list</code></p>
+            <p className="text-yellow-500">Já conectou antes só com instagram_manage_messages? Reconecte com essas permissões extras pra poder postar no feed.</p>
           </div>
         </div>
       )}

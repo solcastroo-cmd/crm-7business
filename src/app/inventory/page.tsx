@@ -258,6 +258,60 @@ function RenaveHistory({ vehicleId }: { vehicleId: string }) {
   );
 }
 
+// ── Postar no Instagram ────────────────────────────────────────────────────────
+function InstagramPublishBox({
+  vehicleId, userId, photos, defaultCaption,
+}: { vehicleId: string; userId: string | null; photos: string[]; defaultCaption: string }) {
+  const [caption, setCaption] = useState(defaultCaption);
+  const [posting, setPosting] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [permalink, setPermalink] = useState<string | null>(null);
+
+  const jpegCount = photos.filter(p => /\.jpe?g($|\?)/i.test(p)).length;
+
+  async function handlePost() {
+    if (!userId) return;
+    setPosting(true); setErr(null); setPermalink(null);
+    try {
+      const res = await fetch("/api/inventory/instagram", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vehicleId, userId, caption, photos }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setErr(data.error ?? "Erro ao postar."); return; }
+      setPermalink(data.permalink ?? null);
+    } catch { setErr("Erro de rede ao postar no Instagram."); }
+    finally { setPosting(false); }
+  }
+
+  return (
+    <div className="mt-4 p-3 rounded-xl border border-pink-900/50 bg-pink-950/20">
+      <p className="text-xs font-bold text-pink-400 uppercase tracking-wider mb-2">📸 Instagram</p>
+      {jpegCount === 0 ? (
+        <p className="text-xs text-gray-500">Nenhuma foto em JPEG — o Instagram só aceita esse formato pra postar.</p>
+      ) : (
+        <>
+          <textarea value={caption} onChange={e => setCaption(e.target.value)} rows={3}
+            placeholder="Legenda do post..."
+            className="w-full px-3 py-2 rounded-xl text-sm border focus:outline-none resize-none mb-2"
+            style={{ background: "#111", border: "1px solid #3a3a3a", color: "#fff" }} />
+          <button type="button" onClick={handlePost} disabled={posting}
+            className="w-full py-2 rounded-xl text-xs font-bold text-white disabled:opacity-50"
+            style={{ background: "#db2777" }}>
+            {posting ? "Postando..." : `Postar no Instagram (${jpegCount} foto${jpegCount > 1 ? "s" : ""})`}
+          </button>
+          {err && <p className="text-xs text-red-400 mt-2">{err}</p>}
+          {permalink && (
+            <p className="text-xs text-green-400 mt-2">
+              ✓ Publicado! <a href={permalink} target="_blank" rel="noreferrer" className="underline">Ver post</a>
+            </p>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 // ── Página principal ──────────────────────────────────────────────────────────
 export default function InventoryPage() {
   const { userId } = useUserId();
@@ -632,6 +686,14 @@ export default function InventoryPage() {
                     </label>
                   </div>
                 </div>
+                {editing && formPhotos.length > 0 && (
+                  <InstagramPublishBox
+                    vehicleId={editing.id}
+                    userId={userId}
+                    photos={formPhotos}
+                    defaultCaption={`${form.brand} ${form.model} ${form.year ?? ""}${form.price ? ` — R$ ${form.price.toLocaleString("pt-BR")}` : ""} 🚗\n\n📲 Fale com a gente!`}
+                  />
+                )}
               </div>
               <div>
                 <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Opcionais</p>
