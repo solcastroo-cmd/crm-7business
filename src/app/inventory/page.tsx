@@ -608,7 +608,7 @@ export default function InventoryPage() {
                   <p className="text-xs font-bold text-blue-400 uppercase tracking-wider mb-2">📋 RENAVE</p>
                   <div className="grid grid-cols-2 gap-3">
                     {sel("Status RENAVE", "renave_status", ["pendente","enviado","aprovado","rejeitado"])}
-                    {inp("Nº Gravame/RENAVE", "renave_gravame_number", "text", "00000000000")}
+                    {inp("Nº Gravame/RENAVE", "renave_gravame_number", "text", "GRV-000000000")}
                   </div>
                   {editing && <RenaveHistory vehicleId={editing.id} />}
                 </div>
