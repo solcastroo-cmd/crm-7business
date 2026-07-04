@@ -11,6 +11,23 @@ type Vehicle = {
   photos?: string[];
   publish_to_site?: boolean;
   featured?: boolean;
+  renave_status?: string;
+  renave_gravame_number?: string;
+};
+
+type RenaveHistoryEntry = {
+  id: string;
+  status: string;
+  previous_status: string | null;
+  notes: string | null;
+  created_at: string;
+};
+
+const RENAVE_STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
+  pendente:  { label: "Pendente",  color: "#f59e0b", bg: "#fef9c3" },
+  enviado:   { label: "Enviado",   color: "#3b82f6", bg: "#dbeafe" },
+  aprovado:  { label: "Aprovado",  color: "#10b981", bg: "#dcfce7" },
+  rejeitado: { label: "Rejeitado", color: "#ef4444", bg: "#fee2e2" },
 };
 
 const OPTIONALS = [
@@ -43,6 +60,8 @@ const EMPTY: Omit<Vehicle,"id"|"created_at"|"photos"> = {
   optional_items:[],description:"",status:"disponivel",
   publish_to_site: false,
   featured: false,
+  renave_status: "pendente",
+  renave_gravame_number: "",
 };
 
 const MAX_PHOTOS = 10;
@@ -199,6 +218,45 @@ function PhotoUpload({
   );
 }
 
+// ── Histórico RENAVE (somente leitura) ────────────────────────────────────────
+function RenaveHistory({ vehicleId }: { vehicleId: string }) {
+  const [history, setHistory] = useState<RenaveHistoryEntry[] | null>(null);
+  const [open, setOpen] = useState(false);
+
+  async function load() {
+    if (history !== null) { setOpen(o => !o); return; }
+    try {
+      const res = await fetch(`/api/inventory/renave?vehicleId=${vehicleId}`);
+      const data = await res.json();
+      setHistory(Array.isArray(data.history) ? data.history : []);
+      setOpen(true);
+    } catch { setHistory([]); setOpen(true); }
+  }
+
+  return (
+    <div className="mt-3">
+      <button type="button" onClick={load} className="text-xs font-bold text-gray-400 underline">
+        {open ? "Ocultar histórico RENAVE" : "Ver histórico RENAVE"}
+      </button>
+      {open && (
+        <div className="mt-2 space-y-1.5">
+          {(history?.length ?? 0) === 0 ? (
+            <p className="text-xs text-gray-600">Nenhuma mudança de status registrada ainda.</p>
+          ) : history!.map(h => {
+            const cfg = RENAVE_STATUS_CONFIG[h.status] ?? { label: h.status, color: "#888", bg: "#222" };
+            return (
+              <div key={h.id} className="flex items-center justify-between text-xs rounded-lg px-2 py-1.5" style={{ background: "#111" }}>
+                <span className="px-2 py-0.5 rounded-full font-bold" style={{ background: cfg.bg, color: cfg.color }}>{cfg.label}</span>
+                <span className="text-gray-500">{new Date(h.created_at).toLocaleString("pt-BR")}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Página principal ──────────────────────────────────────────────────────────
 export default function InventoryPage() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
@@ -250,7 +308,8 @@ export default function InventoryPage() {
       end_plate:v.end_plate,renavam:v.renavam,chassis:v.chassis,ipva_paid:v.ipva_paid??false,
       single_owner:v.single_owner??false,has_manual:v.has_manual??false,has_key:v.has_key??false,
       optional_items:v.optional_items??[],description:v.description,status:v.status,
-      publish_to_site:v.publish_to_site??false,featured:v.featured??false });
+      publish_to_site:v.publish_to_site??false,featured:v.featured??false,
+      renave_status:v.renave_status??"pendente",renave_gravame_number:v.renave_gravame_number??"" });
     setFormPhotos(v.photos ?? []);
     setShowForm(true); setErr(null);
   }
@@ -271,6 +330,15 @@ export default function InventoryPage() {
       const photoUploader = (window as typeof window & { __photoUpload?: { upload: (vid: string) => Promise<string[]> } }).__photoUpload;
       if (vehicleId && photoUploader) {
         await photoUploader.upload(vehicleId);
+      }
+
+      // Status/gravame RENAVE — via endpoint dedicado (mantém histórico de auditoria)
+      if (vehicleId) {
+        await fetch(`/api/inventory/renave?vehicleId=${vehicleId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: form.renave_status, gravame_number: form.renave_gravame_number }),
+        }).catch(() => {});
       }
 
       await loadVehicles(); setShowForm(false);
@@ -534,6 +602,15 @@ export default function InventoryPage() {
                       <span className="text-sm text-gray-300">{label}</span>
                     </label>
                   ))}
+                </div>
+                {/* ── RENAVE ── */}
+                <div className="mt-4 p-3 rounded-xl border border-blue-900/50 bg-blue-950/30">
+                  <p className="text-xs font-bold text-blue-400 uppercase tracking-wider mb-2">📋 RENAVE</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {sel("Status RENAVE", "renave_status", ["pendente","enviado","aprovado","rejeitado"])}
+                    {inp("Nº Gravame/RENAVE", "renave_gravame_number", "text", "00000000000")}
+                  </div>
+                  {editing && <RenaveHistory vehicleId={editing.id} />}
                 </div>
                 {/* ── Vitrine Web ── */}
                 <div className="mt-4 p-3 rounded-xl border border-green-900/50 bg-green-950/30">
