@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useUserId } from "@/hooks/useUserId";
 
 type Vehicle = {
   id: string; brand: string; model: string; year?: number; plate?: string;
@@ -259,6 +260,7 @@ function RenaveHistory({ vehicleId }: { vehicleId: string }) {
 
 // ── Página principal ──────────────────────────────────────────────────────────
 export default function InventoryPage() {
+  const { userId } = useUserId();
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<"grid"|"list">("grid");
@@ -337,7 +339,7 @@ export default function InventoryPage() {
         await fetch(`/api/inventory/renave?vehicleId=${vehicleId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: form.renave_status, gravame_number: form.renave_gravame_number }),
+          body: JSON.stringify({ status: form.renave_status, gravame_number: form.renave_gravame_number, changed_by: userId }),
         }).catch(() => {});
       }
 

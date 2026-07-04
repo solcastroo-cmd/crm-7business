@@ -36,6 +36,7 @@ export async function PATCH(req: NextRequest) {
         vehicleId,
         status: body.status as RenaveStatus,
         notes: typeof body.notes === "string" ? body.notes : undefined,
+        changedBy: typeof body.changed_by === "string" ? body.changed_by : undefined,
       });
     }
     const status = await renaveService.getStatus(vehicleId);
