@@ -17,6 +17,14 @@ import { NextRequest } from "next/server";
 import { upsertLead } from "@/lib/leads";
 import { getAIReply, extractLeadData, qualifyLead, parseVehicleTag } from "@/lib/ai";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { parseAdReferral } from "@/lib/adReferral";
+import {
+  sendCAPIInitiateConversation,
+  sendCAPILeadEvent,
+  sendCAPIQualifiedLeadEvent,
+  calcLeadScore,
+  type CAPIUserData,
+} from "@/lib/capi";
 
 export const dynamic = "force-dynamic";
 
@@ -206,9 +214,10 @@ async function processEvolution(body: unknown) {
     const remoteJid = ((msg.key as Record<string, unknown>)?.remoteJid as string) ?? "";
     if (!remoteJid.includes("@s.whatsapp.net")) return;
 
-    const phone = `wa:${remoteJid.replace("@s.whatsapp.net", "")}`;
-    const name  = (msg.pushName as string) ?? null;
-    const text  =
+    const phone    = `wa:${remoteJid.replace("@s.whatsapp.net", "")}`;
+    const phoneNum = phone.replace("wa:", "");
+    const name     = (msg.pushName as string) ?? null;
+    const text     =
       (msg.message as Record<string, unknown>)?.conversation as string
       ?? ((msg.message as Record<string, unknown>)?.extendedTextMessage as Record<string, unknown>)?.text as string
       ?? "";
@@ -228,18 +237,98 @@ async function processEvolution(body: unknown) {
     const extracted     = extractLeadData(text);
     const qualification = qualifyLead(text);
 
+    // ── 2b. Referral do anúncio (ctwa_clid/UTM) — vem quando o lead clica em
+    //        um anúncio Meta "Clique para o WhatsApp". Baileys expõe isso em
+    //        contextInfo.externalAdReplyInfo da primeira mensagem da conversa.
+    //        Campos exatos variam por versão — log abaixo serve pra validar
+    //        contra o payload real de produção e ajustar se preciso.
+    const messageContent = msg.message as Record<string, unknown> | undefined;
+    const extendedText   = messageContent?.extendedTextMessage as Record<string, unknown> | undefined;
+    const contextInfo    =
+      (extendedText?.contextInfo as Record<string, unknown> | undefined) ??
+      (messageContent?.contextInfo as Record<string, unknown> | undefined) ??
+      ((msg as Record<string, unknown>).contextInfo as Record<string, unknown> | undefined);
+    const adReplyInfo = contextInfo?.externalAdReplyInfo as Record<string, unknown> | undefined;
+
+    if (contextInfo) {
+      console.log("[Evolution] contextInfo recebido (debug ctwa/UTM):", JSON.stringify(contextInfo).slice(0, 500));
+    }
+
+    const sourceUrl = (adReplyInfo?.sourceUrl as string | undefined) ?? null;
+    const ctwaClid  =
+      (contextInfo?.ctwaClid as string | undefined) ??
+      (adReplyInfo?.ctwaClid as string | undefined) ??
+      (adReplyInfo?.sourceId as string | undefined) ??
+      null;
+    const adReferral = parseAdReferral(sourceUrl, ctwaClid);
+
     // ── 3. Upsert lead ────────────────────────────────────────────────────
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { id: _id, ...extractedSafe } = extracted;
+
+    // Pré-checagem: sabe se é lead novo (p/ InitiateConversation) e evita
+    // sobrescrever UTM já capturado em mensagem anterior com valores nulos.
+    let existingQuery = supabaseAdmin
+      .from("leads")
+      .select("id, utm_source, utm_campaign, utm_medium, utm_adset, utm_ad, fbclid")
+      .eq("phone", phone);
+    if (STORE_ID) existingQuery = existingQuery.eq("store_id", STORE_ID);
+    const { data: existingLead } = await existingQuery.maybeSingle();
+    const isNewLead = !existingLead;
+
+    const utmUpdates: Record<string, unknown> = {};
+    if (adReferral.utm_source   && !existingLead?.utm_source)   utmUpdates.utm_source   = adReferral.utm_source;
+    if (adReferral.utm_campaign && !existingLead?.utm_campaign) utmUpdates.utm_campaign = adReferral.utm_campaign;
+    if (adReferral.utm_medium   && !existingLead?.utm_medium)   utmUpdates.utm_medium   = adReferral.utm_medium;
+    if (adReferral.utm_adset    && !existingLead?.utm_adset)    utmUpdates.utm_adset    = adReferral.utm_adset;
+    if (adReferral.utm_ad       && !existingLead?.utm_ad)       utmUpdates.utm_ad       = adReferral.utm_ad;
+    if (adReferral.fbclid       && !existingLead?.fbclid)       utmUpdates.fbclid       = adReferral.fbclid;
+
     const lead = await upsertLead(phone, name, "whatsapp_evolution", {
       ...extractedSafe,
       qualification,
+      ...utmUpdates,
     }, STORE_ID || undefined);
+
+    // ── 4. CAPI — envia eventos de volta pro Meta (Conversions API) ───────
+    const capiUserData: CAPIUserData = {
+      phone:    phoneNum,
+      name:     lead.name ?? name ?? null,
+      fbclid:   lead.fbclid ?? adReferral.fbclid ?? null,
+      fbclidTs: Math.floor(Date.now() / 1000),
+    };
+    const capiOpts = { leadId: lead.id, storeId: STORE_ID || undefined };
+
+    if (isNewLead) {
+      sendCAPIInitiateConversation(capiUserData, lead.id, capiOpts).catch(
+        (e) => console.error("[CAPI] Erro InitiateConversation:", e),
+      );
+    }
+
+    const { data: msgHistory } = await supabaseAdmin
+      .from("messages")
+      .select("text")
+      .eq("lead_id", lead.id)
+      .eq("from_me", false)
+      .order("created_at", { ascending: true })
+      .limit(50);
+
+    const score = calcLeadScore([...(msgHistory ?? []).map(m => m.text ?? ""), text]);
+    supabaseAdmin.from("leads").update({ score }).eq("id", lead.id).then(() => {});
+
+    if (qualification === "quente") {
+      sendCAPILeadEvent(capiUserData, lead.id, { ...capiOpts, score }).catch(
+        (e) => console.error("[CAPI] Erro Lead:", e),
+      );
+    }
+    if (score >= 70) {
+      sendCAPIQualifiedLeadEvent(capiUserData, lead.id, score, capiOpts).catch(
+        (e) => console.error("[CAPI] Erro QualifiedLead:", e),
+      );
+    }
 
     // ── 5. Salva mensagem do cliente (external_id garante dedup no banco) ────
     await saveMessage(lead.id, text, false, msgId);
-
-    const phoneNum = phone.replace("wa:", "");
 
     // ── 6. ⚡ HANDOFF CHECK — IA só responde se lead.ai_enabled = true ────
     // Se o vendedor humano assumiu este lead específico, a IA fica muda.

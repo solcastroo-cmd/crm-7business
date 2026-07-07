@@ -20,6 +20,14 @@ export type Lead = {
   store_id:             string | null;
   veiculo_interesse_id: string | null;
   qualification:        "quente" | "morno" | "frio" | null;
+  ad_account_id:        string | null;
+  utm_source:           string | null;
+  utm_campaign:         string | null;
+  utm_medium:           string | null;
+  utm_adset:            string | null;
+  utm_ad:               string | null;
+  fbclid:               string | null;
+  score:                number | null;
   created_at:           string;
   updated_at:           string;
 };
