@@ -79,6 +79,7 @@ export default function FluxoCaixaPage() {
   const [dateTo, setDateTo] = useState(() => new Date().toISOString().split("T")[0]);
 
   const [showModal, setShowModal] = useState(false);
+  const [editingEntry, setEditingEntry] = useState<LedgerEntry | null>(null);
   const [form, setForm] = useState({ ...EMPTY_FORM });
   const [saving, setSaving] = useState(false);
 
@@ -125,21 +126,43 @@ export default function FluxoCaixaPage() {
   }
 
   function openNew() {
+    setEditingEntry(null);
     setForm({ ...EMPTY_FORM });
+    setShowModal(true);
+  }
+
+  function openEditEntry(e: LedgerEntry) {
+    setEditingEntry(e);
+    setForm({
+      date: e.date, description: e.description, category: e.category,
+      amount: String(e.amount), payment_method: "pix",
+    });
     setShowModal(true);
   }
 
   async function saveForm() {
     if (!form.description || !form.amount) return;
     setSaving(true);
-    const res = await fetch("/api/fluxo-caixa", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...form, amount: Number(form.amount), store_id: userId }),
-    });
+    const res = editingEntry
+      ? await fetch("/api/fluxo-caixa", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: editingEntry.id, ...form, amount: Number(form.amount) }),
+        })
+      : await fetch("/api/fluxo-caixa", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...form, amount: Number(form.amount), store_id: userId }),
+        });
     setSaving(false);
-    if (!res.ok) { alert("Erro ao lançar recebimento"); return; }
+    if (!res.ok) { alert(editingEntry ? "Erro ao salvar recebimento" : "Erro ao lançar recebimento"); return; }
     setShowModal(false);
+    fetchAll();
+  }
+
+  async function deleteEntry(id: string) {
+    if (!confirm("Excluir este recebimento?")) return;
+    await fetch(`/api/fluxo-caixa?id=${id}`, { method: "DELETE" });
     fetchAll();
   }
 
@@ -297,7 +320,7 @@ export default function FluxoCaixaPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr style={{ borderBottom: "1px solid #1f2937", background: "#111827" }}>
-                  {["Data", "Descrição", "Categoria", "Origem", "Valor", "Saldo"].map(h => (
+                  {["Data", "Descrição", "Categoria", "Origem", "Valor", "Saldo", "Ações"].map(h => (
                     <th key={h} className="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wider"
                       style={{ color: "#6b7280" }}>{h}</th>
                   ))}
@@ -305,7 +328,7 @@ export default function FluxoCaixaPage() {
               </thead>
               <tbody>
                 {reversed.length === 0 && (
-                  <tr><td colSpan={6} className="text-center py-12 text-gray-600">Nenhuma movimentação no período</td></tr>
+                  <tr><td colSpan={7} className="text-center py-12 text-gray-600">Nenhuma movimentação no período</td></tr>
                 )}
                 {reversed.map(e => (
                   <tr key={`${e.source}-${e.id}`} className="hover:bg-white/[0.02]" style={{ borderBottom: "1px solid #1f293740" }}>
@@ -317,6 +340,20 @@ export default function FluxoCaixaPage() {
                       {e.type === "entrada" ? "+" : "-"}{brl(e.amount)}
                     </td>
                     <td className="px-4 py-3 font-bold text-white">{brl(e.saldo)}</td>
+                    <td className="px-4 py-3">
+                      {e.source === "recebimento" ? (
+                        <div className="flex gap-2">
+                          <button onClick={() => openEditEntry(e)}
+                            className="rounded-lg px-2 py-1 text-xs font-semibold hover:opacity-80"
+                            style={{ background: "#1f2937", color: "#9ca3af" }}>✏️</button>
+                          <button onClick={() => deleteEntry(e.id)}
+                            className="rounded-lg px-2 py-1 text-xs font-semibold hover:opacity-80"
+                            style={{ background: "#ef444415", color: "#ef4444" }}>🗑️</button>
+                        </div>
+                      ) : (
+                        <span className="text-[10px]" style={{ color: "#374151" }}>—</span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -332,7 +369,7 @@ export default function FluxoCaixaPage() {
           onClick={e => { if (e.target === e.currentTarget) setShowModal(false); }}>
           <div className="w-full max-w-lg rounded-2xl overflow-hidden" style={{ background: "#111827", border: "1px solid #1f2937" }}>
             <div className="flex items-center justify-between px-6 py-4" style={{ borderBottom: "1px solid #1f2937" }}>
-              <h2 className="text-base font-black text-white">➕ Novo Recebimento</h2>
+              <h2 className="text-base font-black text-white">{editingEntry ? "✏️ Editar Recebimento" : "➕ Novo Recebimento"}</h2>
               <button onClick={() => setShowModal(false)}
                 className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-400 hover:text-white"
                 style={{ background: "#1f2937" }}>✕</button>
@@ -377,7 +414,7 @@ export default function FluxoCaixaPage() {
               <button onClick={saveForm} disabled={saving || !form.description || !form.amount}
                 className="flex-1 rounded-xl py-3 text-sm font-bold text-white hover:opacity-90 disabled:opacity-50"
                 style={{ background: "#10b981" }}>
-                {saving ? "Salvando…" : "✓ Lançar Recebimento"}
+                {saving ? "Salvando…" : editingEntry ? "✓ Salvar Alterações" : "✓ Lançar Recebimento"}
               </button>
               <button onClick={() => setShowModal(false)}
                 className="rounded-xl px-5 py-3 text-sm font-semibold" style={{ background: "#1f2937", color: "#9ca3af" }}>
