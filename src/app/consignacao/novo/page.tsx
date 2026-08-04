@@ -203,7 +203,7 @@ export default function NovoConsignacaoPage() {
           <div style={g2}>
             <div>
               <label style={lbl}>CNPJ</label>
-              <input name="loja_cnpj" style={inp} placeholder="00.000.000/0001-00" autoComplete="off" />
+              <input name="loja_cnpj" defaultValue="67.579.100/0001-95" style={inp} placeholder="00.000.000/0001-00" autoComplete="off" />
             </div>
             <div>
               <label style={lbl}>Representante Legal</label>

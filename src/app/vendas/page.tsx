@@ -224,6 +224,8 @@ export default function VendasPage() {
   const [filterStatus, setFilterStatus] = useState("todos");
   const [filterPayment, setFilterPayment] = useState("todos");
   const [filterReason, setFilterReason] = useState("todos");
+  const [filterDateFrom, setFilterDateFrom] = useState("");
+  const [filterDateTo, setFilterDateTo] = useState("");
 
   // modals
   const [showNew, setShowNew]   = useState(false);
@@ -306,6 +308,8 @@ export default function VendasPage() {
 
     return base
       .filter(s => {
+        if (filterDateFrom && s.closing_date < filterDateFrom) return false;
+        if (filterDateTo   && s.closing_date > filterDateTo)   return false;
         if (activeTab === "vendas") {
           if (filterStatus  !== "todos" && s.status         !== filterStatus)  return false;
           if (filterPayment !== "todos" && s.payment_method !== filterPayment) return false;
@@ -330,7 +334,26 @@ export default function VendasPage() {
           ? String(av).localeCompare(String(bv))
           : String(bv).localeCompare(String(av));
       });
-  }, [sales, activeTab, filterStatus, filterPayment, filterReason, search, sortCol, sortAsc]);
+  }, [sales, activeTab, filterStatus, filterPayment, filterReason, filterDateFrom, filterDateTo, search, sortCol, sortAsc]);
+
+  /* ── atalhos de período (relatório mensal) ── */
+  const monthOptions = useMemo(() => {
+    const now = new Date();
+    return Array.from({ length: 12 }, (_, i) => {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const label = d.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+      return { offset: i, label: label.charAt(0).toUpperCase() + label.slice(1) };
+    });
+  }, []);
+
+  function applyMonthFilter(offset: number) {
+    const now = new Date();
+    const first = new Date(now.getFullYear(), now.getMonth() - offset, 1);
+    const last  = new Date(now.getFullYear(), now.getMonth() - offset + 1, 0);
+    const toISO = (d: Date) => d.toISOString().split("T")[0];
+    setFilterDateFrom(toISO(first));
+    setFilterDateTo(toISO(last));
+  }
 
   /* ── indicador global de cancelamento (independe da aba) ── */
   const cancelStats = useMemo(() => {
@@ -554,6 +577,35 @@ export default function VendasPage() {
                 <option key={k} value={k}>{label}</option>
               ))}
             </select>
+          )}
+        </div>
+
+        {/* Filtro de período */}
+        <div className="flex flex-wrap items-center gap-3">
+          <select value="" onChange={e => { if (e.target.value !== "") applyMonthFilter(Number(e.target.value)); }}
+            className="rounded-xl px-4 py-2.5 text-sm text-white border focus:outline-none"
+            style={{ background: "#111827", borderColor: "#1f2937" }}>
+            <option value="">📅 Relatório mensal...</option>
+            {monthOptions.map(o => (
+              <option key={o.offset} value={o.offset}>{o.label}</option>
+            ))}
+          </select>
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-semibold" style={{ color: "#6b7280" }}>De</label>
+            <input type="date" value={filterDateFrom} onChange={e => setFilterDateFrom(e.target.value)}
+              className="rounded-xl px-3 py-2 text-sm text-white border focus:outline-none"
+              style={{ background: "#111827", borderColor: "#1f2937", colorScheme: "dark" }} />
+            <label className="text-xs font-semibold" style={{ color: "#6b7280" }}>Até</label>
+            <input type="date" value={filterDateTo} onChange={e => setFilterDateTo(e.target.value)}
+              className="rounded-xl px-3 py-2 text-sm text-white border focus:outline-none"
+              style={{ background: "#111827", borderColor: "#1f2937", colorScheme: "dark" }} />
+          </div>
+          {(filterDateFrom || filterDateTo) && (
+            <button onClick={() => { setFilterDateFrom(""); setFilterDateTo(""); }}
+              className="rounded-xl px-3 py-2 text-xs font-semibold transition-all"
+              style={{ background: "#1f2937", color: "#9ca3af" }}>
+              ✕ Limpar período
+            </button>
           )}
         </div>
 
