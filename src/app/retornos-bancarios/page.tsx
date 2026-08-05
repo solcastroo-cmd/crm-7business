@@ -274,10 +274,6 @@ export default function RetornosBancariosPage() {
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
   /* ── opções dinâmicas ── */
-  const bancoOptions = useMemo(
-    () => Array.from(new Set(returns.map(r => r.banco).filter((b): b is string => !!b))).sort((a, b) => a.localeCompare(b)),
-    [returns],
-  );
   const vendedorOptions = useMemo(() => {
     const fromReturns = returns.map(r => r.vendedor).filter((v): v is string => !!v);
     return Array.from(new Set([...sellers, ...fromReturns])).sort((a, b) => a.localeCompare(b));
@@ -486,7 +482,7 @@ export default function RetornosBancariosPage() {
               <select value={filterBanco} onChange={e => setFilterBanco(e.target.value)}
                 className="rounded-xl px-3 py-2 text-sm text-white border focus:outline-none" style={inputStyle}>
                 <option value="todos">Todos bancos</option>
-                {bancoOptions.map(b => <option key={b} value={b}>{b}</option>)}
+                {BANCOS.map(b => <option key={b} value={b}>{b}</option>)}
               </select>
               <select value={filterVendedor} onChange={e => setFilterVendedor(e.target.value)}
                 className="rounded-xl px-3 py-2 text-sm text-white border focus:outline-none" style={inputStyle}>
@@ -565,7 +561,7 @@ export default function RetornosBancariosPage() {
               <select value={filterBanco} onChange={e => setFilterBanco(e.target.value)}
                 className="rounded-xl px-3 py-2 text-sm text-white border focus:outline-none" style={inputStyle}>
                 <option value="todos">Todos bancos</option>
-                {bancoOptions.map(b => <option key={b} value={b}>{b}</option>)}
+                {BANCOS.map(b => <option key={b} value={b}>{b}</option>)}
               </select>
               <select value={filterVendedor} onChange={e => setFilterVendedor(e.target.value)}
                 className="rounded-xl px-3 py-2 text-sm text-white border focus:outline-none" style={inputStyle}>
