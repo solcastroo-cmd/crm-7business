@@ -67,8 +67,76 @@ function fmtDate(iso: string) {
   return new Date(iso + "T12:00:00").toLocaleDateString("pt-BR");
 }
 
+/* ── PDF Report ─────────────────────────────────────────────────────── */
+function printLedgerReport(
+  ledger: LedgerEntry[],
+  summary: Summary | null,
+  storeName: string,
+  dateFrom: string,
+  dateTo: string,
+) {
+  const win = window.open("", "_blank");
+  if (!win) return;
+
+  const rows = [...ledger].reverse().map(e => `
+    <tr>
+      <td>${fmtDate(e.date)}</td>
+      <td>${e.description}</td>
+      <td>${e.category}</td>
+      <td>${SOURCE_LABEL[e.source]}</td>
+      <td style="text-align:right;color:${e.type === "entrada" ? "#10b981" : "#ef4444"};font-weight:700">
+        ${e.type === "entrada" ? "+" : "-"}${brl(e.amount)}
+      </td>
+      <td style="text-align:right;font-weight:700">${brl(e.saldo)}</td>
+    </tr>`).join("");
+
+  win.document.write(`<!DOCTYPE html><html><head>
+    <meta charset="UTF-8"/>
+    <title>Fluxo de Caixa — ${storeName}</title>
+    <style>
+      *{box-sizing:border-box;margin:0;padding:0}
+      body{font-family:Arial,sans-serif;padding:32px;color:#1a1a1a;font-size:12px}
+      .header{text-align:center;border-bottom:3px solid #10b981;padding-bottom:14px;margin-bottom:20px}
+      .header h1{font-size:20px;color:#10b981;font-weight:800}
+      .header p{font-size:11px;color:#666;margin-top:4px}
+      .section-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#888;border-bottom:1px solid #eee;padding-bottom:4px;margin:16px 0 10px}
+      .summary{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}
+      .summary-card{background:#f8f8f8;border:1px solid #e0e0e0;border-radius:8px;padding:10px;text-align:center}
+      .summary-card .label{font-size:9px;color:#888;text-transform:uppercase;letter-spacing:.4px}
+      .summary-card .value{font-size:14px;font-weight:800;margin-top:2px}
+      table{width:100%;border-collapse:collapse;font-size:11px}
+      th{background:#f3f4f6;font-weight:700;padding:6px 8px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.5px}
+      td{padding:5px 8px;border-bottom:1px solid #f0f0f0}
+      tr:last-child td{border-bottom:none}
+      @media print{body{padding:0}}
+    </style>
+  </head><body>
+    <div class="header">
+      <h1>${storeName}</h1>
+      <p>Relatório de Fluxo de Caixa · Gerado em ${new Date().toLocaleDateString("pt-BR")}</p>
+      <p style="margin-top:6px;font-size:10px;color:#999">Período: ${fmtDate(dateFrom)} até ${fmtDate(dateTo)}</p>
+    </div>
+
+    <div class="summary">
+      <div class="summary-card"><div class="label">Entradas</div><div class="value" style="color:#10b981">${brl(summary?.entradas ?? 0)}</div></div>
+      <div class="summary-card"><div class="label">Saídas</div><div class="value" style="color:#ef4444">${brl(summary?.saidas ?? 0)}</div></div>
+      <div class="summary-card"><div class="label">Saldo do Período</div><div class="value" style="color:${(summary?.saldoPeriodo ?? 0) >= 0 ? "#10b981" : "#ef4444"}">${brl(summary?.saldoPeriodo ?? 0)}</div></div>
+      <div class="summary-card"><div class="label">Saldo Acumulado</div><div class="value" style="color:${(summary?.saldoAcumulado ?? 0) >= 0 ? "#10b981" : "#ef4444"}">${brl(summary?.saldoAcumulado ?? 0)}</div></div>
+    </div>
+
+    <div class="section-title">Movimentações</div>
+    <table>
+      <thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Origem</th><th style="text-align:right">Valor</th><th style="text-align:right">Saldo</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </body></html>`);
+  win.document.close();
+  win.print();
+}
+
 export default function FluxoCaixaPage() {
   const { userId } = useUserId();
+  const [storeName, setStoreName] = useState("CRM 7Business");
 
   const [ledger, setLedger] = useState<LedgerEntry[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -101,6 +169,14 @@ export default function FluxoCaixaPage() {
   }, [dateFrom, dateTo]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  useEffect(() => {
+    if (!userId) return;
+    fetch(`/api/settings?userId=${userId}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.business_name) setStoreName(d.business_name); })
+      .catch(() => {});
+  }, [userId]);
 
   const reversed = useMemo(() => [...ledger].reverse(), [ledger]);
 
@@ -217,11 +293,18 @@ export default function FluxoCaixaPage() {
           <h1 className="text-2xl font-black text-white">💵 Fluxo de Caixa</h1>
           <p className="text-sm mt-1" style={{ color: "#6b7280" }}>Entradas, saídas e saldo em tempo real</p>
         </div>
-        <button onClick={openNew}
-          className="rounded-xl px-5 py-2.5 text-sm font-bold text-white hover:opacity-90"
-          style={{ background: "#10b981" }}>
-          + Recebimento
-        </button>
+        <div className="flex gap-2">
+          <button onClick={() => printLedgerReport(ledger, summary, storeName, dateFrom, dateTo)}
+            className="rounded-xl px-5 py-2.5 text-sm font-bold hover:opacity-90"
+            style={{ background: "#1f2937", color: "#9ca3af" }}>
+            🖨 Imprimir
+          </button>
+          <button onClick={openNew}
+            className="rounded-xl px-5 py-2.5 text-sm font-bold text-white hover:opacity-90"
+            style={{ background: "#10b981" }}>
+            + Recebimento
+          </button>
+        </div>
       </div>
 
       {/* Filtros de período */}
