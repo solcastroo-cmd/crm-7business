@@ -391,7 +391,10 @@ export default function DespesasImplantacaoPage() {
     const ativo       = despesas.filter(d => d.categoria === "ativo_imobilizado").reduce((s, d) => s + Number(d.valor), 0);
     const operacional = despesas.filter(d => d.categoria === "uso_e_consumo").reduce((s, d) => s + Number(d.valor), 0);
     const outros      = despesas.filter(d => d.categoria === "outros").reduce((s, d) => s + Number(d.valor), 0);
-    return { total, ativo, operacional, outros };
+    const linhas       = despesas.flatMap(expandParcelas);
+    const pago         = linhas.filter(l => l.paga).reduce((s, l) => s + l.valor, 0);
+    const pendente     = linhas.filter(l => !l.paga).reduce((s, l) => s + l.valor, 0);
+    return { total, ativo, operacional, outros, pago, pendente };
   }, [despesas]);
 
   /* ── modal helpers ── */
@@ -509,9 +512,11 @@ export default function DespesasImplantacaoPage() {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
         {[
           { label: "Total Geral",            value: kpi.total,       color: "#f87171", icon: "💸" },
+          { label: "Pago (Baixa Dada)",       value: kpi.pago,        color: "#10b981", icon: "✅" },
+          { label: "Pendente",                value: kpi.pendente,    color: "#3b82f6", icon: "⏳" },
           { label: "Ativo Imobilizado",       value: kpi.ativo,       color: "#f59e0b", icon: "🏢" },
           { label: "Despesa Operacional",     value: kpi.operacional, color: "#e63946", icon: "⚙️" },
           { label: "Outros",                  value: kpi.outros,      color: "#6b7280", icon: "📦" },
