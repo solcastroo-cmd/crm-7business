@@ -90,6 +90,22 @@ function printLedgerReport(
       <td style="text-align:right;font-weight:700">${brl(e.saldo)}</td>
     </tr>`).join("");
 
+  const bycat: Record<string, { entradas: number; saidas: number }> = {};
+  ledger.forEach(e => {
+    const c = (bycat[e.category] ??= { entradas: 0, saidas: 0 });
+    if (e.type === "entrada") c.entradas += Number(e.amount);
+    else c.saidas += Number(e.amount);
+  });
+  const catRows = Object.entries(bycat)
+    .sort((a, b) => (b[1].entradas - b[1].saidas) - (a[1].entradas - a[1].saidas))
+    .map(([cat, v]) => `
+      <tr>
+        <td>${cat}</td>
+        <td style="text-align:right;color:#10b981">${v.entradas ? brl(v.entradas) : "—"}</td>
+        <td style="text-align:right;color:#ef4444">${v.saidas ? brl(v.saidas) : "—"}</td>
+        <td style="text-align:right;font-weight:700">${brl(v.entradas - v.saidas)}</td>
+      </tr>`).join("");
+
   win.document.write(`<!DOCTYPE html><html><head>
     <meta charset="UTF-8"/>
     <title>Fluxo de Caixa — ${storeName}</title>
@@ -123,6 +139,12 @@ function printLedgerReport(
       <div class="summary-card"><div class="label">Saldo do Período</div><div class="value" style="color:${(summary?.saldoPeriodo ?? 0) >= 0 ? "#10b981" : "#ef4444"}">${brl(summary?.saldoPeriodo ?? 0)}</div></div>
       <div class="summary-card"><div class="label">Saldo Acumulado</div><div class="value" style="color:${(summary?.saldoAcumulado ?? 0) >= 0 ? "#10b981" : "#ef4444"}">${brl(summary?.saldoAcumulado ?? 0)}</div></div>
     </div>
+
+    <div class="section-title">Resumo por Categoria</div>
+    <table>
+      <thead><tr><th>Categoria</th><th style="text-align:right">Entradas</th><th style="text-align:right">Saídas</th><th style="text-align:right">Líquido</th></tr></thead>
+      <tbody>${catRows}</tbody>
+    </table>
 
     <div class="section-title">Movimentações</div>
     <table>
