@@ -26,7 +26,7 @@ type BankReturn = {
 };
 
 /* ── Constants ─────────────────────────────────────────────────────── */
-const BANCOS_SUGERIDOS = ["BV", "Santander", "Itaú", "C6 Bank", "Safra", "Bradesco", "Banco do Brasil", "Caixa Econômica", "Sicoob", "Sicredi"];
+const BANCOS = ["Itaú", "BV", "Santander", "C6", "Safra", "Carbank", "Bradesco", "Pan"];
 
 const TIPOS = [
   { value: "comissao",    label: "Comissão" },
@@ -690,12 +690,11 @@ export default function RetornosBancariosPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[10px] font-semibold mb-1" style={{ color: "#6b7280" }}>Banco</label>
-                  <input type="text" list="bancos-sugeridos" placeholder="Ex: Santander" value={form.banco}
-                    onChange={e => setForm(f => ({ ...f, banco: e.target.value }))}
-                    className="w-full rounded-xl px-3 py-2 text-sm text-white border focus:outline-none focus:border-red-500" style={inputStyle} />
-                  <datalist id="bancos-sugeridos">
-                    {BANCOS_SUGERIDOS.map(b => <option key={b} value={b} />)}
-                  </datalist>
+                  <select value={form.banco} onChange={e => setForm(f => ({ ...f, banco: e.target.value }))}
+                    className="w-full rounded-xl px-3 py-2 text-sm text-white border focus:outline-none" style={inputStyle}>
+                    <option value="">— Selecione —</option>
+                    {BANCOS.map(b => <option key={b} value={b}>{b}</option>)}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-[10px] font-semibold mb-1" style={{ color: "#6b7280" }}>Proposta</label>
