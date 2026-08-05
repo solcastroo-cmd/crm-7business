@@ -3,6 +3,34 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const dynamic = "force-dynamic";
 
+async function vehicleLabel(vehicleId: string) {
+  const { data: v } = await supabaseAdmin
+    .from("vehicles")
+    .select("brand,model,plate")
+    .eq("id", vehicleId)
+    .single();
+  if (!v) return null;
+  return [`${v.brand} ${v.model}`, v.plate].filter(Boolean).join(" — ");
+}
+
+async function ensureBankReturn(saleId: string, storeId: string, vehicleId: string, buyerName: string) {
+  const { data: existing } = await supabaseAdmin
+    .from("bank_returns")
+    .select("id")
+    .eq("sale_id", saleId)
+    .maybeSingle();
+  if (existing) return;
+
+  const veiculo = await vehicleLabel(vehicleId);
+  await supabaseAdmin.from("bank_returns").insert({
+    store_id: storeId,
+    sale_id: saleId,
+    cliente: buyerName,
+    veiculo,
+    status: "aguardando_retorno",
+  });
+}
+
 export async function GET(_req: NextRequest) {
   const { data: sales, error } = await supabaseAdmin
     .from("sales")
@@ -68,6 +96,12 @@ export async function POST(req: NextRequest) {
     .update({ status: "vendido" })
     .eq("id", vehicle_id);
 
+  // Venda financiada: cria automaticamente o registro de retorno bancário
+  // (sem valor — o banco ainda não creditou nada no fechamento da venda)
+  if (payment_method === "financiado" && store_id) {
+    await ensureBankReturn(data.id, store_id, vehicle_id, buyer_name);
+  }
+
   return NextResponse.json(data, { status: 201 });
 }
 
@@ -116,6 +150,15 @@ export async function PATCH(req: NextRequest) {
       .from("vehicles")
       .update({ status: "disponivel" })
       .eq("id", data.vehicle_id);
+
+    // cancela o retorno bancário se ainda não tinha sido creditado pelo banco
+    await supabaseAdmin
+      .from("bank_returns")
+      .update({ status: "cancelado" })
+      .eq("sale_id", data.id)
+      .eq("status", "aguardando_retorno");
+  } else if (payload.payment_method === "financiado" && data.store_id) {
+    await ensureBankReturn(data.id, data.store_id, data.vehicle_id, data.buyer_name);
   }
 
   return NextResponse.json(data);
