@@ -33,7 +33,7 @@ type Sale = {
 /* ── Constants ─────────────────────────────────────────────────────── */
 const CATEGORIES = [
   "Aluguel", "Água/Luz/Internet", "Salários", "Pró-labore", "Benefícios (VT/VR)",
-  "Marketing — OLX", "Marketing — Webmotors", "Marketing — iCarros", "Marketing — Tráfego Pago",
+  "Marketing — OLX", "Marketing — Webmotors", "Marketing — Na Pista", "Marketing — Tráfego Pago",
   "CRM/Software", "Taxas Bancárias", "Contabilidade",
   "Combustível Operacional", "Outros",
 ];
@@ -59,7 +59,7 @@ const CAT_COLORS: Record<string, string> = {
   "Benefícios (VT/VR)":      "#06b6d4",
   "Marketing — OLX":         "#f59e0b",
   "Marketing — Webmotors":   "#f97316",
-  "Marketing — iCarros":     "#eab308",
+  "Marketing — Na Pista":     "#eab308",
   "Marketing — Tráfego Pago": "#c1121f",
   "CRM/Software":             "#10b981",
   "Taxas Bancárias":         "#6b7280",
