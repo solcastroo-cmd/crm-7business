@@ -70,7 +70,7 @@ function fmtDate(iso: string) {
 /* ── PDF Report ─────────────────────────────────────────────────────── */
 function printLedgerReport(
   ledger: LedgerEntry[],
-  summary: Summary | null,
+  totals: { entradas: number; saidas: number; saldoPeriodo: number; saldoAcumulado: number },
   storeName: string,
   dateFrom: string,
   dateTo: string,
@@ -134,10 +134,10 @@ function printLedgerReport(
     </div>
 
     <div class="summary">
-      <div class="summary-card"><div class="label">Entradas</div><div class="value" style="color:#10b981">${brl(summary?.entradas ?? 0)}</div></div>
-      <div class="summary-card"><div class="label">Saídas</div><div class="value" style="color:#ef4444">${brl(summary?.saidas ?? 0)}</div></div>
-      <div class="summary-card"><div class="label">Saldo do Período</div><div class="value" style="color:${(summary?.saldoPeriodo ?? 0) >= 0 ? "#10b981" : "#ef4444"}">${brl(summary?.saldoPeriodo ?? 0)}</div></div>
-      <div class="summary-card"><div class="label">Saldo Acumulado</div><div class="value" style="color:${(summary?.saldoAcumulado ?? 0) >= 0 ? "#10b981" : "#ef4444"}">${brl(summary?.saldoAcumulado ?? 0)}</div></div>
+      <div class="summary-card"><div class="label">Entradas</div><div class="value" style="color:#10b981">${brl(totals.entradas)}</div></div>
+      <div class="summary-card"><div class="label">Saídas</div><div class="value" style="color:#ef4444">${brl(totals.saidas)}</div></div>
+      <div class="summary-card"><div class="label">Saldo do Filtro</div><div class="value" style="color:${totals.saldoPeriodo >= 0 ? "#10b981" : "#ef4444"}">${brl(totals.saldoPeriodo)}</div></div>
+      <div class="summary-card"><div class="label">Saldo Acumulado</div><div class="value" style="color:${totals.saldoAcumulado >= 0 ? "#10b981" : "#ef4444"}">${brl(totals.saldoAcumulado)}</div></div>
     </div>
 
     <div class="section-title">Resumo por Categoria</div>
@@ -178,6 +178,10 @@ export default function FluxoCaixaPage() {
   const [accountForm, setAccountForm] = useState({ ...EMPTY_ACCOUNT_FORM });
   const [savingAccount, setSavingAccount] = useState(false);
 
+  const [tab, setTab] = useState<"movimentacoes" | "relatorio">("movimentacoes");
+  const [filterCategory, setFilterCategory] = useState("todas");
+  const [filterSource, setFilterSource] = useState("todos");
+
   const fetchAll = useCallback(async () => {
     setLoading(true);
     const params = new URLSearchParams({ dateFrom, dateTo });
@@ -201,6 +205,23 @@ export default function FluxoCaixaPage() {
   }, [userId]);
 
   const reversed = useMemo(() => [...ledger].reverse(), [ledger]);
+
+  const categoryOptions = useMemo(
+    () => Array.from(new Set(ledger.map(e => e.category))).sort((a, b) => a.localeCompare(b)),
+    [ledger],
+  );
+
+  const filtered = useMemo(() => ledger.filter(e => {
+    if (filterCategory !== "todas" && e.category !== filterCategory) return false;
+    if (filterSource   !== "todos" && e.source   !== filterSource)   return false;
+    return true;
+  }), [ledger, filterCategory, filterSource]);
+
+  const filteredTotals = useMemo(() => {
+    const entradas = filtered.filter(e => e.type === "entrada").reduce((s, e) => s + Number(e.amount), 0);
+    const saidas   = filtered.filter(e => e.type === "saida").reduce((s, e) => s + Number(e.amount), 0);
+    return { entradas, saidas, liquido: entradas - saidas };
+  }, [filtered]);
 
   function setPeriod(kind: "hoje" | "semana" | "mes" | "mesPassado") {
     const now = new Date();
@@ -307,6 +328,11 @@ export default function FluxoCaixaPage() {
 
   const inputStyle = { background: "#111827", borderColor: "#374151" };
   const sectionBg  = { background: "#0f172a", border: "1px solid #1f2937" };
+  const TAB_STYLE = (active: boolean) => ({
+    background: active ? "rgba(16,185,129,0.15)" : "transparent",
+    color:      active ? "#34d399" : "#6b7280",
+    borderBottom: active ? "2px solid #10b981" : "2px solid transparent",
+  });
 
   return (
     <main className="min-h-screen p-4 sm:p-6" style={{ background: "#0a0f1a" }}>
@@ -315,18 +341,22 @@ export default function FluxoCaixaPage() {
           <h1 className="text-2xl font-black text-white">💵 Fluxo de Caixa</h1>
           <p className="text-sm mt-1" style={{ color: "#6b7280" }}>Entradas, saídas e saldo em tempo real</p>
         </div>
-        <div className="flex gap-2">
-          <button onClick={() => printLedgerReport(ledger, summary, storeName, dateFrom, dateTo)}
-            className="rounded-xl px-5 py-2.5 text-sm font-bold hover:opacity-90"
-            style={{ background: "#1f2937", color: "#9ca3af" }}>
-            🖨 Imprimir
+        <button onClick={openNew}
+          className="rounded-xl px-5 py-2.5 text-sm font-bold text-white hover:opacity-90"
+          style={{ background: "#10b981" }}>
+          + Recebimento
+        </button>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-1 mb-6 border-b" style={{ borderColor: "#1f2937" }}>
+        {(["movimentacoes", "relatorio"] as const).map(t => (
+          <button key={t} onClick={() => setTab(t)}
+            className="px-5 py-3 text-sm font-semibold transition-all"
+            style={TAB_STYLE(tab === t)}>
+            {t === "movimentacoes" ? "📋 Movimentações" : "📄 Relatório"}
           </button>
-          <button onClick={openNew}
-            className="rounded-xl px-5 py-2.5 text-sm font-bold text-white hover:opacity-90"
-            style={{ background: "#10b981" }}>
-            + Recebimento
-          </button>
-        </div>
+        ))}
       </div>
 
       {/* Filtros de período */}
@@ -356,7 +386,7 @@ export default function FluxoCaixaPage() {
 
       {loading ? (
         <div className="flex items-center justify-center h-40 text-gray-500">Carregando…</div>
-      ) : (
+      ) : tab === "movimentacoes" ? (
         <>
           {/* KPIs */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
@@ -465,6 +495,93 @@ export default function FluxoCaixaPage() {
             </table>
           </div>
         </>
+      ) : (
+        <div className="space-y-5">
+          {/* Filtros do relatório */}
+          <div className="rounded-2xl p-4" style={sectionBg}>
+            <p className="text-xs font-bold uppercase tracking-wider mb-3" style={{ color: "#6b7280" }}>Filtros do Relatório</p>
+            <div className="flex flex-wrap gap-3">
+              <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)}
+                className="rounded-xl px-3 py-2 text-sm text-white border focus:outline-none" style={inputStyle}>
+                <option value="todas">Todas categorias</option>
+                {categoryOptions.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <select value={filterSource} onChange={e => setFilterSource(e.target.value)}
+                className="rounded-xl px-3 py-2 text-sm text-white border focus:outline-none" style={inputStyle}>
+                <option value="todos">Todas origens</option>
+                {Object.entries(SOURCE_LABEL).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+              </select>
+              <button onClick={() => { setFilterCategory("todas"); setFilterSource("todos"); }}
+                className="rounded-xl px-3 py-2 text-xs font-semibold"
+                style={{ background: "#1f2937", color: "#9ca3af" }}>
+                Limpar
+              </button>
+            </div>
+          </div>
+
+          {/* Totais filtrados */}
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              { label: "Entradas do filtro", value: filteredTotals.entradas, color: "#10b981" },
+              { label: "Saídas do filtro",   value: filteredTotals.saidas,   color: "#ef4444" },
+              { label: "Líquido do filtro",  value: filteredTotals.liquido,  color: filteredTotals.liquido >= 0 ? "#10b981" : "#ef4444" },
+            ].map(c => (
+              <div key={c.label} className="rounded-2xl px-4 py-3" style={sectionBg}>
+                <p className="text-[10px] font-semibold" style={{ color: "#6b7280" }}>{c.label}</p>
+                <p className="text-lg font-black" style={{ color: c.color }}>{brl(c.value)}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Resumo por categoria */}
+          <div className="rounded-2xl overflow-hidden" style={sectionBg}>
+            <table className="w-full text-sm">
+              <thead>
+                <tr style={{ borderBottom: "1px solid #1f2937", background: "#111827" }}>
+                  {["Categoria", "Entradas", "Saídas", "Líquido"].map(h => (
+                    <th key={h} className="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wider"
+                      style={{ color: "#6b7280" }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {(() => {
+                  const bycat: Record<string, { entradas: number; saidas: number }> = {};
+                  filtered.forEach(e => {
+                    const c = (bycat[e.category] ??= { entradas: 0, saidas: 0 });
+                    if (e.type === "entrada") c.entradas += Number(e.amount);
+                    else c.saidas += Number(e.amount);
+                  });
+                  const items = Object.entries(bycat).sort((a, b) => (b[1].entradas - b[1].saidas) - (a[1].entradas - a[1].saidas));
+                  if (!items.length) return (
+                    <tr><td colSpan={4} className="text-center py-12 text-gray-600">Nenhum dado no filtro</td></tr>
+                  );
+                  return items.map(([cat, v]) => (
+                    <tr key={cat} style={{ borderBottom: "1px solid #1f293740" }}>
+                      <td className="px-4 py-3 font-semibold text-white">{cat}</td>
+                      <td className="px-4 py-3" style={{ color: "#10b981" }}>{v.entradas ? brl(v.entradas) : "—"}</td>
+                      <td className="px-4 py-3" style={{ color: "#ef4444" }}>{v.saidas ? brl(v.saidas) : "—"}</td>
+                      <td className="px-4 py-3 font-bold text-white">{brl(v.entradas - v.saidas)}</td>
+                    </tr>
+                  ));
+                })()}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Botão de impressão */}
+          <button
+            onClick={() => printLedgerReport(filtered, {
+              entradas: filteredTotals.entradas,
+              saidas: filteredTotals.saidas,
+              saldoPeriodo: filteredTotals.liquido,
+              saldoAcumulado: summary?.saldoAcumulado ?? 0,
+            }, storeName, dateFrom, dateTo)}
+            className="w-full rounded-xl py-3 text-sm font-bold text-white flex items-center justify-center gap-2 hover:opacity-90"
+            style={{ background: "#10b981" }}>
+            🖨️ Imprimir Relatório
+          </button>
+        </div>
       )}
 
       {/* Modal Novo Recebimento */}
