@@ -582,6 +582,18 @@ export default function VendasPage() {
 
         {/* Filtro de período */}
         <div className="flex flex-wrap items-center gap-3">
+          <div className="flex gap-2">
+            {[
+              { label: "Este mês",   fn: () => applyMonthFilter(0) },
+              { label: "Mês passado", fn: () => applyMonthFilter(1) },
+            ].map(a => (
+              <button key={a.label} onClick={a.fn}
+                className="rounded-lg px-3 py-2 text-xs font-semibold"
+                style={{ background: "#1f2937", color: "#9ca3af" }}>
+                {a.label}
+              </button>
+            ))}
+          </div>
           <select value="" onChange={e => { if (e.target.value !== "") applyMonthFilter(Number(e.target.value)); }}
             className="rounded-xl px-4 py-2.5 text-sm text-white border focus:outline-none"
             style={{ background: "#111827", borderColor: "#1f2937" }}>
