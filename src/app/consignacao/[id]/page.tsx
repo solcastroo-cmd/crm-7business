@@ -121,6 +121,7 @@ export default function ConsignacaoDetailPage() {
         loja_nome_fantasia:         g("loja_nome_fantasia")         || null,
         loja_cnpj:                  g("loja_cnpj")                  || null,
         loja_responsavel:           g("loja_responsavel")           || null,
+        loja_endereco:              g("loja_endereco")              || null,
         veiculo_marca:              g("veiculo_marca")              || null,
         veiculo_modelo:             g("veiculo_modelo")             || null,
         veiculo_versao:             g("veiculo_versao")             || null,
@@ -282,11 +283,15 @@ export default function ConsignacaoDetailPage() {
             <div><label style={lbl}>Nome Fantasia</label>
               <input name="loja_nome_fantasia" defaultValue={d.loja_nome_fantasia} style={inp} autoComplete="off" /></div>
           </div>
-          <div style={g2}>
+          <div style={{ ...g2, marginBottom: 12 }}>
             <div><label style={lbl}>CNPJ</label>
               <input name="loja_cnpj" defaultValue={d.loja_cnpj} style={inp} autoComplete="off" /></div>
             <div><label style={lbl}>Representante Legal</label>
               <input name="loja_responsavel" defaultValue={d.loja_responsavel} style={inp} autoComplete="off" /></div>
+          </div>
+          <div>
+            <label style={lbl}>Endereço</label>
+            <input name="loja_endereco" defaultValue={d.loja_endereco ?? "Av: Desembargador Gonzaga, 1328 - Cidade dos Funcionários"} style={inp} autoComplete="off" />
           </div>
         </div>
 

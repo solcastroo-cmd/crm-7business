@@ -80,6 +80,7 @@ export default function NovoConsignacaoPage() {
         loja_nome_fantasia:         g("loja_nome_fantasia")         || null,
         loja_cnpj:                  g("loja_cnpj")                  || null,
         loja_responsavel:           g("loja_responsavel")           || null,
+        loja_endereco:              g("loja_endereco")              || null,
         veiculo_marca:              g("veiculo_marca")              || null,
         veiculo_modelo:             g("veiculo_modelo")             || null,
         veiculo_versao:             g("veiculo_versao")             || null,
@@ -200,7 +201,7 @@ export default function NovoConsignacaoPage() {
               <input name="loja_nome_fantasia" defaultValue="PHD Motors" style={inp} autoComplete="off" />
             </div>
           </div>
-          <div style={g2}>
+          <div style={{ ...g2, marginBottom: 12 }}>
             <div>
               <label style={lbl}>CNPJ</label>
               <input name="loja_cnpj" defaultValue="67.579.100/0001-95" style={inp} placeholder="00.000.000/0001-00" autoComplete="off" />
@@ -209,6 +210,10 @@ export default function NovoConsignacaoPage() {
               <label style={lbl}>Representante Legal</label>
               <input name="loja_responsavel" style={inp} placeholder="Nome do responsável" autoComplete="off" />
             </div>
+          </div>
+          <div>
+            <label style={lbl}>Endereço</label>
+            <input name="loja_endereco" defaultValue="Av: Desembargador Gonzaga, 1328 - Cidade dos Funcionários" style={inp} autoComplete="off" />
           </div>
         </div>
 

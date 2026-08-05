@@ -162,6 +162,12 @@ export default function ImprimirPage() {
             <div className="field-value">{val(c.loja_responsavel)}</div>
           </div>
         </div>
+        <div className="row">
+          <div className="field">
+            <div className="field-label">Endereço</div>
+            <div className="field-value">{val(c.loja_endereco)}</div>
+          </div>
+        </div>
 
         {/* 3. Veículo */}
         <h2>3. Dados do Veículo</h2>
