@@ -821,16 +821,26 @@ export default function FinanceiroLojaPage() {
 
               {/* Totais mensais */}
               <div className="rounded-2xl p-5" style={sectionBg}>
-                <p className="text-sm font-bold text-white mb-4">📅 Totais Mensais</p>
+                <p className="text-sm font-bold text-white mb-1">📅 Totais Mensais</p>
+                <p className="text-[10px] mb-4" style={{ color: "#6b7280" }}>Total = pago + pendente. Use o filtro de Status acima pra ver só um dos dois.</p>
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                   {(() => {
-                    const mm: Record<string, number> = {};
+                    const mm: Record<string, { total: number; pago: number; pendente: number }> = {};
                     filtered.filter(e => e.category !== PRO_LABORE_CATEGORY)
-                      .forEach(e => { const k = monthKey(e.date); mm[k] = (mm[k]??0)+Number(e.amount); });
+                      .forEach(e => {
+                        const k = monthKey(e.date);
+                        if (!mm[k]) mm[k] = { total: 0, pago: 0, pendente: 0 };
+                        mm[k].total += Number(e.amount);
+                        mm[k][e.status] += Number(e.amount);
+                      });
                     return Object.entries(mm).sort((a,b)=>a[0].localeCompare(b[0])).map(([k,v]) => (
                       <div key={k} className="rounded-xl p-3" style={{ background: "#111827" }}>
                         <p className="text-[10px] font-semibold mb-1" style={{ color: "#6b7280" }}>{monthLabel(k)}</p>
-                        <p className="text-base font-black" style={{ color: "#e63946" }}>{brl(v)}</p>
+                        <p className="text-base font-black" style={{ color: "#e63946" }}>{brl(v.total)}</p>
+                        <div className="flex gap-2 mt-1 text-[9px]">
+                          <span style={{ color: "#10b981" }}>✓ {brl(v.pago)}</span>
+                          {v.pendente > 0 && <span style={{ color: "#ef4444" }}>⏳ {brl(v.pendente)}</span>}
+                        </div>
                       </div>
                     ));
                   })()}
