@@ -32,9 +32,11 @@ type Sale = {
 
 /* ── Constants ─────────────────────────────────────────────────────── */
 const PRO_LABORE_CATEGORY = "Pró-labore";
+const PROFIT_SHARE_CATEGORY = "Distribuição de Lucros";
+const NON_OPERATIONAL_CATEGORIES = new Set([PRO_LABORE_CATEGORY, PROFIT_SHARE_CATEGORY]);
 
 const CATEGORIES = [
-  "Aluguel", "Água/Luz/Internet", "Salários", "Pró-labore", "Benefícios (VT/VR)",
+  "Aluguel", "Água/Luz/Internet", "Salários", "Pró-labore", "Distribuição de Lucros", "Benefícios (VT/VR)",
   "Marketing — OLX", "Marketing — Webmotors", "Marketing — Na Pista", "Marketing — Tráfego Pago",
   "CRM/Software", "Taxas Bancárias", "Contabilidade",
   "Combustível Operacional", "Outros",
@@ -59,6 +61,7 @@ const CAT_COLORS: Record<string, string> = {
   "Salários":                 "#8b5cf6",
   "Pró-labore":               "#d946ef",
   "Benefícios (VT/VR)":      "#06b6d4",
+  "Distribuição de Lucros":  "#a855f7",
   "Marketing — OLX":         "#f59e0b",
   "Marketing — Webmotors":   "#f97316",
   "Marketing — Na Pista":     "#eab308",
@@ -120,10 +123,12 @@ function printReport(
   const win = window.open("", "_blank");
   if (!win) return;
 
-  const despesasOperacionais = expenses.filter(e => e.category !== PRO_LABORE_CATEGORY);
+  const despesasOperacionais = expenses.filter(e => !NON_OPERATIONAL_CATEGORIES.has(e.category));
   const proLaboreItens = expenses.filter(e => e.category === PRO_LABORE_CATEGORY);
+  const lucroItens = expenses.filter(e => e.category === PROFIT_SHARE_CATEGORY);
   const total = despesasOperacionais.reduce((s, e) => s + Number(e.amount), 0);
   const totalProLabore = proLaboreItens.reduce((s, e) => s + Number(e.amount), 0);
+  const totalLucro = lucroItens.reduce((s, e) => s + Number(e.amount), 0);
   const bycat: Record<string, number> = {};
   despesasOperacionais.forEach(e => { bycat[e.category] = (bycat[e.category] ?? 0) + Number(e.amount); });
 
@@ -138,6 +143,15 @@ function printReport(
     </tr>`).join("");
 
   const proLaboreRows = proLaboreItens.map(e => `
+    <tr>
+      <td>${fmtDate(e.date)}</td>
+      <td>${e.description}</td>
+      <td>${PAYMENT_LABEL[e.payment_method] ?? e.payment_method}</td>
+      <td style="text-align:right">${brl(Number(e.amount))}</td>
+      <td><span style="color:${e.status==='pago'?'#10b981':'#ef4444'};font-weight:700">${e.status==='pago'?'Pago':'Pendente'}</span></td>
+    </tr>`).join("");
+
+  const lucroRows = lucroItens.map(e => `
     <tr>
       <td>${fmtDate(e.date)}</td>
       <td>${e.description}</td>
@@ -210,6 +224,17 @@ function printReport(
     <div class="total-box" style="border-color:#d946ef33">
       <span class="label">Total de Pró-labore do Período</span>
       <span class="value" style="color:#d946ef">${brl(totalProLabore)}</span>
+    </div>` : ""}
+
+    ${lucroItens.length ? `
+    <div class="section-title" style="margin-top:24px">Distribuição de Lucros (não é despesa operacional)</div>
+    <table>
+      <thead><tr><th>Data</th><th>Descrição</th><th>Pagamento</th><th style="text-align:right">Valor</th><th>Status</th></tr></thead>
+      <tbody>${lucroRows}</tbody>
+    </table>
+    <div class="total-box" style="border-color:#a855f733">
+      <span class="label">Total de Distribuição de Lucros do Período</span>
+      <span class="value" style="color:#a855f7">${brl(totalLucro)}</span>
     </div>` : ""}
   </body></html>`);
   win.document.close();
@@ -308,8 +333,9 @@ export default function FinanceiroLojaPage() {
   const kpi = useMemo(() => {
     const curMonth = selectedMonth;
 
-    const realExpenses = expenses.filter(e => e.category !== PRO_LABORE_CATEGORY);
+    const realExpenses = expenses.filter(e => !NON_OPERATIONAL_CATEGORIES.has(e.category));
     const proLabore     = expenses.filter(e => e.category === PRO_LABORE_CATEGORY);
+    const lucro         = expenses.filter(e => e.category === PROFIT_SHARE_CATEGORY);
 
     const storeTotal    = realExpenses.reduce((s, e) => s + Number(e.amount), 0);
     const storePendente = realExpenses.filter(e => e.status === "pendente").reduce((s, e) => s + Number(e.amount), 0);
@@ -318,6 +344,9 @@ export default function FinanceiroLojaPage() {
     const proLaboreTotal = proLabore.reduce((s, e) => s + Number(e.amount), 0);
     const proLaboreMes   = proLabore.filter(e => e.date.startsWith(curMonth)).reduce((s, e) => s + Number(e.amount), 0);
 
+    const lucroTotal = lucro.reduce((s, e) => s + Number(e.amount), 0);
+    const lucroMes   = lucro.filter(e => e.date.startsWith(curMonth)).reduce((s, e) => s + Number(e.amount), 0);
+
     const veiculoTotal  = vehicleExpenses.reduce((s, e) => s + Number(e.amount), 0);
     const veiculoMes    = vehicleExpenses.filter(e => e.date?.startsWith(curMonth)).reduce((s, e) => s + Number(e.amount), 0);
 
@@ -325,13 +354,14 @@ export default function FinanceiroLojaPage() {
     const receitaMes    = sales.filter(s => s.status === "pago" && s.closing_date?.startsWith(curMonth))
                                .reduce((s, v) => s + Number(v.total_value), 0);
 
-    const totalCustoMes  = storeMes + veiculoMes + proLaboreMes;
+    const totalCustoMes  = storeMes + veiculoMes + proLaboreMes + lucroMes;
     const resultadoMes   = receitaMes - totalCustoMes;
-    const resultadoTotal = receitaTotal - storeTotal - veiculoTotal - proLaboreTotal;
+    const resultadoTotal = receitaTotal - storeTotal - veiculoTotal - proLaboreTotal - lucroTotal;
 
     return {
       storeTotal, storePendente, storeMes,
       proLaboreTotal, proLaboreMes,
+      lucroTotal, lucroMes,
       veiculoTotal, veiculoMes,
       receitaTotal, receitaMes,
       totalCustoMes, resultadoMes, resultadoTotal,
@@ -341,7 +371,7 @@ export default function FinanceiroLojaPage() {
   /* ── por categoria (loja) ── */
   const byCategory = useMemo(() => {
     const map: Record<string, number> = {};
-    expenses.filter(e => e.category !== PRO_LABORE_CATEGORY)
+    expenses.filter(e => !NON_OPERATIONAL_CATEGORIES.has(e.category))
       .forEach(e => { map[e.category] = (map[e.category] ?? 0) + Number(e.amount); });
     return Object.entries(map)
       .sort((a, b) => b[1] - a[1])
@@ -506,12 +536,13 @@ export default function FinanceiroLojaPage() {
                     </button>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+                <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
                   {[
                     { label: "Receita (Vendas)", value: kpi.receitaMes,   color: "#10b981", icon: "💰" },
                     { label: "Custos da Loja",   value: kpi.storeMes,     color: "#e63946", icon: "🏪" },
                     { label: "Custos Veículos",  value: kpi.veiculoMes,   color: "#f59e0b", icon: "🚗" },
                     { label: "Pró-labore",       value: kpi.proLaboreMes, color: "#d946ef", icon: "🧑‍💼" },
+                    { label: "Distrib. Lucros",  value: kpi.lucroMes,     color: "#a855f7", icon: "🤝" },
                     { label: "Resultado Líquido",value: kpi.resultadoMes, color: kpi.resultadoMes >= 0 ? "#10b981" : "#ef4444", icon: "📈" },
                   ].map(c => (
                     <div key={c.label} className="rounded-2xl p-4" style={sectionBg}>
@@ -528,12 +559,13 @@ export default function FinanceiroLojaPage() {
                 <p className="text-xs font-bold uppercase tracking-wider mb-3" style={{ color: "#6b7280" }}>
                   📊 Acumulado Total
                 </p>
-                <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+                <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
                   {[
                     { label: "Receita Total",      value: kpi.receitaTotal,   color: "#10b981", icon: "💵" },
                     { label: "Despesas da Loja",   value: kpi.storeTotal,     color: "#e63946", icon: "📤" },
                     { label: "Despesas Veículos",  value: kpi.veiculoTotal,   color: "#f59e0b", icon: "🔧" },
                     { label: "Pró-labore Total",   value: kpi.proLaboreTotal, color: "#d946ef", icon: "🧑‍💼" },
+                    { label: "Distrib. Lucros Total", value: kpi.lucroTotal,  color: "#a855f7", icon: "🤝" },
                     { label: "Resultado Acumulado",value: kpi.resultadoTotal, color: kpi.resultadoTotal >= 0 ? "#10b981" : "#ef4444", icon: "🏆" },
                   ].map(c => (
                     <div key={c.label} className="rounded-2xl p-4" style={sectionBg}>
@@ -785,7 +817,7 @@ export default function FinanceiroLojaPage() {
                 <p className="text-sm font-bold text-white mb-4">📊 Resumo por Categoria (despesas operacionais)</p>
                 <div className="space-y-2">
                   {(() => {
-                    const semProLabore = filtered.filter(e => e.category !== PRO_LABORE_CATEGORY);
+                    const semProLabore = filtered.filter(e => !NON_OPERATIONAL_CATEGORIES.has(e.category));
                     const catMap: Record<string, number> = {};
                     semProLabore.forEach(e => { catMap[e.category] = (catMap[e.category] ?? 0) + Number(e.amount); });
                     const items = Object.entries(catMap).sort((a,b)=>b[1]-a[1]);
@@ -808,13 +840,19 @@ export default function FinanceiroLojaPage() {
                 <div className="mt-4 flex justify-between items-center border-t pt-4" style={{ borderColor: "#1f2937" }}>
                   <span className="text-sm font-bold text-white">Total do Período (despesas)</span>
                   <span className="text-2xl font-black" style={{ color: "#e63946" }}>
-                    {brl(filtered.filter(e => e.category !== PRO_LABORE_CATEGORY).reduce((s,e)=>s+Number(e.amount),0))}
+                    {brl(filtered.filter(e => !NON_OPERATIONAL_CATEGORIES.has(e.category)).reduce((s,e)=>s+Number(e.amount),0))}
                   </span>
                 </div>
                 <div className="mt-2 flex justify-between items-center">
                   <span className="text-xs font-semibold" style={{ color: "#9ca3af" }}>Pró-labore do Período (não entra no total acima)</span>
                   <span className="text-sm font-bold" style={{ color: "#d946ef" }}>
                     {brl(filtered.filter(e => e.category === PRO_LABORE_CATEGORY).reduce((s,e)=>s+Number(e.amount),0))}
+                  </span>
+                </div>
+                <div className="mt-2 flex justify-between items-center">
+                  <span className="text-xs font-semibold" style={{ color: "#9ca3af" }}>Distribuição de Lucros do Período (não entra no total acima)</span>
+                  <span className="text-sm font-bold" style={{ color: "#a855f7" }}>
+                    {brl(filtered.filter(e => e.category === PROFIT_SHARE_CATEGORY).reduce((s,e)=>s+Number(e.amount),0))}
                   </span>
                 </div>
               </div>
@@ -826,7 +864,7 @@ export default function FinanceiroLojaPage() {
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                   {(() => {
                     const mm: Record<string, { total: number; pago: number; pendente: number }> = {};
-                    filtered.filter(e => e.category !== PRO_LABORE_CATEGORY)
+                    filtered.filter(e => !NON_OPERATIONAL_CATEGORIES.has(e.category))
                       .forEach(e => {
                         const k = monthKey(e.date);
                         if (!mm[k]) mm[k] = { total: 0, pago: 0, pendente: 0 };
