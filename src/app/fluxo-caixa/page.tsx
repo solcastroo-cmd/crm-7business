@@ -285,6 +285,12 @@ export default function FluxoCaixaPage() {
     fetchAll();
   }
 
+  async function cancelStoreExpense(id: string, description: string) {
+    if (!confirm(`Cancelar a despesa "${description}"? Ela some do fluxo de caixa e do Financeiro da Loja.`)) return;
+    await fetch(`/api/financeiro-loja?id=${id}`, { method: "DELETE" });
+    fetchAll();
+  }
+
   function openNewAccount() {
     setEditingAccount(null);
     setAccountForm({ ...EMPTY_ACCOUNT_FORM });
@@ -485,6 +491,11 @@ export default function FluxoCaixaPage() {
                             className="rounded-lg px-2 py-1 text-xs font-semibold hover:opacity-80"
                             style={{ background: "#ef444415", color: "#ef4444" }}>🗑️</button>
                         </div>
+                      ) : e.source === "despesa_loja" ? (
+                        <button onClick={() => cancelStoreExpense(e.id, e.description)}
+                          className="rounded-lg px-2 py-1 text-xs font-semibold hover:opacity-80"
+                          style={{ background: "#ef444415", color: "#ef4444" }}
+                          title="Cancelar despesa">🗑️ Cancelar</button>
                       ) : (
                         <span className="text-[10px]" style={{ color: "#374151" }}>—</span>
                       )}
