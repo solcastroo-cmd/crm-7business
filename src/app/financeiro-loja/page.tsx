@@ -38,7 +38,7 @@ const NON_OPERATIONAL_CATEGORIES = new Set([PRO_LABORE_CATEGORY, PROFIT_SHARE_CA
 const CATEGORIES = [
   "Aluguel", "Água/Luz/Internet", "Salários", "Pró-labore", "Distribuição de Lucros", "Benefícios (VT/VR)",
   "Marketing — OLX", "Marketing — Webmotors", "Marketing — Na Pista", "Marketing — Tráfego Pago",
-  "CRM/Software", "Taxas Bancárias", "Contabilidade", "Imposto", "Segurança", "Uso e Consumo",
+  "CRM/Software", "Taxas Bancárias", "Contabilidade", "Imposto", "IPTU", "Segurança", "Uso e Consumo",
   "Combustível Operacional", "Outros",
 ];
 
@@ -63,6 +63,7 @@ const CAT_COLORS: Record<string, string> = {
   "Benefícios (VT/VR)":      "#06b6d4",
   "Distribuição de Lucros":  "#a855f7",
   "Imposto":                  "#dc2626",
+  "IPTU":                      "#b91c1c",
   "Segurança":                "#0ea5e9",
   "Uso e Consumo":            "#65a30d",
   "Marketing — OLX":         "#f59e0b",
