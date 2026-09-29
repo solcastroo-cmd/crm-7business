@@ -31,6 +31,8 @@ type Sale = {
 };
 
 /* ── Constants ─────────────────────────────────────────────────────── */
+const PRO_LABORE_CATEGORY = "Pró-labore";
+
 const CATEGORIES = [
   "Aluguel", "Água/Luz/Internet", "Salários", "Pró-labore", "Benefícios (VT/VR)",
   "Marketing — OLX", "Marketing — Webmotors", "Marketing — Na Pista", "Marketing — Tráfego Pago",
@@ -118,15 +120,27 @@ function printReport(
   const win = window.open("", "_blank");
   if (!win) return;
 
-  const total = expenses.reduce((s, e) => s + Number(e.amount), 0);
+  const despesasOperacionais = expenses.filter(e => e.category !== PRO_LABORE_CATEGORY);
+  const proLaboreItens = expenses.filter(e => e.category === PRO_LABORE_CATEGORY);
+  const total = despesasOperacionais.reduce((s, e) => s + Number(e.amount), 0);
+  const totalProLabore = proLaboreItens.reduce((s, e) => s + Number(e.amount), 0);
   const bycat: Record<string, number> = {};
-  expenses.forEach(e => { bycat[e.category] = (bycat[e.category] ?? 0) + Number(e.amount); });
+  despesasOperacionais.forEach(e => { bycat[e.category] = (bycat[e.category] ?? 0) + Number(e.amount); });
 
-  const rows = expenses.map(e => `
+  const rows = despesasOperacionais.map(e => `
     <tr>
       <td>${fmtDate(e.date)}</td>
       <td>${e.description}</td>
       <td>${e.category}</td>
+      <td>${PAYMENT_LABEL[e.payment_method] ?? e.payment_method}</td>
+      <td style="text-align:right">${brl(Number(e.amount))}</td>
+      <td><span style="color:${e.status==='pago'?'#10b981':'#ef4444'};font-weight:700">${e.status==='pago'?'Pago':'Pendente'}</span></td>
+    </tr>`).join("");
+
+  const proLaboreRows = proLaboreItens.map(e => `
+    <tr>
+      <td>${fmtDate(e.date)}</td>
+      <td>${e.description}</td>
       <td>${PAYMENT_LABEL[e.payment_method] ?? e.payment_method}</td>
       <td style="text-align:right">${brl(Number(e.amount))}</td>
       <td><span style="color:${e.status==='pago'?'#10b981':'#ef4444'};font-weight:700">${e.status==='pago'?'Pago':'Pendente'}</span></td>
@@ -176,16 +190,27 @@ function printReport(
       <tbody>${catRows}</tbody>
     </table>
 
-    <div class="section-title">Despesas Detalhadas</div>
+    <div class="section-title">Despesas Detalhadas (operacionais)</div>
     <table>
       <thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Pagamento</th><th style="text-align:right">Valor</th><th>Status</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
 
     <div class="total-box">
-      <span class="label">Total do Período</span>
+      <span class="label">Total de Despesas do Período</span>
       <span class="value">${brl(total)}</span>
     </div>
+
+    ${proLaboreItens.length ? `
+    <div class="section-title" style="margin-top:24px">Pró-labore (não é despesa operacional)</div>
+    <table>
+      <thead><tr><th>Data</th><th>Descrição</th><th>Pagamento</th><th style="text-align:right">Valor</th><th>Status</th></tr></thead>
+      <tbody>${proLaboreRows}</tbody>
+    </table>
+    <div class="total-box" style="border-color:#d946ef33">
+      <span class="label">Total de Pró-labore do Período</span>
+      <span class="value" style="color:#d946ef">${brl(totalProLabore)}</span>
+    </div>` : ""}
   </body></html>`);
   win.document.close();
   win.print();
@@ -198,6 +223,7 @@ export default function FinanceiroLojaPage() {
   const [userId, setUserId]       = useState<string | null>(null);
   const [storeName, setStoreName] = useState("CRM 7Business");
   const [tab, setTab]             = useState<"dashboard" | "despesas" | "relatorio">("dashboard");
+  const [selectedMonth, setSelectedMonth] = useState<string>("2026-08");
 
   // dados
   const [expenses, setExpenses]             = useState<Expense[]>([]);
@@ -266,14 +292,31 @@ export default function FinanceiroLojaPage() {
     });
   }, [expenses, filterCat, filterStatus, filterPay, dateFrom, dateTo, search]);
 
+  /* ── Meses disponíveis (pro seletor do dashboard) ── */
+  const availableMonths = useMemo(() => {
+    const set = new Set<string>();
+    expenses.forEach(e => set.add(monthKey(e.date)));
+    vehicleExpenses.forEach(e => { if (e.date) set.add(monthKey(e.date)); });
+    sales.forEach(s => { if (s.closing_date) set.add(monthKey(s.closing_date)); });
+    const now = new Date();
+    set.add(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`);
+    set.add(selectedMonth);
+    return Array.from(set).sort((a, b) => b.localeCompare(a));
+  }, [expenses, vehicleExpenses, sales, selectedMonth]);
+
   /* ── KPIs Dashboard ── */
   const kpi = useMemo(() => {
-    const now = new Date();
-    const curMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const curMonth = selectedMonth;
 
-    const storeTotal    = expenses.reduce((s, e) => s + Number(e.amount), 0);
-    const storePendente = expenses.filter(e => e.status === "pendente").reduce((s, e) => s + Number(e.amount), 0);
-    const storeMes      = expenses.filter(e => e.date.startsWith(curMonth)).reduce((s, e) => s + Number(e.amount), 0);
+    const realExpenses = expenses.filter(e => e.category !== PRO_LABORE_CATEGORY);
+    const proLabore     = expenses.filter(e => e.category === PRO_LABORE_CATEGORY);
+
+    const storeTotal    = realExpenses.reduce((s, e) => s + Number(e.amount), 0);
+    const storePendente = realExpenses.filter(e => e.status === "pendente").reduce((s, e) => s + Number(e.amount), 0);
+    const storeMes      = realExpenses.filter(e => e.date.startsWith(curMonth)).reduce((s, e) => s + Number(e.amount), 0);
+
+    const proLaboreTotal = proLabore.reduce((s, e) => s + Number(e.amount), 0);
+    const proLaboreMes   = proLabore.filter(e => e.date.startsWith(curMonth)).reduce((s, e) => s + Number(e.amount), 0);
 
     const veiculoTotal  = vehicleExpenses.reduce((s, e) => s + Number(e.amount), 0);
     const veiculoMes    = vehicleExpenses.filter(e => e.date?.startsWith(curMonth)).reduce((s, e) => s + Number(e.amount), 0);
@@ -282,22 +325,24 @@ export default function FinanceiroLojaPage() {
     const receitaMes    = sales.filter(s => s.status === "pago" && s.closing_date?.startsWith(curMonth))
                                .reduce((s, v) => s + Number(v.total_value), 0);
 
-    const totalCustoMes  = storeMes + veiculoMes;
+    const totalCustoMes  = storeMes + veiculoMes + proLaboreMes;
     const resultadoMes   = receitaMes - totalCustoMes;
-    const resultadoTotal = receitaTotal - storeTotal - veiculoTotal;
+    const resultadoTotal = receitaTotal - storeTotal - veiculoTotal - proLaboreTotal;
 
     return {
       storeTotal, storePendente, storeMes,
+      proLaboreTotal, proLaboreMes,
       veiculoTotal, veiculoMes,
       receitaTotal, receitaMes,
       totalCustoMes, resultadoMes, resultadoTotal,
     };
-  }, [expenses, vehicleExpenses, sales]);
+  }, [expenses, vehicleExpenses, sales, selectedMonth]);
 
   /* ── por categoria (loja) ── */
   const byCategory = useMemo(() => {
     const map: Record<string, number> = {};
-    expenses.forEach(e => { map[e.category] = (map[e.category] ?? 0) + Number(e.amount); });
+    expenses.filter(e => e.category !== PRO_LABORE_CATEGORY)
+      .forEach(e => { map[e.category] = (map[e.category] ?? 0) + Number(e.amount); });
     return Object.entries(map)
       .sort((a, b) => b[1] - a[1])
       .map(([label, value]) => ({ label, value, color: CAT_COLORS[label] ?? "#6b7280" }));
@@ -427,14 +472,46 @@ export default function FinanceiroLojaPage() {
             <div className="space-y-6">
               {/* KPI Cards — Mês Atual */}
               <div>
-                <p className="text-xs font-bold uppercase tracking-wider mb-3" style={{ color: "#6b7280" }}>
-                  📅 Mês Atual
-                </p>
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                  <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "#6b7280" }}>
+                    📅 {monthLabel(selectedMonth)}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        const [y, m] = selectedMonth.split("-").map(Number);
+                        const d = new Date(y, m - 2, 1);
+                        setSelectedMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+                      }}
+                      className="rounded-lg px-2 py-1 text-xs font-bold hover:opacity-80"
+                      style={{ background: "#1f2937", color: "#9ca3af" }}>
+                      ←
+                    </button>
+                    <select value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)}
+                      className="rounded-lg px-3 py-1.5 text-xs font-semibold text-white border focus:outline-none"
+                      style={inputStyle}>
+                      {availableMonths.map(m => (
+                        <option key={m} value={m}>{monthLabel(m)}</option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => {
+                        const [y, m] = selectedMonth.split("-").map(Number);
+                        const d = new Date(y, m, 1);
+                        setSelectedMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+                      }}
+                      className="rounded-lg px-2 py-1 text-xs font-bold hover:opacity-80"
+                      style={{ background: "#1f2937", color: "#9ca3af" }}>
+                      →
+                    </button>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
                   {[
                     { label: "Receita (Vendas)", value: kpi.receitaMes,   color: "#10b981", icon: "💰" },
                     { label: "Custos da Loja",   value: kpi.storeMes,     color: "#e63946", icon: "🏪" },
                     { label: "Custos Veículos",  value: kpi.veiculoMes,   color: "#f59e0b", icon: "🚗" },
+                    { label: "Pró-labore",       value: kpi.proLaboreMes, color: "#d946ef", icon: "🧑‍💼" },
                     { label: "Resultado Líquido",value: kpi.resultadoMes, color: kpi.resultadoMes >= 0 ? "#10b981" : "#ef4444", icon: "📈" },
                   ].map(c => (
                     <div key={c.label} className="rounded-2xl p-4" style={sectionBg}>
@@ -451,11 +528,12 @@ export default function FinanceiroLojaPage() {
                 <p className="text-xs font-bold uppercase tracking-wider mb-3" style={{ color: "#6b7280" }}>
                   📊 Acumulado Total
                 </p>
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
                   {[
                     { label: "Receita Total",      value: kpi.receitaTotal,   color: "#10b981", icon: "💵" },
                     { label: "Despesas da Loja",   value: kpi.storeTotal,     color: "#e63946", icon: "📤" },
                     { label: "Despesas Veículos",  value: kpi.veiculoTotal,   color: "#f59e0b", icon: "🔧" },
+                    { label: "Pró-labore Total",   value: kpi.proLaboreTotal, color: "#d946ef", icon: "🧑‍💼" },
                     { label: "Resultado Acumulado",value: kpi.resultadoTotal, color: kpi.resultadoTotal >= 0 ? "#10b981" : "#ef4444", icon: "🏆" },
                   ].map(c => (
                     <div key={c.label} className="rounded-2xl p-4" style={sectionBg}>
@@ -704,11 +782,12 @@ export default function FinanceiroLojaPage() {
 
               {/* Resumo por categoria */}
               <div className="rounded-2xl p-5" style={sectionBg}>
-                <p className="text-sm font-bold text-white mb-4">📊 Resumo por Categoria</p>
+                <p className="text-sm font-bold text-white mb-4">📊 Resumo por Categoria (despesas operacionais)</p>
                 <div className="space-y-2">
                   {(() => {
+                    const semProLabore = filtered.filter(e => e.category !== PRO_LABORE_CATEGORY);
                     const catMap: Record<string, number> = {};
-                    filtered.forEach(e => { catMap[e.category] = (catMap[e.category] ?? 0) + Number(e.amount); });
+                    semProLabore.forEach(e => { catMap[e.category] = (catMap[e.category] ?? 0) + Number(e.amount); });
                     const items = Object.entries(catMap).sort((a,b)=>b[1]-a[1]);
                     if (!items.length) return <p className="text-sm text-center py-4" style={{ color: "#6b7280" }}>Nenhum dado</p>;
                     const max = Math.max(...items.map(i=>i[1]));
@@ -720,16 +799,22 @@ export default function FinanceiroLojaPage() {
                         </div>
                         <span className="text-sm font-bold w-24 text-right shrink-0 text-white">{brl(val)}</span>
                         <span className="text-[10px] w-10 text-right shrink-0" style={{ color: "#6b7280" }}>
-                          {((val/filtered.reduce((s,e)=>s+Number(e.amount),0.001))*100).toFixed(1)}%
+                          {((val/semProLabore.reduce((s,e)=>s+Number(e.amount),0.001))*100).toFixed(1)}%
                         </span>
                       </div>
                     ));
                   })()}
                 </div>
                 <div className="mt-4 flex justify-between items-center border-t pt-4" style={{ borderColor: "#1f2937" }}>
-                  <span className="text-sm font-bold text-white">Total do Período</span>
+                  <span className="text-sm font-bold text-white">Total do Período (despesas)</span>
                   <span className="text-2xl font-black" style={{ color: "#e63946" }}>
-                    {brl(filtered.reduce((s,e)=>s+Number(e.amount),0))}
+                    {brl(filtered.filter(e => e.category !== PRO_LABORE_CATEGORY).reduce((s,e)=>s+Number(e.amount),0))}
+                  </span>
+                </div>
+                <div className="mt-2 flex justify-between items-center">
+                  <span className="text-xs font-semibold" style={{ color: "#9ca3af" }}>Pró-labore do Período (não entra no total acima)</span>
+                  <span className="text-sm font-bold" style={{ color: "#d946ef" }}>
+                    {brl(filtered.filter(e => e.category === PRO_LABORE_CATEGORY).reduce((s,e)=>s+Number(e.amount),0))}
                   </span>
                 </div>
               </div>
@@ -740,7 +825,8 @@ export default function FinanceiroLojaPage() {
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                   {(() => {
                     const mm: Record<string, number> = {};
-                    filtered.forEach(e => { const k = monthKey(e.date); mm[k] = (mm[k]??0)+Number(e.amount); });
+                    filtered.filter(e => e.category !== PRO_LABORE_CATEGORY)
+                      .forEach(e => { const k = monthKey(e.date); mm[k] = (mm[k]??0)+Number(e.amount); });
                     return Object.entries(mm).sort((a,b)=>a[0].localeCompare(b[0])).map(([k,v]) => (
                       <div key={k} className="rounded-xl p-3" style={{ background: "#111827" }}>
                         <p className="text-[10px] font-semibold mb-1" style={{ color: "#6b7280" }}>{monthLabel(k)}</p>
