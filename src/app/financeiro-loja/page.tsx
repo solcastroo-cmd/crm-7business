@@ -240,6 +240,18 @@ function printReport(
       <span class="label">Total de Distribuição de Lucros do Período</span>
       <span class="value" style="color:#a855f7">${brl(totalLucro)}</span>
     </div>` : ""}
+
+    <div class="section-title" style="margin-top:24px">Balanço do Período</div>
+    <table>
+      <tbody>
+        <tr><td>Despesas Operacionais</td><td style="text-align:right;font-weight:700">${brl(total)}</td></tr>
+        <tr><td>Pró-labore + Distribuição de Lucros</td><td style="text-align:right;font-weight:700">${brl(totalProLabore + totalLucro)}</td></tr>
+      </tbody>
+    </table>
+    <div class="total-box" style="border-color:${(totalProLabore + totalLucro - total) >= 0 ? '#10b98133' : '#ef444433'}">
+      <span class="label">Resultado do Período (Pró-labore + Distribuição − Despesas)</span>
+      <span class="value" style="color:${(totalProLabore + totalLucro - total) >= 0 ? '#10b981' : '#ef4444'}">${brl(totalProLabore + totalLucro - total)}</span>
+    </div>
   </body></html>`);
   win.document.close();
   win.print();
@@ -859,6 +871,19 @@ export default function FinanceiroLojaPage() {
                     {brl(filtered.filter(e => e.category === PROFIT_SHARE_CATEGORY).reduce((s,e)=>s+Number(e.amount),0))}
                   </span>
                 </div>
+                {(() => {
+                  const despesasOp = filtered.filter(e => !NON_OPERATIONAL_CATEGORIES.has(e.category)).reduce((s,e)=>s+Number(e.amount),0);
+                  const proLabDistrib = filtered.filter(e => e.category === PRO_LABORE_CATEGORY || e.category === PROFIT_SHARE_CATEGORY).reduce((s,e)=>s+Number(e.amount),0);
+                  const balanco = proLabDistrib - despesasOp;
+                  return (
+                    <div className="mt-4 flex justify-between items-center border-t pt-4" style={{ borderColor: "#1f2937" }}>
+                      <span className="text-sm font-bold text-white">Balanço do Período (Pró-labore + Distribuição − Despesas)</span>
+                      <span className="text-xl font-black" style={{ color: balanco >= 0 ? "#10b981" : "#ef4444" }}>
+                        {brl(balanco)}
+                      </span>
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Totais mensais */}
