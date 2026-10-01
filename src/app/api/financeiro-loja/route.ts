@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const {
     store_id, date, description, category, amount,
-    payment_method, status, receipt_url, notes,
+    payment_method, status, receipt_url, notes, lancado_por,
   } = body;
 
   if (!description || !category || !amount) {
@@ -69,6 +69,7 @@ export async function POST(req: NextRequest) {
       status: status || "pago",
       receipt_url: receipt_url ?? null,
       notes: notes ?? null,
+      lancado_por: lancado_por ?? null,
     })
     .select()
     .single();
@@ -85,7 +86,7 @@ export async function PATCH(req: NextRequest) {
 
   const allowed = [
     "date","description","category","amount",
-    "payment_method","status","receipt_url","notes",
+    "payment_method","status","receipt_url","notes","editado_por",
   ];
   const payload: Record<string, unknown> = {};
   for (const k of allowed) {

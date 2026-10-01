@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { useUserId } from "@/hooks/useUserId";
+import { ResponsavelPicker, LancadoPor } from "@/components/ResponsavelPicker";
 
 /* ── Types ─────────────────────────────────────────────────────────── */
 type LedgerEntry = {
@@ -13,6 +14,8 @@ type LedgerEntry = {
   amount: number;
   source: "venda" | "recebimento" | "despesa_loja" | "despesa_veiculo" | "despesa_implantacao";
   saldo: number;
+  lancado_por?: string | null;
+  editado_por?: string | null;
 };
 
 type Conta = {
@@ -53,6 +56,7 @@ const EMPTY_FORM = {
   date: new Date().toISOString().split("T")[0],
   description: "", category: CATEGORIES[0],
   amount: "", payment_method: "pix",
+  responsavel: "",
 };
 
 const EMPTY_ACCOUNT_FORM = {
@@ -254,24 +258,25 @@ export default function FluxoCaixaPage() {
     setEditingEntry(e);
     setForm({
       date: e.date, description: e.description, category: e.category,
-      amount: String(e.amount), payment_method: "pix",
+      amount: String(e.amount), payment_method: "pix", responsavel: "",
     });
     setShowModal(true);
   }
 
   async function saveForm() {
-    if (!form.description || !form.amount) return;
+    if (!form.description || !form.amount || !form.responsavel) return;
     setSaving(true);
+    const { responsavel, ...rest } = form;
     const res = editingEntry
       ? await fetch("/api/fluxo-caixa", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: editingEntry.id, ...form, amount: Number(form.amount) }),
+          body: JSON.stringify({ id: editingEntry.id, ...rest, amount: Number(form.amount), editado_por: responsavel }),
         })
       : await fetch("/api/fluxo-caixa", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...form, amount: Number(form.amount), store_id: userId }),
+          body: JSON.stringify({ ...rest, amount: Number(form.amount), store_id: userId, lancado_por: responsavel }),
         });
     setSaving(false);
     if (!res.ok) { alert(editingEntry ? "Erro ao salvar recebimento" : "Erro ao lançar recebimento"); return; }
@@ -474,7 +479,8 @@ export default function FluxoCaixaPage() {
                 {reversed.map(e => (
                   <tr key={`${e.source}-${e.id}`} className="hover:bg-white/[0.02]" style={{ borderBottom: "1px solid #1f293740" }}>
                     <td className="px-4 py-3 text-white">{fmtDate(e.date)}</td>
-                    <td className="px-4 py-3 font-semibold text-white">{e.description}</td>
+                    <td className="px-4 py-3 font-semibold text-white">{e.description}
+                      <LancadoPor lancado={e.lancado_por} editado={e.editado_por} /></td>
                     <td className="px-4 py-3 text-xs" style={{ color: "#9ca3af" }}>{e.category}</td>
                     <td className="px-4 py-3 text-xs" style={{ color: "#6b7280" }}>{SOURCE_LABEL[e.source]}</td>
                     <td className="px-4 py-3 font-bold" style={{ color: e.type === "entrada" ? "#10b981" : "#ef4444" }}>
@@ -642,9 +648,11 @@ export default function FluxoCaixaPage() {
                   {PAYMENT_METHODS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
                 </select>
               </div>
+              <ResponsavelPicker label={editingEntry ? "Editado por" : "Lançado por"} value={form.responsavel}
+                onChange={v => setForm(f => ({ ...f, responsavel: v }))} />
             </div>
             <div className="flex gap-3 px-6 pb-6">
-              <button onClick={saveForm} disabled={saving || !form.description || !form.amount}
+              <button onClick={saveForm} disabled={saving || !form.description || !form.amount || !form.responsavel}
                 className="flex-1 rounded-xl py-3 text-sm font-bold text-white hover:opacity-90 disabled:opacity-50"
                 style={{ background: "#10b981" }}>
                 {saving ? "Salvando…" : editingEntry ? "✓ Salvar Alterações" : "✓ Lançar Recebimento"}

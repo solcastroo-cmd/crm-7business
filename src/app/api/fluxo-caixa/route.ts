@@ -12,6 +12,8 @@ type Entry = {
   amount: number;
   source: "venda" | "recebimento" | "despesa_loja" | "despesa_veiculo" | "despesa_implantacao";
   status: "pago" | "pendente";
+  lancado_por?: string | null;
+  editado_por?: string | null;
 };
 
 const IMPLANTACAO_CAT_LABEL: Record<string, string> = {
@@ -37,6 +39,8 @@ type DespesaImplantacao = {
   valor_parcela?: number;
   data_vencimento?: string;
   parcelas_pagas?: number[];
+  lancado_por?: string | null;
+  editado_por?: string | null;
 };
 
 function expandParcelasImplantacao(d: DespesaImplantacao) {
@@ -69,7 +73,7 @@ export async function GET(req: NextRequest) {
     supabaseAdmin.from("vehicle_expenses").select("id,vehicle_id,date,category,description,amount").order("date", { ascending: true }),
     supabaseAdmin.from("bank_accounts").select("id,name,balance,reference_date").order("created_at", { ascending: true }),
     supabaseAdmin.from("vehicles").select("id,brand,model,purchase_price"),
-    supabaseAdmin.from("despesas_implantacao").select("id,descricao,categoria,valor,data_despesa,forma_pagamento,parcelas,valor_parcela,data_vencimento,parcelas_pagas"),
+    supabaseAdmin.from("despesas_implantacao").select("id,descricao,categoria,valor,data_despesa,forma_pagamento,parcelas,valor_parcela,data_vencimento,parcelas_pagas,lancado_por,editado_por"),
   ]);
 
   for (const [label, res] of Object.entries({ income: incomeRes, sales: salesRes, storeExp: storeExpRes, vehicleExp: vehicleExpRes, bank: bankRes, vehicles: vehiclesRes, implantacao: implantacaoRes })) {
@@ -84,6 +88,7 @@ export async function GET(req: NextRequest) {
       id: i.id, date: i.date, type: "entrada",
       description: i.description, category: i.category,
       amount: Number(i.amount), source: "recebimento", status: "pago",
+      lancado_por: i.lancado_por, editado_por: i.editado_por,
     });
   }
 
@@ -117,6 +122,7 @@ export async function GET(req: NextRequest) {
       id: e.id, date: e.date, type: "saida",
       description: e.description, category: e.category,
       amount: Number(e.amount), source: "despesa_loja", status: "pago",
+      lancado_por: e.lancado_por, editado_por: e.editado_por,
     });
   }
 
@@ -131,6 +137,7 @@ export async function GET(req: NextRequest) {
         id: `${d.id}-p${item.parcela}`, date: item.date, type: "saida",
         description: item.label, category: IMPLANTACAO_CAT_LABEL[d.categoria] ?? d.categoria,
         amount: item.valor, source: "despesa_implantacao", status: "pago",
+        lancado_por: d.lancado_por, editado_por: d.editado_por,
       });
     }
   }
@@ -200,7 +207,7 @@ export async function GET(req: NextRequest) {
 /* ── POST — lançar recebimento avulso ── */
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { store_id, date, description, category, amount, payment_method, status, notes } = body;
+  const { store_id, date, description, category, amount, payment_method, status, notes, lancado_por } = body;
 
   if (!description || !amount) {
     return NextResponse.json({ error: "description e amount são obrigatórios" }, { status: 400 });
@@ -217,6 +224,7 @@ export async function POST(req: NextRequest) {
       payment_method: payment_method || "pix",
       status: status || "recebido",
       notes: notes ?? null,
+      lancado_por: lancado_por ?? null,
     })
     .select()
     .single();
@@ -231,7 +239,7 @@ export async function PATCH(req: NextRequest) {
   const { id, ...fields } = body;
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
-  const allowed = ["date", "description", "category", "amount", "payment_method", "status", "notes"];
+  const allowed = ["date", "description", "category", "amount", "payment_method", "status", "notes", "editado_por"];
   const payload: Record<string, unknown> = {};
   for (const k of allowed) {
     if (fields[k] !== undefined) payload[k] = fields[k];

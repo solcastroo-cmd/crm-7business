@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { vehicle_id, store_id, date, category, description, amount } = body;
+  const { vehicle_id, store_id, date, category, description, amount, lancado_por } = body;
 
   if (!vehicle_id || !store_id || !category || amount == null) {
     return NextResponse.json({ error: "vehicle_id, store_id, category e amount são obrigatórios" }, { status: 400 });
@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
 
   const { data, error } = await supabaseAdmin
     .from("vehicle_expenses")
-    .insert({ vehicle_id, store_id, date, category, description, amount: Number(amount) })
+    .insert({ vehicle_id, store_id, date, category, description, amount: Number(amount), lancado_por: lancado_por ?? null })
     .select()
     .single();
 
@@ -37,13 +37,13 @@ export async function POST(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   const body = await req.json();
-  const { id, date, category, description, amount } = body;
+  const { id, date, category, description, amount, editado_por } = body;
 
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
   const { data, error } = await supabaseAdmin
     .from("vehicle_expenses")
-    .update({ date, category, description, amount: Number(amount) })
+    .update({ date, category, description, amount: Number(amount), ...(editado_por ? { editado_por } : {}) })
     .eq("id", id)
     .select()
     .single();

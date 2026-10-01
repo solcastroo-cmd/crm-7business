@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { getSupabaseBrowser } from "@/lib/supabaseBrowser";
+import { ResponsavelPicker, LancadoPor } from "@/components/ResponsavelPicker";
 
 const supabase = getSupabaseBrowser();
 
@@ -17,6 +18,8 @@ type Expense = {
   status: "pago" | "pendente";
   receipt_url?: string;
   notes?: string;
+  lancado_por?: string | null;
+  editado_por?: string | null;
   created_at: string;
 };
 
@@ -83,6 +86,7 @@ const EMPTY_FORM = {
   amount: "", payment_method: "pix",
   status: "pago" as "pago" | "pendente",
   notes: "",
+  responsavel: "",
 };
 
 /* ── Helpers ────────────────────────────────────────────────────────── */
@@ -415,15 +419,19 @@ export default function FinanceiroLojaPage() {
     setForm({
       date: e.date, description: e.description, category: e.category,
       amount: String(e.amount), payment_method: e.payment_method,
-      status: e.status, notes: e.notes ?? "",
+      status: e.status, notes: e.notes ?? "", responsavel: "",
     });
     setShowModal(true);
   }
 
   async function saveForm() {
-    if (!form.description || !form.amount) return;
+    if (!form.description || !form.amount || !form.responsavel) return;
     setSaving(true);
-    const payload = { ...form, amount: Number(form.amount), store_id: userId };
+    const { responsavel, ...rest } = form;
+    const payload = {
+      ...rest, amount: Number(form.amount), store_id: userId,
+      ...(editing ? { editado_por: responsavel } : { lancado_por: responsavel }),
+    };
 
     if (editing) {
       const res = await fetch("/api/financeiro-loja", {
@@ -747,6 +755,7 @@ export default function FinanceiroLojaPage() {
                         <td className="px-4 py-3">
                           <p className="font-semibold text-white">{e.description}</p>
                           {e.notes && <p className="text-[10px] mt-0.5" style={{ color: "#6b7280" }}>{e.notes}</p>}
+                          <LancadoPor lancado={e.lancado_por} editado={e.editado_por} />
                         </td>
                         <td className="px-4 py-3">
                           <span className="text-xs font-semibold px-2 py-1 rounded-lg"
@@ -1003,9 +1012,11 @@ export default function FinanceiroLojaPage() {
                   className="w-full rounded-xl px-3 py-2 text-sm text-white border focus:outline-none resize-none"
                   style={inputStyle} />
               </div>
+              <ResponsavelPicker label={editing ? "Editado por" : "Lançado por"} value={form.responsavel}
+                onChange={v => setForm(f => ({ ...f, responsavel: v }))} />
             </div>
             <div className="flex gap-3 px-6 pb-6">
-              <button onClick={saveForm} disabled={saving || !form.description || !form.amount}
+              <button onClick={saveForm} disabled={saving || !form.description || !form.amount || !form.responsavel}
                 className="flex-1 rounded-xl py-3 text-sm font-bold text-white hover:opacity-90 disabled:opacity-50"
                 style={{ background: "#e63946" }}>
                 {saving ? "Salvando…" : editing ? "✓ Salvar Alterações" : "✓ Cadastrar Despesa"}

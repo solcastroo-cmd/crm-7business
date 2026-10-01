@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { getSupabaseBrowser } from "@/lib/supabaseBrowser";
+import { ResponsavelPicker, LancadoPor } from "@/components/ResponsavelPicker";
 
 const supabase = getSupabaseBrowser();
 
@@ -17,6 +18,8 @@ type Expense = {
   category: string;
   description?: string;
   amount: number;
+  lancado_por?: string | null;
+  editado_por?: string | null;
 };
 
 type VehicleFinancial = {
@@ -40,6 +43,7 @@ type ExpenseForm = {
   category: string;
   description: string;
   amount: string;
+  responsavel: string;
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -118,6 +122,7 @@ export default function FinanceiroPage() {
     category: "Oficina",
     description: "",
     amount: "",
+    responsavel: "",
   });
   const [expForm, setExpForm]     = useState<ExpenseForm>(emptyForm());
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -209,7 +214,7 @@ export default function FinanceiroPage() {
 
   /* ── save expense ── */
   async function saveExpense() {
-    if (!modal || !expForm.amount) return;
+    if (!modal || !expForm.amount || !expForm.responsavel) return;
     if (!userId) {
       alert("Sessão não carregada. Aguarde um momento e tente novamente.");
       return;
@@ -226,6 +231,7 @@ export default function FinanceiroPage() {
           category:    expForm.category,
           description: expForm.description,
           amount:      parseFloat(expForm.amount),
+          editado_por: expForm.responsavel,
         }),
       });
       setSavingExp(false);
@@ -246,6 +252,7 @@ export default function FinanceiroPage() {
           category:    expForm.category,
           description: expForm.description,
           amount:      parseFloat(expForm.amount),
+          lancado_por: expForm.responsavel,
         }),
       });
       setSavingExp(false);
@@ -276,6 +283,7 @@ export default function FinanceiroPage() {
       category:    exp.category,
       description: exp.description ?? "",
       amount:      exp.amount.toString(),
+      responsavel: "",
     });
     setShowForm(true);
   }
@@ -831,8 +839,12 @@ export default function FinanceiroPage() {
                           style={{ background: "#111827", borderColor: "#374151" }} />
                       </div>
                     </div>
+                    <div className="mb-3">
+                      <ResponsavelPicker label={editingId ? "Editado por" : "Lançado por"} value={expForm.responsavel}
+                        onChange={v => setExpForm(f => ({ ...f, responsavel: v }))} />
+                    </div>
                     <div className="flex gap-2">
-                      <button onClick={saveExpense} disabled={savingExp || !expForm.amount || !userId}
+                      <button onClick={saveExpense} disabled={savingExp || !expForm.amount || !expForm.responsavel || !userId}
                         className="rounded-lg px-4 py-2 text-xs font-bold text-white transition-all hover:opacity-90 disabled:opacity-40"
                         style={{ background: "#e63946" }}>
                         {!userId ? "Aguardando sessão…" : savingExp ? "Salvando…" : editingId ? "Atualizar" : "Adicionar"}
@@ -867,7 +879,8 @@ export default function FinanceiroPage() {
                           <tr key={exp.id} style={{ borderBottom: i < expenses.length - 1 ? "1px solid #1f2937" : "none", background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.01)" }}>
                             <td className="px-3 py-2.5 text-gray-400">{fmtDate(exp.date)}</td>
                             <td className="px-3 py-2.5 text-white">{CAT_ICON[exp.category] ?? "📦"} {exp.category}</td>
-                            <td className="px-3 py-2.5" style={{ color: "#9ca3af" }}>{exp.description || <span style={{ color: "#374151" }}>—</span>}</td>
+                            <td className="px-3 py-2.5" style={{ color: "#9ca3af" }}>{exp.description || <span style={{ color: "#374151" }}>—</span>}
+                              <LancadoPor lancado={exp.lancado_por} editado={exp.editado_por} /></td>
                             <td className="px-3 py-2.5 font-semibold" style={{ color: "#f59e0b" }}>{brl(Number(exp.amount))}</td>
                             <td className="px-3 py-2.5">
                               <div className="flex gap-1">

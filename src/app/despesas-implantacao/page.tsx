@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { getSupabaseBrowser } from "@/lib/supabaseBrowser";
+import { ResponsavelPicker, LancadoPor } from "@/components/ResponsavelPicker";
 
 const supabase = getSupabaseBrowser();
 
@@ -19,6 +20,8 @@ type Despesa = {
   valor_parcela?: number;
   data_vencimento?: string;
   parcelas_pagas?: number[];
+  lancado_por?: string | null;
+  editado_por?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -65,6 +68,7 @@ const EMPTY_FORM = {
   parcelas: "1",
   valor_parcela: "",
   data_vencimento: "",
+  responsavel: "",
 };
 
 /* ── Helpers ────────────────────────────────────────────────────────── */
@@ -415,12 +419,13 @@ export default function DespesasImplantacaoPage() {
       parcelas:        String(d.parcelas ?? 1),
       valor_parcela:   d.valor_parcela ? String(d.valor_parcela) : "",
       data_vencimento: d.data_vencimento ?? "",
+      responsavel:     "",
     });
     setShowModal(true);
   }
 
   async function saveForm() {
-    if (!form.descricao || !form.valor || !userId) return;
+    if (!form.descricao || !form.valor || !form.responsavel || !userId) return;
     setSaving(true);
     const isCartao = form.forma_pagamento === "cartao_credito";
     const payload = {
@@ -434,6 +439,7 @@ export default function DespesasImplantacaoPage() {
       parcelas:        isCartao ? Number(form.parcelas) : 1,
       valor_parcela:   isCartao && form.valor_parcela ? Number(form.valor_parcela) : null,
       data_vencimento: isCartao && form.data_vencimento ? form.data_vencimento : null,
+      ...(editing ? { editado_por: form.responsavel } : { lancado_por: form.responsavel }),
     };
 
     const res = editing
@@ -622,6 +628,7 @@ export default function DespesasImplantacaoPage() {
                           {d.observacao && (
                             <p className="text-[10px] mt-0.5" style={{ color: "#6b7280" }}>{d.observacao}</p>
                           )}
+                          <LancadoPor lancado={d.lancado_por} editado={d.editado_por} />
                         </td>
                         <td className="px-4 py-3">
                           <span className="text-xs font-semibold px-2 py-1 rounded-lg"
@@ -991,11 +998,13 @@ export default function DespesasImplantacaoPage() {
                   className="w-full rounded-xl px-3 py-2 text-sm text-white border focus:outline-none resize-none"
                   style={inputStyle} />
               </div>
+              <ResponsavelPicker label={editing ? "Editado por" : "Lançado por"} value={form.responsavel}
+                onChange={v => setForm(f => ({ ...f, responsavel: v }))} />
             </div>
 
             <div className="flex gap-3 px-6 pb-6">
               <button onClick={saveForm}
-                disabled={saving || !form.descricao || !form.valor}
+                disabled={saving || !form.descricao || !form.valor || !form.responsavel}
                 className="flex-1 rounded-xl py-3 text-sm font-bold text-white hover:opacity-90 disabled:opacity-50"
                 style={{ background: "#e63946" }}>
                 {saving ? "Salvando…" : editing ? "✓ Salvar Alterações" : "✓ Cadastrar Despesa"}
