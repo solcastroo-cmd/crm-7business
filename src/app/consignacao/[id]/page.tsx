@@ -291,7 +291,7 @@ export default function ConsignacaoDetailPage() {
           </div>
           <div>
             <label style={lbl}>Endereço</label>
-            <input name="loja_endereco" defaultValue={d.loja_endereco ?? "Av: Desembargador Gonzaga, 1328 - Cidade dos Funcionários"} style={inp} autoComplete="off" />
+            <input name="loja_endereco" defaultValue={d.loja_endereco ?? "Av: Desembargador Gonzaga, 860 - Luciano Cavalcante"} style={inp} autoComplete="off" />
           </div>
         </div>
 

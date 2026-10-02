@@ -88,7 +88,7 @@ export default function ImprimirPage() {
           <h1>Contrato de Consignação de Veículo</h1>
           <p className="subtitle">
             {val(c.loja_razao_social)} — CNPJ: {val(c.loja_cnpj)}<br />
-            Av. Desembargador Gonzaga, 1328 — Cidade dos Funcionários — Fortaleza/CE
+            Av. Desembargador Gonzaga, 860 — Luciano Cavalcante — Fortaleza/CE
           </p>
           <hr className="divider" />
         </div>

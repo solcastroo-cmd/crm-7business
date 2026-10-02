@@ -194,7 +194,7 @@ export default function NovoConsignacaoPage() {
           <div style={{ ...g2, marginBottom: 12 }}>
             <div>
               <label style={lbl}>Razão Social</label>
-              <input name="loja_razao_social" defaultValue="PHD Motors" style={inp} autoComplete="off" />
+              <input name="loja_razao_social" defaultValue="PHD MOTORS COMERCIO E SERVICOS VEICULOS LTDA" style={inp} autoComplete="off" />
             </div>
             <div>
               <label style={lbl}>Nome Fantasia</label>
@@ -213,7 +213,7 @@ export default function NovoConsignacaoPage() {
           </div>
           <div>
             <label style={lbl}>Endereço</label>
-            <input name="loja_endereco" defaultValue="Av: Desembargador Gonzaga, 1328 - Cidade dos Funcionários" style={inp} autoComplete="off" />
+            <input name="loja_endereco" defaultValue="Av: Desembargador Gonzaga, 860 - Luciano Cavalcante" style={inp} autoComplete="off" />
           </div>
         </div>
 
