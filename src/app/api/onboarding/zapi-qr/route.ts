@@ -32,12 +32,13 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Credenciais inválidas. Verifique no painel Z-API." }, { status: 400 });
     }
 
-    const statusData = await statusRes.json() as { value?: { connected?: boolean; number?: string } };
+    // Z-API responde { connected, ... } na raiz; versões antigas usavam { value: { connected } }
+    const statusData = await statusRes.json() as { connected?: boolean; value?: { connected?: boolean; number?: string } };
 
-    if (statusData?.value?.connected) {
+    if (statusData?.connected === true || statusData?.value?.connected === true) {
       return NextResponse.json({
         status: "connected",
-        phone:  statusData.value.number ?? null,
+        phone:  statusData.value?.number ?? null,
       });
     }
 

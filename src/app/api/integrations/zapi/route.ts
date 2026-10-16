@@ -35,8 +35,9 @@ export async function GET(req: NextRequest) {
         signal:  AbortSignal.timeout(8_000),
       }
     );
-    const data = await res.json() as { value?: { connected?: boolean; number?: string } };
-    const connected = data?.value?.connected === true;
+    // Z-API responde { connected, ... } na raiz; versões antigas usavam { value: { connected } }
+    const data = await res.json() as { connected?: boolean; value?: { connected?: boolean; number?: string } };
+    const connected = data?.connected === true || data?.value?.connected === true;
     return NextResponse.json({
       active:   connected,
       phone:    data?.value?.number ?? user.zapi_phone ?? null,
@@ -85,7 +86,7 @@ export async function POST(req: NextRequest) {
         { status: 400 },
       );
     }
-    const data = await res.json() as { value?: { connected?: boolean; number?: string } };
+    const data = await res.json() as { connected?: boolean; value?: { connected?: boolean; number?: string } };
     phone = data?.value?.number ?? null;
   } catch {
     return NextResponse.json(
