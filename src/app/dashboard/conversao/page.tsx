@@ -121,7 +121,7 @@ export default function ConversaoDashboard() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold">📊 Dashboard de Conversão</h1>
-          <p className="text-zinc-400 text-sm mt-1">Meta Ads × CRM 7Business — PH Autoscar</p>
+          <p className="text-zinc-400 text-sm mt-1">Meta Ads × CRM 7Business — PHD Motors</p>
         </div>
         <div className="flex items-center gap-3">
           {/* Campo de investimento Meta */}

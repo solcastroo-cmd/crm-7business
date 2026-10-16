@@ -1,5 +1,5 @@
 /**
- * 🔁 /api/followup — Follow-up automático PAULO (Agente Vendedor PH Autoscar)
+ * 🔁 /api/followup — Follow-up automático PAULO (Agente Vendedor PHD Motors)
  *
  * Sequência baseada no documento de skills do agente Paulo:
  *  - 30min  → lembrete leve
@@ -140,7 +140,7 @@ export async function POST(req: NextRequest) {
 export async function GET() {
   return NextResponse.json({
     status: "ok",
-    agent: "Paulo — Vendedor PH Autoscar",
+    agent: "Paulo — Vendedor PHD Motors",
     followup_sequence: ["30min", "3h", "24h", "48h", "72h"],
     reactivation_sequence: ["3d", "7d", "15d", "30d", "60d"],
     evolution_configured: !!EVOLUTION_API_URL,

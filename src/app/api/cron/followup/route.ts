@@ -20,7 +20,7 @@ export const dynamic = "force-dynamic";
 
 const STAGE_MESSAGES: Record<string, (name: string, vehicle?: string) => string> = {
   "Novo Lead": (name) =>
-    `Oi ${name}! 😊 Vi que você se interessou em um veículo aqui na PH Autoscar. Ainda posso te ajudar a encontrar o carro ideal?`,
+    `Oi ${name}! 😊 Vi que você se interessou em um veículo aqui na PHD Motors. Ainda posso te ajudar a encontrar o carro ideal?`,
   "Contato Inicial": (name) =>
     `Oi ${name}! 👋 Passei pra ver se você ainda tem interesse. Temos novidades no estoque essa semana!`,
   "Interesse": (name, vehicle) =>
