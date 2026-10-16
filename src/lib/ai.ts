@@ -242,9 +242,11 @@ async function replyViaGroq(
       "Authorization": `Bearer ${process.env.GROQ_API_KEY}`,
     },
     body: JSON.stringify({
-      model:       "llama-3.3-70b-versatile",
-      max_tokens:  600,
-      temperature: 0.65,
+      // llama-3.3-70b-versatile virou exclusivo do plano Enterprise no Groq (out/2026)
+      model:            process.env.GROQ_MODEL || "openai/gpt-oss-120b",
+      max_tokens:       1500,
+      temperature:      0.65,
+      reasoning_effort: "low",
       messages: [
         { role: "system", content: systemPrompt },
         ...history,
