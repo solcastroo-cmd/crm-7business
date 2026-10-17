@@ -34,6 +34,7 @@ export type CAPIEventOptions = {
   eventId:    string;           // leadId — deduplicação no Meta
   leadId?:    string;
   storeId?:   string;
+  adId?:      string;           // ID do anúncio Meta de origem (externalAdReply.sourceId)
   score?:     number;
   saleValue?: number;           // Purchase: valor em BRL
   currency?:  string;
@@ -151,6 +152,7 @@ async function sendEvent(
       lead_score:  opts.score   ?? 0,
       lead_source: "whatsapp",
       currency:    opts.currency ?? "BRL",
+      ...(opts.adId ? { ad_id: opts.adId } : {}),
     },
   };
 
@@ -227,8 +229,15 @@ async function logCAPIEvent(params: {
 }
 
 // ── Score de qualificação (0-100) ─────────────────────────────────────────────
+/** Score mínimo para disparar QualifiedLead (financiamento + visita já chega a 60). */
+export const QUALIFIED_MIN_SCORE = 60;
+
+// Frase pré-preenchida pelo botão do anúncio ("Quero comprar meu veículo: Kia Soul...").
+// Todo lead de anúncio manda isso, então não pode contar como intenção de compra.
+const AUTOFILL_RE = /^\s*quero comprar meu ve[ií]culo/i;
+
 export function calcLeadScore(messages: string[]): number {
-  const joined = messages.join(" ").toLowerCase();
+  const joined = messages.filter(m => !AUTOFILL_RE.test(m)).join(" ").toLowerCase();
   let score = 0;
 
   const perguntouPreco = [
@@ -241,6 +250,9 @@ export function calcLeadScore(messages: string[]): number {
     "financiamento", "financiar", "parcelar", "parcela", "entrada",
     "simular", "simulação", "aprovação", "cpf", "cnh", "banco",
     "bv", "santander", "itaú", "bradesco", "crédito",
+    // respostas às 3 perguntas da abertura do anúncio (valor / pagamento / troca)
+    "à vista", "a vista", "carro na troca", "tenho carro", "dentro do valor",
+    "dentro do orçamento", "dentro do orcamento",
   ];
   if (financiamento.some(kw => joined.includes(kw))) score += 30;
 

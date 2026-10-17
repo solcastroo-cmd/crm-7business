@@ -28,6 +28,7 @@ import {
   sendCAPILeadEvent,
   sendCAPIQualifiedLeadEvent,
   calcLeadScore,
+  QUALIFIED_MIN_SCORE,
   type CAPIUserData,
 } from "@/lib/capi";
 
@@ -48,13 +49,25 @@ type ZApiBody = {
   text?: {
     message?: string;
   };
-  // UTM tracking via referral (Z-API envia quando lead vem de link rastreado)
+  // Anúncio Click-to-WhatsApp: a Z-API entrega na primeira mensagem do clique,
+  // no nível raiz do payload (sourceId = ID do anúncio no Meta).
+  externalAdReply?: {
+    title?:       string;
+    body?:        string;
+    mediaType?:   string;
+    thumbnailUrl?: string;
+    sourceType?:  string;
+    sourceId?:    string;
+    sourceUrl?:   string;
+    ctwaClid?:    string;
+  };
+  // Formato legado (mantido como fallback)
   referral?: {
     source_url?:  string;
     headline?:    string;
     body?:        string;
     media_url?:   string;
-    ctwa_clid?:   string;   // Click-to-WhatsApp click ID (equivale ao fbclid)
+    ctwa_clid?:   string;
   };
 };
 
@@ -287,26 +300,43 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     text: textObj,
     isGroup,
     referral,
+    externalAdReply,
   } = body;
 
-  // ── Extrai UTMs do referral (vem quando lead clica em anúncio Meta) ──────
-  const sourceUrl  = referral?.source_url ?? "";
-  const ctwaClid   = referral?.ctwa_clid  ?? null;  // equivale ao fbclid no WhatsApp
+  // ── Origem do anúncio (Click-to-WhatsApp) ────────────────────────────────
+  // A Z-API manda externalAdReply só na 1ª mensagem do clique. sourceId = ID do
+  // anúncio no Meta (chave para cruzar com gasto/campanha); ctwaClid = ID do clique.
+  const sourceUrl = externalAdReply?.sourceUrl ?? referral?.source_url ?? "";
+  const ctwaClid  = externalAdReply?.ctwaClid  ?? referral?.ctwa_clid  ?? null;
+  const adId      = externalAdReply?.sourceId ? String(externalAdReply.sourceId) : null;
+  const adHeadline = externalAdReply?.title ?? referral?.headline ?? null;
+  const adReferral = externalAdReply ?? null;
+  if (externalAdReply) {
+    console.log("[ZAPI] externalAdReply:", JSON.stringify(externalAdReply).slice(0, 400));
+  }
   const utmParams  = (() => {
+    const isAd = !!(sourceUrl || adId);
     try {
       const url = new URL(sourceUrl.includes("?") ? sourceUrl : `https://x.com?${sourceUrl}`);
       return {
-        utm_source:   url.searchParams.get("utm_source")   ?? (sourceUrl ? "meta" : null),
+        utm_source:   url.searchParams.get("utm_source")   ?? (isAd ? "meta" : null),
         utm_campaign: url.searchParams.get("utm_campaign")  ?? null,
         utm_medium:   url.searchParams.get("utm_medium")    ?? null,
         utm_adset:    url.searchParams.get("utm_adset")     ?? null,
         utm_ad:       url.searchParams.get("utm_ad")        ?? null,
-        fbclid:       url.searchParams.get("fbclid")        ?? ctwaClid,
+        fbclid:       url.searchParams.get("fbclid")        ?? null,
       };
     } catch {
-      return { utm_source: sourceUrl ? "meta" : null, utm_campaign: null, utm_medium: null, utm_adset: null, utm_ad: null, fbclid: ctwaClid };
+      return { utm_source: isAd ? "meta" : null, utm_campaign: null, utm_medium: null, utm_adset: null, utm_ad: null, fbclid: null };
     }
   })();
+  const adFields: Record<string, unknown> = {
+    ...(adId       ? { ad_id: adId }                   : {}),
+    ...(ctwaClid   ? { ctwa_clid: ctwaClid }           : {}),
+    ...(adHeadline ? { ad_headline: adHeadline }       : {}),
+    ...(sourceUrl  ? { ad_source_url: sourceUrl }      : {}),
+    ...(adReferral ? { ad_referral: adReferral }       : {}),
+  };
 
   // LOG COMPLETO — diagnóstico de payload real do Z-API
   console.log("[ZAPI] RAW PAYLOAD:", JSON.stringify({
@@ -444,6 +474,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     if (utmParams.utm_adset    && !existing.utm_adset)    upd.utm_adset    = utmParams.utm_adset;
     if (utmParams.utm_ad       && !existing.utm_ad)       upd.utm_ad       = utmParams.utm_ad;
     if (utmParams.fbclid       && !existing.fbclid)       upd.fbclid       = utmParams.fbclid;
+    // Atribuição de anúncio: primeiro toque vence (só preenche se o lead ainda não tem)
+    if (adId && !existing.ad_id) Object.assign(upd, adFields);
     if (Object.keys(upd).length > 1) {
       await supabaseAdmin.from("leads").update(upd).eq("id", leadId);
       leadRecord = { ...leadRecord, ...upd };
@@ -460,6 +492,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       utm_adset:    utmParams.utm_adset    ?? null,
       utm_ad:       utmParams.utm_ad       ?? null,
       fbclid:       utmParams.fbclid       ?? null,
+      ...adFields,
     };
     if (storeId) row.store_id = storeId;
     const { data: nl, error: insertErr } = await supabaseAdmin.from("leads").insert(row).select("*").single();
@@ -488,7 +521,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     fbclid:    (leadRecord.fbclid as string | null) ?? utmParams.fbclid ?? null,
     fbclidTs:  Math.floor(Date.now() / 1000),
   };
-  const capiOpts = { leadId, storeId: storeId ?? undefined };
+  const capiOpts = {
+    leadId,
+    storeId: storeId ?? undefined,
+    adId:    (leadRecord.ad_id as string | null) ?? adId ?? undefined,
+  };
 
   // InitiateConversation — apenas para leads novos (primeira mensagem)
   if (isNewLead) {
@@ -526,8 +563,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     console.log(`[CAPI] 🔥 Lead — lead:${leadId} score:${score}`);
   }
 
-  // Score >= 70 → QualifiedLead
-  if (score >= 70 && !_capiSentLeads.has(`${leadId}_QualifiedLead`)) {
+  // Score >= QUALIFIED_MIN_SCORE → QualifiedLead
+  if (score >= QUALIFIED_MIN_SCORE && !_capiSentLeads.has(`${leadId}_QualifiedLead`)) {
     _capiSentLeads.add(`${leadId}_QualifiedLead`);
     sendCAPIQualifiedLeadEvent(capiUserData, leadId, score, capiOpts).catch(
       (e) => console.error("[CAPI] Erro QualifiedLead:", e),

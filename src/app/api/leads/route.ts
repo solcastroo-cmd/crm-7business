@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
-import { sendCAPIPurchaseEvent } from "@/lib/capi";
+import { sendCAPIPurchaseEvent, sendCAPIQualifiedLeadEvent } from "@/lib/capi";
 
 export const dynamic = "force-dynamic";
 
@@ -127,9 +127,21 @@ export async function PATCH(req: NextRequest) {
         { phone: data.phone, name: data.name ?? null, fbclid: data.fbclid ?? null },
         data.id,
         saleValue,
-        { leadId: data.id, storeId: data.store_id ?? undefined, score: data.score ?? undefined },
+        { leadId: data.id, storeId: data.store_id ?? undefined, adId: data.ad_id ?? undefined, score: data.score ?? undefined },
       ).catch((e) => console.error("[CAPI] Erro Purchase:", e));
       console.log(`[CAPI] 💰 Purchase — lead:${data.id} valor:${saleValue ?? "?"}`);
+    }
+
+    // ── CAPI QualifiedLead: o vendedor confirmou proposta/negociação (sinal humano,
+    //    mais confiável que o score por palavra-chave). Dedup por lead no capi.ts.
+    if ((updates.stage === "Proposta" || updates.stage === "Negociação") && data?.phone) {
+      sendCAPIQualifiedLeadEvent(
+        { phone: data.phone, name: data.name ?? null, fbclid: data.fbclid ?? null },
+        data.id,
+        Math.max(Number(data.score ?? 0), 70),
+        { leadId: data.id, storeId: data.store_id ?? undefined, adId: data.ad_id ?? undefined },
+      ).catch((e) => console.error("[CAPI] Erro QualifiedLead (stage):", e));
+      console.log(`[CAPI] 🎯 QualifiedLead por estágio "${updates.stage}" — lead:${data.id}`);
     }
 
     return NextResponse.json(data);
