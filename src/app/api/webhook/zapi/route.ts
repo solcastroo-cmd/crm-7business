@@ -20,9 +20,10 @@
  *     ADD COLUMN IF NOT EXISTS zapi_phone text;
  */
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { getAIReply, qualifyLead, extractLeadData, parseVehicleTag } from "@/lib/ai";
+import { analyzeLead, applyProfile, resolveAdVehicle } from "@/lib/leadIntel";
 import {
   sendCAPIInitiateConversation,
   sendCAPILeadEvent,
@@ -280,6 +281,73 @@ async function isExternalIdDup(externalId: string): Promise<boolean> {
   return (count ?? 0) > 0;
 }
 
+// ── Inteligência pós-mensagem ─────────────────────────────────────────────────
+// Perfil do lead (IA), eventos para o Meta e alerta ao vendedor — tudo fora do
+// caminho da resposta ao cliente. Sem GROQ_API_KEY/falha da IA, cai no score por
+// palavra-chave (comportamento anterior).
+async function runLeadIntel(ctx: {
+  leadId:       string;
+  phone:        string;
+  name:         string | null;
+  payment:      string | null;
+  vehicle:      string | null;
+  kwScore:      number;
+  kwHot:        boolean;
+  store:        StoreSettings | null;
+  capiUserData: CAPIUserData;
+  capiOpts:     { leadId: string; storeId?: string; adId?: string };
+}): Promise<void> {
+  const { leadId, capiUserData, capiOpts, store } = ctx;
+
+  const profile = await analyzeLead(leadId);
+  let score      = ctx.kwScore;
+  let interested = ctx.kwHot;
+  if (profile) {
+    const applied = await applyProfile(leadId, profile, ctx.payment);
+    score      = applied.score;
+    interested = applied.temperature !== "frio";
+    console.log(`[INTEL] lead:${leadId} intent:${profile.intent} score:${score} temp:${applied.temperature}`);
+  }
+
+  // Meta CAPI: Lead = demonstrou interesse real; QualifiedLead = comprador provável
+  if (interested && !_capiSentLeads.has(`${leadId}_Lead`)) {
+    _capiSentLeads.add(`${leadId}_Lead`);
+    await sendCAPILeadEvent(capiUserData, leadId, { ...capiOpts, score }).catch(
+      (e) => console.error("[CAPI] Erro Lead:", e),
+    );
+  }
+  const qualified = score >= QUALIFIED_MIN_SCORE;
+  if (qualified && !_capiSentLeads.has(`${leadId}_QualifiedLead`)) {
+    _capiSentLeads.add(`${leadId}_QualifiedLead`);
+    await sendCAPIQualifiedLeadEvent(capiUserData, leadId, score, capiOpts).catch(
+      (e) => console.error("[CAPI] Erro QualifiedLead:", e),
+    );
+    console.log(`[CAPI] 🎯 QualifiedLead — lead:${leadId} score:${score}`);
+  }
+
+  // Alerta ao vendedor: uma vez por lead, só quando qualifica (antes disparava a cada mensagem "quente")
+  if (qualified && store?.notify_phone && store.zapi_instance && store.zapi_token && store.zapi_client_token) {
+    const { data: claimed } = await supabaseAdmin
+      .from("leads")
+      .update({ hot_alerted_at: new Date().toISOString() })
+      .eq("id", leadId)
+      .is("hot_alerted_at", null)
+      .select("id");
+    if (claimed && claimed.length > 0) {
+      const alerta = [
+        `🔥 *LEAD QUALIFICADO* (score ${score})`,
+        `👤 ${ctx.name ?? ctx.phone}`,
+        `📱 https://wa.me/55${ctx.phone}`,
+        ctx.vehicle ? `🚗 ${ctx.vehicle}` : null,
+        profile?.summary     ? `📌 ${profile.summary}`     : null,
+        profile?.next_action ? `👉 ${profile.next_action}` : null,
+        `⚡ Chame agora — intenção de compra real.`,
+      ].filter(Boolean).join("\n");
+      await sendText(store.zapi_instance, store.zapi_token, store.zapi_client_token, store.notify_phone, alerta);
+    }
+  }
+}
+
 // ── Handler principal ─────────────────────────────────────────────────────────
 export async function POST(req: NextRequest): Promise<NextResponse> {
   let body: ZApiBody;
@@ -337,6 +405,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     ...(sourceUrl  ? { ad_source_url: sourceUrl }      : {}),
     ...(adReferral ? { ad_referral: adReferral }       : {}),
   };
+  // Liga o anúncio ao carro do estoque (tabela meta_ads, ou marca+modelo+ano no texto)
+  if (adId) {
+    const veh = await resolveAdVehicle(adId, externalAdReply?.title ?? null, externalAdReply?.body ?? null);
+    if (veh) {
+      if (veh.id) adFields.veiculo_interesse_id = veh.id;
+      adFields.vehicle_name = veh.label;
+    }
+  }
 
   // LOG COMPLETO — diagnóstico de payload real do Z-API
   console.log("[ZAPI] RAW PAYLOAD:", JSON.stringify({
@@ -475,7 +551,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     if (utmParams.utm_ad       && !existing.utm_ad)       upd.utm_ad       = utmParams.utm_ad;
     if (utmParams.fbclid       && !existing.fbclid)       upd.fbclid       = utmParams.fbclid;
     // Atribuição de anúncio: primeiro toque vence (só preenche se o lead ainda não tem)
-    if (adId && !existing.ad_id) Object.assign(upd, adFields);
+    if (adId && !existing.ad_id) {
+      Object.assign(upd, adFields);
+      if (existing.veiculo_interesse_id) delete upd.veiculo_interesse_id;  // não sobrescreve escolha manual
+    }
     if (Object.keys(upd).length > 1) {
       await supabaseAdmin.from("leads").update(upd).eq("id", leadId);
       leadRecord = { ...leadRecord, ...upd };
@@ -550,26 +629,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   ];
   const score = calcLeadScore(allClientMsgs);
 
-  // Persiste score no lead (não-bloqueante)
-  supabaseAdmin.from("leads").update({ score }).eq("id", leadId).then(() => {});
-
-  // Lead "quente" por keyword → envia Lead
-  // Dedup via _capiSentLeads (memória) + banco (capi_events) — dupla proteção
-  if (qualification === "quente" && !_capiSentLeads.has(`${leadId}_Lead`)) {
-    _capiSentLeads.add(`${leadId}_Lead`);
-    sendCAPILeadEvent(capiUserData, leadId, { ...capiOpts, score }).catch(
-      (e) => console.error("[CAPI] Erro Lead:", e),
-    );
-    console.log(`[CAPI] 🔥 Lead — lead:${leadId} score:${score}`);
-  }
-
-  // Score >= QUALIFIED_MIN_SCORE → QualifiedLead
-  if (score >= QUALIFIED_MIN_SCORE && !_capiSentLeads.has(`${leadId}_QualifiedLead`)) {
-    _capiSentLeads.add(`${leadId}_QualifiedLead`);
-    sendCAPIQualifiedLeadEvent(capiUserData, leadId, score, capiOpts).catch(
-      (e) => console.error("[CAPI] Erro QualifiedLead:", e),
-    );
-    console.log(`[CAPI] 🎯 QualifiedLead — lead:${leadId} score:${score}`);
+  // Score por palavra-chave: só vale enquanto a análise da IA não rodou.
+  // Depois dela, o score do lead vem do perfil (runLeadIntel) e não é sobrescrito aqui.
+  if (!leadRecord.ai_analyzed_at) {
+    supabaseAdmin.from("leads").update({ score }).eq("id", leadId).then(() => {});
   }
 
   // Dedup nível 3 (banco 30s por texto)
@@ -580,6 +643,22 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   // ── 4. Salva mensagem do cliente ──────────────────────────────────────────
   await saveMessage(leadId, message, false, msgId);
+
+  // ── 4b. Inteligência do lead (comprador x curioso) — roda após a resposta ──
+  after(() =>
+    runLeadIntel({
+      leadId,
+      phone,
+      name:      (leadRecord.name as string | null) ?? senderName ?? null,
+      payment:   (leadRecord.payment as string | null) ?? null,
+      vehicle:   (leadRecord.vehicle_name as string | null) ?? null,
+      kwScore:   score,
+      kwHot:     qualification === "quente",
+      store,
+      capiUserData,
+      capiOpts,
+    }).catch((e) => console.error("[INTEL] Erro:", e)),
+  );
 
   // ── 5. Checa IA global (settings da loja) ─────────────────────────────────
   if (store?.ai_enabled !== true) {
@@ -632,15 +711,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     // ── 9. Salva resposta da IA com external_id — SentCallback detecta e ignora ─
     await saveMessage(leadId, cleanReply, true, sentMsgId ?? undefined);
-
-    // ── 10. Notifica vendedor se lead Quente ──────────────────────────────
-    const notifyPhone = store.notify_phone ?? "";
-    if (qualification === "quente" && notifyPhone) {
-      const alerta =
-        `🔥 *LEAD QUENTE!*\n👤 ${senderName ?? phone}\n📱 ${phone}\n` +
-        `💬 "${message.slice(0, 100)}"\n\n⚡ Acesse o CRM agora!`;
-      await sendText(store.zapi_instance, store.zapi_token, store.zapi_client_token, notifyPhone, alerta);
-    }
 
     console.log(`[ZAPI] ${phone} [${qualification}]: "${message}" → "${cleanReply.slice(0, 60)}"`);
   } catch (e) {
