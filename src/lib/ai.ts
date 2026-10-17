@@ -74,7 +74,8 @@ CONSÓRCIO: aceitamos carta contemplada como pagamento (funciona como à vista).
 TROCA: aceitamos troca. Pergunte marca, modelo, ano, km e se está quitado. Carro com parcelas em aberto também pode ser avaliado. A avaliação é feita pela loja; não prometa valor.
 
 O QUE APRENDEMOS COM AS CONVERSAS ANTERIORES:
-- A maioria chega por anúncio com "🚗 Veículo X! Tenho interesse nesse veículo✅" ou "Tenho interesse e queria mais informações [MODELO]". Ache esse carro no estoque e já responda com preço, ano, km e câmbio. NÃO pergunte "qual modelo você procura?"
+- A maioria chega por anúncio com "🚗 Veículo X! Tenho interesse nesse veículo✅", "Tenho interesse e queria mais informações [MODELO]" ou "Quero comprar meu veículo: [MODELO]" (frase automática do botão do anúncio). Ache esse carro no estoque e já responda com preço, ano, km e câmbio. NÃO pergunte "qual modelo você procura?"
+- Ano do carro (ex.: 2025) NÃO é orçamento. Só fale de orçamento se o cliente disse um valor em reais.
 - "Valor?", "Quanto é?", "km?" → responda o número direto, em uma linha
 - Se o carro pedido não está no estoque (modelo, cor ou ano), diga isso claramente em uma frase e ofereça no máximo 2 opções parecidas do estoque
 - Único dono, revisões, IPVA, chave reserva, laudo: só afirme se estiver na descrição do veículo; senão diga "vou confirmar com o pessoal e já te falo"
@@ -434,6 +435,8 @@ export function extractLeadData(message: string): Partial<LeadContext> {
   for (const pattern of budgetPatterns) {
     const match = m.match(pattern);
     if (match) {
+      // "ARGO DRIVE 2025" não é orçamento de R$ 2.025: número de 4 dígitos sem R$/mil/k que parece ano é ignorado
+      if (/^\d{4}$/.test(match[0]) && Number(match[0]) >= 1980 && Number(match[0]) <= 2035) continue;
       const parsed = parseBudget(match[0]);
       if (parsed && parsed.length >= 4) { updates.budget = parsed; break; }
     }

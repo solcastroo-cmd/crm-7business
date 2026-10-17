@@ -293,11 +293,16 @@ async function runLeadIntel(ctx: {
   vehicle:      string | null;
   kwScore:      number;
   kwHot:        boolean;
+  relevant:     boolean;
   store:        StoreSettings | null;
   capiUserData: CAPIUserData;
   capiOpts:     { leadId: string; storeId?: string; adId?: string };
 }): Promise<void> {
   const { leadId, capiUserData, capiOpts, store } = ctx;
+
+  // Privacidade: o número da loja recebe conversas pessoais/internas. Só analisa (e só manda
+  // texto para a IA) se veio de anúncio ou se a mensagem tem cara de compra de carro.
+  if (!ctx.relevant) return;
 
   const profile = await analyzeLead(leadId);
   let score      = ctx.kwScore;
@@ -654,6 +659,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       vehicle:   (leadRecord.vehicle_name as string | null) ?? null,
       kwScore:   score,
       kwHot:     qualification === "quente",
+      relevant:  !!(leadRecord.ad_id ?? adId) || qualification !== "frio" || score > 0,
       store,
       capiUserData,
       capiOpts,
