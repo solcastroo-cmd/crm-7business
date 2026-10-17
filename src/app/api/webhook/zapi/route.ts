@@ -483,6 +483,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       console.log("[ZAPI] Lead para handoff:", lead?.id ?? "NÃO ENCONTRADO", "| phones:", phones);
 
       if (lead) {
+        // SentCallback de texto que a própria loja/IA acabou de enviar (external_id ainda não salvo): não é handoff
+        const { count: sameText } = await supabaseAdmin
+          .from("messages")
+          .select("id", { count: "exact", head: true })
+          .eq("lead_id", lead.id)
+          .eq("from_me", true)
+          .eq("text", message)
+          .gte("created_at", new Date(Date.now() - 120_000).toISOString());
+        if ((sameText ?? 0) > 0) {
+          console.log("[ZAPI] SentCallback ignorado — texto igual ao enviado há instantes:", lead.id);
+          return NextResponse.json({ ok: true, skipped: "own_message" });
+        }
+
         await saveMessage(lead.id, message, true, messageId);
         if (lead.ai_enabled !== false) {
           await supabaseAdmin.from("leads").update({ ai_enabled: false }).eq("id", lead.id);
@@ -684,6 +697,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ ok: true, ai: "disabled_lead" });
   }
 
+  // ── 6b. Só atende sozinho quem tem cara de cliente ─────────────────────────
+  // O número da loja também recebe conversa pessoal/interna. Atende se veio de anúncio,
+  // se a mensagem (ou o histórico) tem sinal de compra de carro ou se a IA já analisou o lead.
+  const relevantForAI =
+    !!(leadRecord.ad_id ?? adId) || qualification !== "frio" || score > 0 || !!leadRecord.ai_analyzed_at;
+  if (!relevantForAI) {
+    console.log(`[ZAPI] Lead ${leadId} sem sinal de compra — Paulo não responde (fica para o vendedor)`);
+    return NextResponse.json({ ok: true, ai: "not_relevant" });
+  }
+
   // ── 7. IA responde com memória de conversa ────────────────────────────────
   try {
     const leadCtx = {
@@ -706,6 +729,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     // ── 8. Processa tag [VEICULO:uuid] ────────────────────────────────────
     const { message: cleanReply, vehicleId } = parseVehicleTag(rawReply);
+
+    // Releitura: se o vendedor assumiu enquanto a IA gerava a resposta, não envia nada
+    const { data: fresh } = await supabaseAdmin
+      .from("leads").select("ai_enabled").eq("id", leadId).maybeSingle();
+    if (fresh?.ai_enabled === false) {
+      console.log(`[ZAPI] Lead ${leadId} — vendedor assumiu durante a geração, resposta descartada`);
+      return NextResponse.json({ ok: true, ai: "handoff_during_generation" });
+    }
 
     // Envia texto — captura messageId para salvar como external_id (previne SentCallback dup)
     const sentMsgId = await sendText(store.zapi_instance, store.zapi_token, store.zapi_client_token, phone, cleanReply);

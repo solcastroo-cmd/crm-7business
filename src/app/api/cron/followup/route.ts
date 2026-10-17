@@ -39,32 +39,42 @@ async function sendZAPIText(
   clientToken: string,
   phone: string,
   message: string,
-): Promise<boolean> {
+): Promise<{ ok: boolean; messageId: string | null }> {
+  // Z-API exige DDI: leads salvos como DDD+número ganham o 55
+  const digits = phone.replace(/\D/g, "");
+  const to     = digits.length <= 11 ? `55${digits}` : digits;
   try {
     const res = await fetch(
       `https://api.z-api.io/instances/${instance}/token/${token}/send-text`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json", "Client-Token": clientToken },
-        body: JSON.stringify({ phone, message }),
+        body: JSON.stringify({ phone: to, message }),
         signal: AbortSignal.timeout(10_000),
       },
     );
-    return res.ok;
+    const data = await res.json().catch(() => null) as { messageId?: string } | null;
+    return { ok: res.ok, messageId: data?.messageId ?? null };
   } catch {
-    return false;
+    return { ok: false, messageId: null };
   }
 }
 
 export async function GET(req: NextRequest) {
   // Auth
+  // O Vercel Cron manda "Authorization: Bearer <CRON_SECRET>" sozinho quando a variável existe no projeto.
+  const expected = process.env.CRON_SECRET;
+  if (!expected) {
+    return NextResponse.json({ error: "CRON_SECRET não configurado" }, { status: 500 });
+  }
   const secret = req.headers.get("authorization")?.replace("Bearer ", "");
-  if (secret !== process.env.CRON_SECRET) {
+  if (secret !== expected) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const now24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const now48h = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+  const since21d = new Date(Date.now() - 21 * 24 * 60 * 60 * 1000).toISOString();
 
   // Busca loja(s) ativas com credenciais Z-API
   const { data: stores } = await supabaseAdmin
@@ -84,8 +94,12 @@ export async function GET(req: NextRequest) {
       .select("id, phone, name, stage, vehicle_name, ai_enabled, last_followup_at, followup_count")
       .eq("store_id", store.id)
       .not("stage", "in", '("VENDIDO!","Perdido")')
+      .gte("created_at", since21d)                                            // só leads recentes
       .or(`last_followup_at.is.null,last_followup_at.lt.${now48h}`)
-      .neq("ai_enabled", false)
+      .or("followup_count.is.null,followup_count.lt.2")                       // no máximo 2 follow-ups
+      .or("ad_id.not.is.null,score.gte.20")                                   // veio de anúncio ou tem sinal de compra
+      .or("ai_intent.is.null,ai_intent.not.in.(sem_interesse,outro)")         // nunca em quem não quer / não é cliente
+      .neq("ai_enabled", false)                                               // vendedor assumiu = IA calada
       .limit(20);  // processa 20 por ciclo para não sobrecarregar
 
     if (!leads?.length) continue;
@@ -110,7 +124,7 @@ export async function GET(req: NextRequest) {
         const msgFn   = STAGE_MESSAGES[stage] ?? STAGE_MESSAGES["Novo Lead"];
         const text    = msgFn(getName, lead.vehicle_name ?? undefined);
 
-        const ok = await sendZAPIText(
+        const { ok, messageId } = await sendZAPIText(
           store.zapi_instance!,
           store.zapi_token!,
           store.zapi_client_token!,
@@ -125,11 +139,13 @@ export async function GET(req: NextRequest) {
             followup_count: (lead.followup_count ?? 0) + 1,
           }).eq("id", lead.id);
 
-          // Salva mensagem no histórico
+          // Salva mensagem no histórico — com external_id, senão o SentCallback da Z-API
+          // seria tratado como vendedor e desligaria a IA do lead (handoff falso)
           await supabaseAdmin.from("messages").insert({
             lead_id:  lead.id,
             text,
             from_me:  true,
+            ...(messageId ? { external_id: messageId } : {}),
             created_at: new Date().toISOString(),
           });
 
