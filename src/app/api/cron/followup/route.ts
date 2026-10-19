@@ -76,10 +76,11 @@ export async function GET(req: NextRequest) {
   const now48h = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
   const since21d = new Date(Date.now() - 21 * 24 * 60 * 60 * 1000).toISOString();
 
-  // Busca loja(s) ativas com credenciais Z-API
+  // Busca loja(s) ativas com credenciais Z-API e Paulo ligado (IA desligada = só atendimento humano)
   const { data: stores } = await supabaseAdmin
     .from("users")
     .select("id, zapi_instance, zapi_token, zapi_client_token")
+    .eq("ai_enabled", true)
     .not("zapi_instance", "is", null)
     .not("zapi_token", "is", null);
 
