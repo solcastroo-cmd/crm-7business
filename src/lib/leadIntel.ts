@@ -101,6 +101,7 @@ const SYSTEM = `Você analisa conversas de WhatsApp de uma loja de carros semino
 CONTEXTO
 - O cliente chegou por anúncio. O botão do anúncio envia a frase automática "Quero comprar meu veículo: <carro>". Ela NÃO indica intenção: todo mundo manda.
 - No anúncio ele também vê 3 perguntas: (1) o valor está dentro do que pretende investir? (2) à vista ou financiado? (3) tem carro na troca?
+- Alguns anúncios têm botões de resposta: "Quero ver o <carro> hoje", "Quero simular o financiamento", "Tenho um carro na troca", "Pago à vista e quero negociar". Quem toca num botão escolheu uma ação concreta: isso é sinal moderado (interessado, score 45 a 59), não prova de comprador pronto; vira comprador se depois confirmar valor, pagamento ou horário de visita.
 - Julgue só pelo que o CLIENTE escreveu. O que o Vendedor diz não conta como sinal do cliente.
 
 INTENÇÃO (intent)
