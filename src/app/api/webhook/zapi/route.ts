@@ -22,7 +22,7 @@
 
 import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
-import { getAIReply, qualifyLead, extractLeadData, parseVehicleTag } from "@/lib/ai";
+import { getAIReply, qualifyLead, extractLeadData, parseVehicleTag, parseHandoffTag } from "@/lib/ai";
 import { analyzeLead, applyProfile, resolveAdVehicle } from "@/lib/leadIntel";
 import {
   sendCAPIInitiateConversation,
@@ -350,6 +350,40 @@ async function runLeadIntel(ctx: {
       ].filter(Boolean).join("\n");
       await sendText(store.zapi_instance, store.zapi_token, store.zapi_client_token, store.notify_phone, alerta);
     }
+  }
+}
+
+// ── Passagem para o vendedor ──────────────────────────────────────────────────
+// O Paulo respondeu uma vez e sinalizou [VENDEDOR:resumo]: desliga a IA no lead, anota o pedido
+// em leads.notes e avisa o vendedor. Daqui em diante só humano responde esse cliente.
+async function handoffToSeller(ctx: {
+  leadId:  string;
+  phone:   string;
+  name:    string | null;
+  vehicle: string | null;
+  summary: string;
+  notes:   string | null;
+  store:   StoreSettings | null;
+}): Promise<void> {
+  const stamp = new Date().toLocaleString("pt-BR", { timeZone: "America/Fortaleza", dateStyle: "short", timeStyle: "short" });
+  const line  = `[Paulo → vendedor, ${stamp}] ${ctx.summary}`;
+  await supabaseAdmin.from("leads").update({
+    ai_enabled: false,
+    notes:      ctx.notes ? `${ctx.notes}\n${line}` : line,
+  }).eq("id", ctx.leadId);
+  console.log(`[ZAPI] Passagem p/ vendedor — lead:${ctx.leadId} | ${ctx.summary}`);
+
+  const s = ctx.store;
+  if (s?.notify_phone && s.zapi_instance && s.zapi_token && s.zapi_client_token) {
+    const alerta = [
+      `🔔 *PASSAR PARA O VENDEDOR*`,
+      `👤 ${ctx.name ?? ctx.phone}`,
+      `📱 https://wa.me/55${ctx.phone}`,
+      ctx.vehicle ? `🚗 ${ctx.vehicle}` : null,
+      `📌 ${ctx.summary}`,
+      `👉 O Paulo parou de responder esse cliente. Assuma a conversa.`,
+    ].filter(Boolean).join("\n");
+    await sendText(s.zapi_instance, s.zapi_token, s.zapi_client_token, s.notify_phone, alerta);
   }
 }
 
@@ -735,7 +769,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     if (!rawReply) return NextResponse.json({ ok: true, ai: "no_reply" });
 
     // ── 8. Processa tag [VEICULO:uuid] ────────────────────────────────────
-    const { message: cleanReply, vehicleId } = parseVehicleTag(rawReply);
+    const handoff = parseHandoffTag(rawReply);
+    const { message: cleanReply, vehicleId } = parseVehicleTag(handoff.message);
 
     // Releitura: se o vendedor assumiu enquanto a IA gerava a resposta, não envia nada
     const { data: fresh } = await supabaseAdmin
@@ -755,6 +790,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     // ── 9. Salva resposta da IA com external_id — SentCallback detecta e ignora ─
     await saveMessage(leadId, cleanReply, true, sentMsgId ?? undefined);
+
+    // ── 10. Passagem para o vendedor: a IA parou de responder esse lead ──────
+    if (handoff.summary) {
+      await handoffToSeller({
+        leadId, phone, name: (leadRecord.name as string | null) ?? senderName ?? null,
+        vehicle: (leadRecord.vehicle_name as string | null) ?? null,
+        summary: handoff.summary, notes: (leadRecord.notes as string | null) ?? null, store,
+      }).catch((e) => console.error("[ZAPI] Erro passagem p/ vendedor:", e));
+    }
 
     console.log(`[ZAPI] ${phone} [${qualification}]: "${message}" → "${cleanReply.slice(0, 60)}"`);
   } catch (e) {

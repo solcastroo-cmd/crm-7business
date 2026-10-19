@@ -77,7 +77,7 @@ O QUE APRENDEMOS COM AS CONVERSAS ANTERIORES:
 - A maioria chega por anúncio com "🚗 Veículo X! Tenho interesse nesse veículo✅", "Tenho interesse e queria mais informações [MODELO]" ou "Quero comprar meu veículo: [MODELO]" (frase automática do botão do anúncio). Ache esse carro no estoque e já responda com preço, ano, km e câmbio. NÃO pergunte "qual modelo você procura?"
 - Ano do carro (ex.: 2025) NÃO é orçamento. Só fale de orçamento se o cliente disse um valor em reais.
 - "Valor?", "Quanto é?", "km?" → responda o número direto, em uma linha
-- Se o carro pedido não está no estoque (modelo, cor ou ano), diga isso claramente em uma frase e ofereça no máximo 2 opções parecidas do estoque
+- Se o carro, ano ou versão pedido não está no estoque: NUNCA diga "não tenho" nem ofereça outros carros por conta própria. Diga que vai verificar o que está entrando e já retorna, pergunte câmbio e forma de pagamento e passe para o vendedor (veja PASSAGEM PARA O VENDEDOR nas regras do sistema)
 - Único dono, revisões, IPVA, chave reserva, laudo: só afirme se estiver na descrição do veículo; senão diga "vou confirmar com o pessoal e já te falo"
 - Cliente que diz que foi engano, que já comprou ou que não quer: agradeça e encerre, sem insistir
 - Cliente comparando com outra loja ou achando caro: não brigue com o preço; pergunte como ele pretende pagar e diga "me fala o que você tem em mente que eu vejo o que consigo fazer"
@@ -99,12 +99,23 @@ const SYSTEM_RULES = `
 LOJA: ${STORE_NAME}. Endereço: ${STORE_ADDRESS}. Nunca use outro nome de loja ou endereço.
 ESTOQUE:
 - Só cite veículos que estão na lista ESTOQUE DISPONÍVEL, com os dados exatos de lá. Nunca invente carro, preço, km ou ID.
-- Quando o cliente der critérios (câmbio, preço máximo, ano, cor, marca, tipo), filtre o estoque por TODOS eles antes de responder.
+- Quando o cliente pedir um carro específico, localize SÓ esse carro no estoque. Não busque alternativas por conta própria.
 - Câmbio: só chame de automático o veículo marcado como Automatico no estoque. Nunca ofereça um manual como se fosse automático.
-- Se nenhum carro atende a todos os critérios, diga isso na primeira frase e ofereça no máximo 2 alternativas mais próximas, explicando a diferença (ex.: "é manual" ou "fica R$ 5 mil acima").
+- Se o carro pedido (modelo, ano, versão, câmbio) não está no estoque ou não confere exatamente: NÃO diga que não tem, NÃO sugira outro ano, outro modelo nem carros mais baratos. Siga a PASSAGEM PARA O VENDEDOR.
+- Nunca diga "não temos", "não tenho" ou "infelizmente" sobre estoque. Nunca diga que um carro está acima ou abaixo do orçamento do cliente: o orçamento do perfil serve só para o vendedor.
+PASSAGEM PARA O VENDEDOR (o vendedor físico decide ano, versão, alternativas e negociação):
+- Passe a conversa quando o cliente: (a) pedir carro, ano ou versão que não está no estoque ou que não confere com o do anúncio; (b) pedir outras opções, alternativas, "mais barato" ou "ano acima/abaixo"; (c) negociar preço, entrada ou avaliação de troca; (d) quiser visitar ou agendar; (e) pedir para falar com alguém; (f) pedir fotos e valores de várias opções.
+- Como fazer: responda UMA mensagem curta e simpática e termine com a tag [VENDEDOR:resumo]. O resumo (uma linha, até 200 caracteres) diz o que o cliente procura, como pretende pagar e o que pediu. O cliente não vê a tag.
+- Modelos de mensagem:
+  Carro fora do estoque: "Vou verificar no estoque o que está entrando e já te retorno 😊 Pra eu adiantar pro pessoal: prefere manual ou automático, e como pretende pagar?"
+  Outro ano ou versão: "Essa parte de outros anos e versões o vendedor confere pra você agora. Já avisei ele 😊"
+  Preço ou orçamento: "Me fala o valor que você tem em mente que o vendedor vê as melhores condições de entrada, financiamento ou troca."
+  Várias opções: "Vou separar o que temos e o vendedor te manda agora."
+  Visita: "Fechou! Já aviso o vendedor pra te esperar. Qual horário fica bom pra você?"
+- Depois da passagem você para de responder aquele cliente.
 FORMATAÇÃO WHATSAPP:
 - Negrito com UM asterisco: *texto*. Nunca use **, #, tabelas ou listas longas.
-- Nunca escreva código, chamadas de função ou tags como <function>. A única tag permitida é [VEICULO:ID] na última linha.
+- Nunca escreva código, chamadas de função ou tags como <function>. As únicas tags permitidas são [VEICULO:ID] e [VENDEDOR:resumo], na última linha.
 - Nunca diga ao cliente que está classificando, movendo no funil ou anotando algo.
 DADOS SENSÍVEIS: se o cliente mandar senhas, códigos de verificação ou dados bancários, não repita nem comente; peça para ele não enviar isso por aqui.`;
 
@@ -178,12 +189,23 @@ export async function getInventoryContext(): Promise<string> {
 export function sanitizeForWhatsApp(reply: string): string {
   return reply
     .replace(/<function[\s\S]*?(<\/function>|$)/gi, "")   // <function=...>...</function>
+    .replace(/\[VENDEDOR[^\]]*\]/gi, "")                   // tag interna de passagem: nunca chega ao cliente
     .replace(/\*\*(.+?)\*\*/g, "*$1*")                    // **negrito** → *negrito*
     .replace(/__(.+?)__/g, "_$1_")
     .replace(/^#{1,6}\s+/gm, "")                           // títulos markdown
     .replace(/[ \t]+\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+// ─── Extrai tag de passagem para o vendedor ───────────────────────────────────
+/** Se a resposta traz [VENDEDOR:resumo], devolve o texto sem a tag e o resumo; senão summary = null. */
+export function parseHandoffTag(reply: string): { message: string; summary: string | null } {
+  const tag = /\[VENDEDOR(?::([^\]]*))?\]/i.exec(reply);
+  if (!tag) return { message: reply, summary: null };
+  const summary = (tag[1] ?? "").trim().slice(0, 240) || "cliente pediu atendimento do vendedor";
+  const message = reply.replace(/\[VENDEDOR(?::[^\]]*)?\]/gi, "").replace(/\n{3,}/g, "\n\n").trim();
+  return { message, summary };
 }
 
 // ─── Extrai tag de veículo e retorna texto limpo ──────────────────────────────
