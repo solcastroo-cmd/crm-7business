@@ -437,6 +437,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ ok: true, skipped: "type", type });
   }
 
+  // Ignora o assistente "Meta AI" do WhatsApp Business: manda avisos e perguntas de verificação
+  // para o número da loja, não é cliente (e não deve receber resposta da IA nem virar lead)
+  if (senderName && /^meta ai$/i.test(senderName.trim())) {
+    console.log("[ZAPI] Mensagem do Meta AI ignorada");
+    return NextResponse.json({ ok: true, skipped: "meta_ai" });
+  }
+
   // Ignora mensagens de grupos
   if (isGroup) {
     console.log("[ZAPI] Mensagem de grupo ignorada");
