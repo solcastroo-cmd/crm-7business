@@ -261,7 +261,7 @@ export function calcLeadScore(messages: string[]): number {
     "posso ir", "quero ir", "endereço", "como chego", "onde fica",
     "horário", "horario", "quando abre", "pode me ligar", "me liga",
     // botão "Quero ver o carro hoje" do anúncio
-    "quero ver o civic", "quero ver o carro", "ver o carro hoje",
+    "quero ver o civic", "quero ver o argo", "quero ver o kia", "quero ver o carro", "ver o carro hoje",
   ];
   if (visita.some(kw => joined.includes(kw))) score += 30;
 
