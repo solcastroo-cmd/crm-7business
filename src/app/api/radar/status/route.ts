@@ -17,6 +17,11 @@ export async function GET() {
   const rows = opp.data ?? [];
   return NextResponse.json({
     connected: !!conn,
+    config: {
+      appId: !!process.env.META_APP_ID?.trim(),
+      appSecret: !!process.env.META_APP_SECRET?.trim(),
+      groq: !!process.env.GROQ_API_KEY?.trim(),
+    },
     connection: conn ?? null,
     totals: {
       novas: rows.filter(r => r.status === "novo").length,

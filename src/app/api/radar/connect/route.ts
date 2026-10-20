@@ -8,8 +8,10 @@ export async function GET(req: NextRequest) {
   const storeId = await getSessionStoreId();
   if (!storeId) return NextResponse.redirect(new URL("/login", req.url));
 
-  const appId = process.env.META_APP_ID;
-  if (!appId) return NextResponse.redirect(new URL("/radar?error=META_APP_ID+n%C3%A3o+configurado", req.url));
+  const appId = process.env.META_APP_ID?.trim();
+  if (!appId || !process.env.META_APP_SECRET?.trim()) {
+    return NextResponse.redirect(new URL("/radar?error=META_APP_ID+ou+META_APP_SECRET+vazio+na+Vercel", req.url));
+  }
 
   const state = randomUUID();
   const redirectUri = `${req.nextUrl.origin}/api/radar/callback`;
