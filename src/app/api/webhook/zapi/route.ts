@@ -34,6 +34,10 @@ import {
 } from "@/lib/capi";
 
 export const dynamic = "force-dynamic";
+// Espera para juntar mensagens seguidas + IA + envio de fotos
+export const maxDuration = 60;
+
+const REPLY_DEBOUNCE_MS = 8_000;
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 type ZApiBody = {
@@ -764,6 +768,26 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   if (!relevantForAI) {
     console.log(`[ZAPI] Lead ${leadId} sem sinal de compra — Paulo não responde (fica para o vendedor)`);
     return NextResponse.json({ ok: true, ai: "not_relevant" });
+  }
+
+  // ── 6c. Espera o cliente terminar de mandar mensagens ──────────────────────
+  // Cliente costuma mandar "Boa tarde" + "Tô analisando" em sequência. Sem essa espera,
+  // o Paulo respondia cada uma separado. Se chegou mensagem mais nova, ela responde tudo.
+  await new Promise((r) => setTimeout(r, REPLY_DEBOUNCE_MS));
+  const { data: latestIn } = await supabaseAdmin
+    .from("messages")
+    .select("external_id, text")
+    .eq("lead_id", leadId)
+    .eq("from_me", false)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const isLatest = latestIn
+    ? (msgId ? latestIn.external_id === msgId : latestIn.text === message)
+    : true;
+  if (!isLatest) {
+    console.log(`[ZAPI] Lead ${leadId} — cliente mandou outra mensagem, a mais nova responde`);
+    return NextResponse.json({ ok: true, ai: "superseded" });
   }
 
   // ── 7. IA responde com memória de conversa ────────────────────────────────

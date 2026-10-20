@@ -140,12 +140,13 @@ async function loadHistory(leadId: string): Promise<ChatMessage[]> {
       .from("messages")
       .select("text, from_me, created_at")
       .eq("lead_id", leadId)
-      .order("created_at", { ascending: true })
-      .limit(40); // 40 mensagens = memória robusta sem estourar tokens
+      .order("created_at", { ascending: false })
+      .limit(40); // 40 mensagens MAIS RECENTES = memória robusta sem estourar tokens
 
     if (!data || data.length === 0) return [];
 
     return data
+      .reverse()
       .filter(m => (m.text ?? "").trim() !== "")
       .map((m): ChatMessage => ({
         role:    m.from_me ? "assistant" : "user",
@@ -373,6 +374,9 @@ export async function getAIReply(
 
   const systemPrompt = await buildSystemPrompt(baseSystem, lead);
   const history      = lead.id ? await loadHistory(lead.id) : [];
+  // A mensagem atual já foi gravada antes da IA rodar: tira do histórico para não ir duplicada
+  const last = history[history.length - 1];
+  if (last?.role === "user" && last.content.trim() === message.trim()) history.pop();
   // Saudação fixa só no primeiro contato. Com conversa em andamento, se a IA falhar
   // é melhor não responder do que repetir a saudação (vários leads receberam 20+ vezes).
   const fallback = history.length === 0 ? greeting : "";
