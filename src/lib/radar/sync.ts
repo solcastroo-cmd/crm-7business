@@ -88,14 +88,18 @@ async function syncComments(conn: Conn): Promise<number> {
 }
 
 async function syncDMs(conn: Conn): Promise<number> {
-  const convs = await graph<{ data: { id: string; updated_time: string; messages?: { data: { message?: string; created_time: string; from?: { id: string; username?: string } }[] } }[] }>(
-    `${conn.page_id}/conversations`, conn.page_token,
-    { platform: "instagram", fields: "id,updated_time,messages.limit(6){message,created_time,from}", limit: "25" });
+  type Msg = { message?: string; created_time: string; from?: { id: string; username?: string } };
+  const list = await graph<{ data: { id: string; updated_time: string }[] }>(
+    `${conn.page_id}/conversations`, conn.page_token, { platform: "instagram", fields: "updated_time", limit: "20" });
   const since = Date.now() - 7 * 24 * 3600 * 1000;
+  const recent = (list.data ?? []).filter(c => new Date(c.updated_time).getTime() >= since).slice(0, 8);
   const rows: Parameters<typeof insertOpportunities>[1] = [];
-  for (const cv of convs.data ?? []) {
-    if (new Date(cv.updated_time).getTime() < since) continue;
-    const msgs = cv.messages?.data ?? [];
+  for (const cv of recent) {
+    let msgs: Msg[] = [];
+    try {
+      const d = await graph<{ messages?: { data: Msg[] } }>(cv.id, conn.page_token, { fields: "messages.limit(5){message,created_time,from}" });
+      msgs = d.messages?.data ?? [];
+    } catch { continue; }
     const customer = msgs.filter(m => m.from?.id && m.from.id !== conn.ig_id && m.message?.trim());
     if (customer.length === 0) continue;
     const who = customer[0].from!;
