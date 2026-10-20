@@ -61,6 +61,12 @@ async function insertOpportunities(
   return payload.filter(p => p.status === "novo").length;
 }
 
+// Contas da própria equipe da PHD não são oportunidades. Extras via RADAR_IGNORE="conta1,conta2".
+const TEAM_ACCOUNTS = new Set(
+  ["paulo_phdmotors", "adveduardomaia", "soraya_cordeiro_", ...(process.env.RADAR_IGNORE ?? "").split(",")]
+    .map(s => s.trim().replace(/^@/, "").toLowerCase()).filter(Boolean),
+);
+
 async function syncComments(conn: Conn): Promise<number> {
   const media = await graph<{ data: { id: string; permalink: string; comments_count: number; caption?: string }[] }>(
     `${conn.ig_id}/media`, conn.page_token, { fields: "id,permalink,comments_count,caption", limit: "15" });
@@ -71,7 +77,7 @@ async function syncComments(conn: Conn): Promise<number> {
       `${m.id}/comments`, conn.page_token, { fields: "id,username,text,timestamp,from{id,username}", limit: "50" });
     for (const c of cm.data ?? []) {
       const username = c.username ?? c.from?.username ?? "";
-      if (!c.text?.trim() || !username || username === conn.ig_username) continue;
+      if (!c.text?.trim() || !username || username === conn.ig_username || TEAM_ACCOUNTS.has(username.toLowerCase())) continue;
       rows.push({
         source: "comentario", key: c.id, ig_user_id: c.from?.id ?? null, username, text: c.text,
         media_id: m.id, permalink: m.permalink, context: m.caption ?? null, detected_at: c.timestamp,
@@ -93,6 +99,7 @@ async function syncDMs(conn: Conn): Promise<number> {
     const customer = msgs.filter(m => m.from?.id && m.from.id !== conn.ig_id && m.message?.trim());
     if (customer.length === 0) continue;
     const who = customer[0].from!;
+    if (TEAM_ACCOUNTS.has((who.username ?? "").toLowerCase())) continue;
     rows.push({
       source: "dm", key: `dm:${cv.id}`, ig_user_id: who.id, username: who.username ?? who.id,
       text: customer.slice(0, 3).map(m => m.message!.trim()).reverse().join(" / "),
