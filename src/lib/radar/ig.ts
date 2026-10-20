@@ -25,11 +25,12 @@ export async function graph<T = any>(
   token: string,
   params: Record<string, string> = {},
   init?: RequestInit,
+  timeoutMs = 20_000,
 ): Promise<T> {
   const url = new URL(`${GRAPH}/${path}`);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
   url.searchParams.set("access_token", token);
-  const res = await fetch(url, { ...init, signal: AbortSignal.timeout(20_000) });
+  const res = await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
   const json = await res.json().catch(() => null);
   if (!res.ok || json?.error) {
     throw new GraphError(json?.error?.message ?? `HTTP ${res.status}`, json?.error?.code);

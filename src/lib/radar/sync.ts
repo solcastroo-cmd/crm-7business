@@ -90,7 +90,7 @@ async function syncComments(conn: Conn): Promise<number> {
 async function syncDMs(conn: Conn): Promise<number> {
   type Msg = { message?: string; created_time: string; from?: { id: string; username?: string } };
   const list = await graph<{ data: { id: string; updated_time: string }[] }>(
-    `${conn.page_id}/conversations`, conn.page_token, { platform: "instagram", fields: "updated_time", limit: "20" });
+    `${conn.page_id}/conversations`, conn.page_token, { platform: "instagram", fields: "updated_time", limit: "8" }, undefined, 40_000);
   const since = Date.now() - 7 * 24 * 3600 * 1000;
   const recent = (list.data ?? []).filter(c => new Date(c.updated_time).getTime() >= since).slice(0, 8);
   const rows: Parameters<typeof insertOpportunities>[1] = [];
@@ -147,16 +147,13 @@ export async function syncStore(storeId: string): Promise<SyncResult> {
   const result: SyncResult = { novasOportunidades: 0, concorrentes: 0, erros: [] };
   if (!conn) { result.erros.push("Instagram não conectado"); return result; }
 
-  const steps: [string, () => Promise<number>][] = [
-    ["Comentários", () => syncComments(conn as Conn)],
-    ["DMs", () => syncDMs(conn as Conn)],
-  ];
-  for (const [label, fn] of steps) {
-    try { result.novasOportunidades += await fn(); }
-    catch (e) { result.erros.push(`${label}: ${(e as Error).message}`); }
-  }
+  try { result.novasOportunidades += await syncComments(conn as Conn); }
+  catch (e) { result.erros.push(`Comentários: ${(e as Error).message}`); }
   try { result.concorrentes = await syncCompetitors(conn as Conn); }
   catch (e) { result.erros.push(`Concorrentes: ${(e as Error).message}`); }
+  // DMs por último: a lista de conversas do Instagram é lenta e não pode atrasar o resto.
+  try { result.novasOportunidades += await syncDMs(conn as Conn); }
+  catch (e) { result.erros.push(`DMs: ${(e as Error).message}`); }
 
   await supabaseAdmin.from("radar_connections").update({
     last_sync_at: new Date().toISOString(),
