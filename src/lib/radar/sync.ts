@@ -89,8 +89,17 @@ async function syncComments(conn: Conn): Promise<number> {
 
 async function syncDMs(conn: Conn): Promise<number> {
   type Msg = { message?: string; created_time: string; from?: { id: string; username?: string } };
-  const list = await graph<{ data: { id: string; updated_time: string }[] }>(
-    `${conn.page_id}/conversations`, conn.page_token, { platform: "instagram", fields: "updated_time", limit: "8" }, undefined, 40_000);
+  // A Meta recusa listas grandes de conversas ("reduce the amount of data"): tenta tamanhos menores.
+  let list: { data: { id: string; updated_time: string }[] } = { data: [] };
+  let lastErr: Error | null = null;
+  for (const limit of ["5", "3", "1"]) {
+    try {
+      list = await graph(`${conn.page_id}/conversations`, conn.page_token, { platform: "instagram", fields: "updated_time", limit }, undefined, 30_000);
+      lastErr = null;
+      break;
+    } catch (e) { lastErr = e as Error; }
+  }
+  if (lastErr) throw lastErr;
   const since = Date.now() - 7 * 24 * 3600 * 1000;
   const recent = (list.data ?? []).filter(c => new Date(c.updated_time).getTime() >= since).slice(0, 8);
   const rows: Parameters<typeof insertOpportunities>[1] = [];
