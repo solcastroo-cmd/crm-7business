@@ -161,18 +161,18 @@ export async function syncStore(storeId: string): Promise<SyncResult> {
   const result: SyncResult = { novasOportunidades: 0, concorrentes: 0, erros: [] };
   if (!conn) { result.erros.push("Instagram não conectado"); return result; }
 
-  // Garante que a Página envia mensagens em tempo real ao webhook (idempotente).
-  try {
-    await graph(`${(conn as Conn).page_id}/subscribed_apps`, (conn as Conn).page_token, { subscribed_fields: "messages" }, { method: "POST" }, 10_000);
-  } catch (e) { result.erros.push(`Webhook: ${(e as Error).message}`); }
-
   try { result.novasOportunidades += await syncComments(conn as Conn); }
   catch (e) { result.erros.push(`Comentários: ${(e as Error).message}`); }
   try { result.concorrentes = await syncCompetitors(conn as Conn); }
   catch (e) { result.erros.push(`Concorrentes: ${(e as Error).message}`); }
   // DMs por último: a lista de conversas do Instagram é lenta e não pode atrasar o resto.
   try { result.novasOportunidades += await syncDMs(conn as Conn); }
-  catch (e) { result.erros.push(`DMs: ${(e as Error).message}`); }
+  catch (e) {
+    const m = (e as Error).message;
+    result.erros.push(/timeout|reduce the amount/i.test(m)
+      ? "DMs: a Meta não entrega a lista de conversas desta conta; elas chegam em tempo real pelo webhook quando o app for publicado."
+      : `DMs: ${m}`);
+  }
 
   await supabaseAdmin.from("radar_connections").update({
     last_sync_at: new Date().toISOString(),
