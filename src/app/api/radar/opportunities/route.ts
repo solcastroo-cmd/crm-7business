@@ -18,6 +18,8 @@ export async function GET(req: NextRequest) {
     .order("detected_at", { ascending: false })
     .limit(200);
   if (status !== "todas") q = q.eq("status", status);
+  const source = req.nextUrl.searchParams.get("source");
+  if (source === "dm" || source === "comentario") q = q.eq("source", source);
   const { data, error } = await q;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ opportunities: data ?? [] });

@@ -44,7 +44,7 @@ export default function RadarPage() {
   const [status, setStatus] = useState<Status | null>(null);
   const [opps, setOpps] = useState<Opp[]>([]);
   const [comps, setComps] = useState<Comp[]>([]);
-  const [tab, setTab] = useState<"oportunidades" | "concorrentes">("oportunidades");
+  const [tab, setTab] = useState<"oportunidades" | "dm" | "concorrentes">("oportunidades");
   const [filter, setFilter] = useState("novo");
   const [temp, setTemp] = useState("todas");
   const [syncing, setSyncing] = useState(false);
@@ -59,9 +59,9 @@ export default function RadarPage() {
     if (r.ok) setStatus(await r.json());
   }, []);
   const loadOpps = useCallback(async () => {
-    const r = await fetch(`/api/radar/opportunities?status=${filter}`);
+    const r = await fetch(`/api/radar/opportunities?status=${filter}${tab === "dm" ? "&source=dm" : ""}`);
     if (r.ok) setOpps((await r.json()).opportunities);
-  }, [filter]);
+  }, [filter, tab]);
   const loadComps = useCallback(async () => {
     const r = await fetch("/api/radar/competitors");
     if (r.ok) setComps((await r.json()).competitors);
@@ -179,16 +179,27 @@ export default function RadarPage() {
       </div>
 
       <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-        {(["oportunidades", "concorrentes"] as const).map(k => (
+        {(["oportunidades", "dm", "concorrentes"] as const).map(k => (
           <button key={k} onClick={() => setTab(k)}
             style={{ padding: "8px 16px", borderRadius: 10, fontSize: 13, fontWeight: 700, background: tab === k ? "rgba(230,57,70,0.15)" : "#232323",
               color: tab === k ? "#f87171" : "#9ca3af", border: `1px solid ${tab === k ? "#e63946" : "#333"}` }}>
-            {k === "oportunidades" ? "Oportunidades" : "Concorrentes"}
+            {k === "oportunidades" ? "Oportunidades" : k === "dm" ? "Mensagens (DM)" : "Concorrentes"}
           </button>
         ))}
       </div>
 
-      {tab === "oportunidades" && (
+      {tab === "dm" && (
+        <div style={{ ...card, padding: "14px 16px", marginBottom: 12, borderColor: "#1d4ed8" }}>
+          <b style={{ fontSize: 14 }}>Mensagens diretas do Instagram</b>
+          <p style={{ fontSize: 12.5, color: "#9ca3af", marginTop: 4 }}>
+            Tudo já está configurado: cada DM nova recebida pelo @phdmotorsoficial aparece aqui sozinha, classificada pela IA, com o botão
+            <b> Responder</b> (a Meta permite responder até 24h depois da última mensagem do cliente). A entrega em tempo real começa
+            assim que a Meta liberar o app; até lá, continue respondendo as DMs pelo próprio Instagram.
+          </p>
+        </div>
+      )}
+
+      {tab !== "concorrentes" && (
         <div style={{ ...card, overflow: "hidden" }}>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 10, padding: 14, borderBottom: "1px solid #333" }}>
             <select value={filter} onChange={e => setFilter(e.target.value)}
@@ -233,11 +244,13 @@ export default function RadarPage() {
                       Adicionar ao CRM
                     </button>
                   )}
-                  {o.source === "comentario" && !o.replied_at && (
+                  {((o.source === "comentario" && !o.replied_at) || o.source === "dm") && (
                     <button style={btn("#1d4ed8", "#fff")} onClick={() => {
                       setReplyFor(o);
-                      setReplyText(`Oi @${o.username}! Vi seu comentário${o.vehicle_hint ? ` sobre o ${o.vehicle_hint}` : ""} e posso te passar valores e condições por aqui. Qual carro você procura? 😊 PHD Motors`);
-                    }}>Responder em privado</button>
+                      setReplyText(o.source === "dm"
+                        ? `Oi @${o.username}, tudo bem? Aqui é da PHD Motors 🚗 Recebi sua mensagem${o.vehicle_hint ? ` sobre o ${o.vehicle_hint}` : ""} e vou te ajudar agora. Você prefere à vista ou financiado? Tem carro na troca? Estamos na Av. Desembargador Gonzaga, 1328, Cidade dos Funcionários, Fortaleza.`
+                        : `Oi @${o.username}! Vi seu comentário${o.vehicle_hint ? ` sobre o ${o.vehicle_hint}` : ""} e posso te passar valores e condições por aqui. Qual carro você procura? 😊 PHD Motors`);
+                    }}>{o.source === "dm" ? "Responder" : "Responder em privado"}</button>
                   )}
                   {o.status !== "descartado" && o.status !== "convertido" && (
                     <button disabled={busy === o.id} style={btn("transparent", "#9ca3af", true)}

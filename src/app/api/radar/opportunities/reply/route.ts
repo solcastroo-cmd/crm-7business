@@ -11,12 +11,14 @@ export async function POST(req: NextRequest) {
   const { id, message } = (await req.json().catch(() => ({}))) as { id?: string; message?: string };
   if (!id || !message?.trim()) return NextResponse.json({ error: "Mensagem obrigatória" }, { status: 400 });
 
-  const { data: o } = await supabaseAdmin.from("radar_opportunities").select("source, ig_comment_id, detected_at, replied_at").eq("id", id).eq("store_id", storeId).maybeSingle();
+  const { data: o } = await supabaseAdmin.from("radar_opportunities").select("source, ig_comment_id, ig_user_id, detected_at, replied_at").eq("id", id).eq("store_id", storeId).maybeSingle();
   if (!o) return NextResponse.json({ error: "Oportunidade não encontrada" }, { status: 404 });
-  if (o.source !== "comentario") return NextResponse.json({ error: "Resposta privada só vale para comentários" }, { status: 400 });
-  if (o.replied_at) return NextResponse.json({ error: "Este comentário já recebeu resposta privada" }, { status: 409 });
-  if (Date.now() - new Date(o.detected_at).getTime() > 7 * 24 * 3600 * 1000) {
-    return NextResponse.json({ error: "Passaram mais de 7 dias: a Meta não permite mais resposta privada" }, { status: 400 });
+  const isDm = o.source === "dm";
+  if (!isDm && o.replied_at) return NextResponse.json({ error: "Este comentário já recebeu resposta privada" }, { status: 409 });
+  if (isDm && !o.ig_user_id) return NextResponse.json({ error: "Conversa sem identificação do cliente" }, { status: 400 });
+  const limitMs = (isDm ? 1 : 7) * 24 * 3600 * 1000;
+  if (Date.now() - new Date(o.detected_at).getTime() > limitMs) {
+    return NextResponse.json({ error: isDm ? "Passaram mais de 24h da última mensagem: a Meta não permite responder por aqui" : "Passaram mais de 7 dias: a Meta não permite mais resposta privada" }, { status: 400 });
   }
 
   const { data: conn } = await supabaseAdmin.from("radar_connections").select("ig_id, page_token").eq("store_id", storeId).maybeSingle();
@@ -26,7 +28,7 @@ export async function POST(req: NextRequest) {
     await graph(`${conn.ig_id}/messages`, conn.page_token, {}, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ recipient: { comment_id: o.ig_comment_id }, message: { text: message.trim().slice(0, 900) } }),
+      body: JSON.stringify({ recipient: isDm ? { id: o.ig_user_id } : { comment_id: o.ig_comment_id }, message: { text: message.trim().slice(0, 900) } }),
     });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 502 });
