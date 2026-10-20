@@ -161,6 +161,11 @@ export async function syncStore(storeId: string): Promise<SyncResult> {
   const result: SyncResult = { novasOportunidades: 0, concorrentes: 0, erros: [] };
   if (!conn) { result.erros.push("Instagram não conectado"); return result; }
 
+  // Garante que a Página envia mensagens em tempo real ao webhook (idempotente).
+  try {
+    await graph(`${(conn as Conn).page_id}/subscribed_apps`, (conn as Conn).page_token, { subscribed_fields: "messages" }, { method: "POST" }, 10_000);
+  } catch (e) { result.erros.push(`Webhook: ${(e as Error).message}`); }
+
   try { result.novasOportunidades += await syncComments(conn as Conn); }
   catch (e) { result.erros.push(`Comentários: ${(e as Error).message}`); }
   try { result.concorrentes = await syncCompetitors(conn as Conn); }
