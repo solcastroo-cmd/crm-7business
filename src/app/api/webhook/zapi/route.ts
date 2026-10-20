@@ -40,6 +40,10 @@ type ZApiBody = {
   instanceId?: string;
   messageId?:  string;
   phone?:      string;
+  // Contatos com identificador @lid: no recebido vem phone + senderLid/chatLid;
+  // no enviado pelo vendedor o phone pode vir só como "<id>@lid".
+  senderLid?:  string | null;
+  chatLid?:    string | null;
   fromMe?:     boolean;
   momment?:    number;
   status?:     string;
@@ -408,7 +412,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     isGroup,
     referral,
     externalAdReply,
+    senderLid,
+    chatLid,
   } = body;
+
+  // Identificador @lid do contato (liga a resposta do vendedor ao lead)
+  const waLid = [chatLid, senderLid, rawPhone].find((v) => typeof v === "string" && v.endsWith("@lid")) ?? null;
 
   // ── Origem do anúncio (Click-to-WhatsApp) ────────────────────────────────
   // A Z-API manda externalAdReply só na 1ª mensagem do clique. sourceId = ID do
@@ -460,6 +469,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     fromMe,
     isGroup,
     phone:     rawPhone,
+    waLid,
+    senderName,
     message:   textObj?.message?.slice(0, 80),
     messageId,
   }));
@@ -514,7 +525,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       if (clientPhone.startsWith("55") && clientPhone.length === 13) phones.push(clientPhone.slice(2));
 
       let lead: { id: string; ai_enabled: boolean } | null = null;
-      for (const ph of phones) {
+      if (waLid) {
+        let q = supabaseAdmin.from("leads").select("id, ai_enabled").eq("wa_lid", waLid);
+        if (storeId) q = q.eq("store_id", storeId);
+        const { data: found } = await q.order("created_at", { ascending: true }).limit(1).maybeSingle();
+        if (found) lead = found;
+      }
+      for (const ph of rawPhone.endsWith("@lid") || lead ? [] : phones) {
         let q = supabaseAdmin.from("leads").select("id, ai_enabled").eq("phone", ph);
         if (storeId) q = q.eq("store_id", storeId);
         const { data: found } = await q.maybeSingle();
@@ -599,6 +616,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     leadId = existing.id;
     const upd: Record<string, unknown> = { qualification };
     if (!existing.name && senderName)              upd.name         = senderName;
+    if (waLid && existing.wa_lid !== waLid)        upd.wa_lid       = waLid;
     if (extracted.budget  && !existing.budget)     upd.budget       = extracted.budget;
     if (extracted.type    && !existing.type)       upd.type         = extracted.type;
     if (extracted.payment && !existing.payment)    upd.payment      = extracted.payment;
@@ -620,7 +638,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
   } else {
     const row: Record<string, unknown> = {
-      phone, name: senderName ?? null, source: "whatsapp",
+      phone, name: senderName ?? null, source: "whatsapp", wa_lid: waLid,
       stage: "Novo Lead", qualification,
       budget: extracted.budget ?? null, type: extracted.type ?? null,
       payment: extracted.payment ?? null,
