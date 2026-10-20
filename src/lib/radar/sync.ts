@@ -92,12 +92,14 @@ async function syncDMs(conn: Conn): Promise<number> {
   // A Meta recusa listas grandes de conversas ("reduce the amount of data"): tenta tamanhos menores.
   let list: { data: { id: string; updated_time: string }[] } = { data: [] };
   let lastErr: Error | null = null;
-  for (const limit of ["5", "3", "1"]) {
-    try {
-      list = await graph(`${conn.page_id}/conversations`, conn.page_token, { platform: "instagram", fields: "updated_time", limit }, undefined, 30_000);
-      lastErr = null;
-      break;
-    } catch (e) { lastErr = e as Error; }
+  outer: for (const node of [conn.ig_id, conn.page_id]) {
+    for (const limit of ["5", "2"]) {
+      try {
+        list = await graph(`${node}/conversations`, conn.page_token, { platform: "instagram", fields: "updated_time", limit }, undefined, 25_000);
+        lastErr = null;
+        break outer;
+      } catch (e) { lastErr = e as Error; }
+    }
   }
   if (lastErr) throw lastErr;
   const since = Date.now() - 7 * 24 * 3600 * 1000;
