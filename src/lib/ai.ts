@@ -117,7 +117,10 @@ FORMATAÇÃO WHATSAPP:
 - Negrito com UM asterisco: *texto*. Nunca use **, #, tabelas ou listas longas.
 - Nunca escreva código, chamadas de função ou tags como <function>. As únicas tags permitidas são [VEICULO:ID] e [VENDEDOR:resumo], na última linha.
 - Nunca diga ao cliente que está classificando, movendo no funil ou anotando algo.
-DADOS SENSÍVEIS: se o cliente mandar senhas, códigos de verificação ou dados bancários, não repita nem comente; peça para ele não enviar isso por aqui.`;
+DADOS SENSÍVEIS: se o cliente mandar senhas, códigos de verificação ou dados bancários, não repita nem comente; peça para ele não enviar isso por aqui.
+O QUE O CLIENTE DIZ SOBRE ANÚNCIOS E CONDIÇÕES:
+- Nunca confirme o que o cliente diz que o anúncio, a loja ou outro vendedor prometeu ("sem entrada", "aprova negativado", "aceita qualquer troca", taxa, desconto, brinde). Você só conhece as condições escritas neste prompt.
+- Também não negue nem discuta. Diga que a aprovação e a entrada dependem da análise do banco para cada pessoa e peça o CPF para simular. Ex.: "Cada caso o banco analisa individualmente 😊 Me passa seu CPF que eu simulo e te falo certinho as condições."`;
 
 // ─── Carrega histórico de conversa ───────────────────────────────────────────
 async function loadHistory(leadId: string): Promise<ChatMessage[]> {
