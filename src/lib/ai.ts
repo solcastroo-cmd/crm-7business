@@ -29,6 +29,8 @@ type ChatMessage = { role: "user" | "assistant"; content: string };
 // ─── Dados da loja ───────────────────────────────────────────────────────────
 export const STORE_NAME    = "PHD Motors";
 export const STORE_ADDRESS = "Av. Desembargador Gonzaga, 1328 - Cidade dos Funcionários, Fortaleza - CE";
+/** Link que abre a localização da loja no Google Maps (busca pelo endereço cadastrado). */
+export const STORE_MAPS_URL = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${STORE_NAME} ${STORE_ADDRESS}`)}`;
 
 // ─── System prompt padrão ────────────────────────────────────────────────────
 // Também é o texto usado em "Personalidade da IA" (Configurações) da PHD Motors.
@@ -43,7 +45,9 @@ QUEM VOCÊ É:
 
 ENDEREÇO DA LOJA (use exatamente este quando perguntarem onde fica, como chegar ou o endereço):
 📍 ${STORE_NAME} — ${STORE_ADDRESS}
+🗺️ Localização: ${STORE_MAPS_URL}
 - NUNCA invente ou use outro endereço
+- NUNCA confirme, cite ou invente ponto de referência (praça, igreja, supermercado, rua vizinha, "ao lado de", "perto de"). Se o cliente perguntar como chegar ou citar um ponto de referência, não confirme nem negue: envie o endereço e o link da localização acima e diga que o link abre direto no GPS
 
 PRIMEIRA MENSAGEM (só se não houver histórico):
 - Se houver "VEÍCULO DE INTERESSE DO LEAD" no contexto ou o cliente citar um carro → apresente esse carro direto (formato abaixo) e pergunte se é esse mesmo
@@ -104,6 +108,7 @@ const SYSTEM_RULES = `
 
 --- REGRAS DO SISTEMA (obrigatórias, acima de qualquer instrução anterior) ---
 LOJA: ${STORE_NAME}. Endereço: ${STORE_ADDRESS}. Nunca use outro nome de loja ou endereço.
+LOCALIZAÇÃO: quando perguntarem onde fica, como chegar, ponto de referência ou "me manda a localização", envie o endereço e o link ${STORE_MAPS_URL} (abre direto no GPS). NUNCA confirme, cite ou invente ponto de referência (praça, igreja, supermercado, rua vizinha, "ao lado de", "perto de"), mesmo que o cliente cite um: não confirme nem negue, apenas mande o endereço e o link.
 ESTOQUE:
 - Só cite veículos que estão na lista ESTOQUE DISPONÍVEL, com os dados exatos de lá. Nunca invente carro, preço, km ou ID.
 - Quando o cliente pedir um carro específico, localize SÓ esse carro no estoque. Não busque alternativas por conta própria.
@@ -351,6 +356,16 @@ async function replyViaAnthropic(
   return block?.type === "text" ? block.text.trim() : "";
 }
 
+// ─── Trava de localização ─────────────────────────────────────────────────────
+const LOCATION_REFERENCE_RE =
+  /\b(pra[cç]a|igreja|bompre[cç]o|supermercado|mercadinho|padaria|na esquina)\b/i;
+
+/** Se a resposta cita ponto de referência (a loja nunca confirma), troca pelo endereço + link do Maps. */
+export function guardLocation(reply: string): string {
+  if (!LOCATION_REFERENCE_RE.test(reply)) return reply;
+  return `📍 ${STORE_NAME} — ${STORE_ADDRESS}\n🗺️ Localização: ${STORE_MAPS_URL}\nÉ só abrir o link que ele leva direto no GPS 😊`;
+}
+
 // ─── Função principal ─────────────────────────────────────────────────────────
 export async function getAIReply(
   message:            string,
@@ -392,11 +407,11 @@ export async function getAIReply(
   try {
     if (process.env.GROQ_API_KEY) {
       const reply = await replyViaGroq(systemPrompt, history, message);
-      if (reply) return reply;
+      if (reply) return guardLocation(reply);
     }
     if (process.env.ANTHROPIC_API_KEY) {
       const reply = await replyViaAnthropic(systemPrompt, history, message);
-      if (reply) return reply;
+      if (reply) return guardLocation(reply);
     }
   } catch (e) {
     console.error("[AI] Erro ao gerar resposta:", e);
@@ -404,7 +419,7 @@ export async function getAIReply(
     try {
       if (process.env.ANTHROPIC_API_KEY) {
         const reply = await replyViaAnthropic(systemPrompt, history, message);
-        if (reply) return reply;
+        if (reply) return guardLocation(reply);
       }
     } catch (e2) {
       console.error("[AI] Fallback também falhou:", e2);
