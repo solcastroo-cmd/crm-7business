@@ -103,6 +103,7 @@ CONTEXTO
 - No anúncio ele também vê 3 perguntas: (1) o valor está dentro do que pretende investir? (2) à vista ou financiado? (3) tem carro na troca?
 - Alguns anúncios têm botões de resposta: "Quero ver o <carro> hoje", "Quero simular o financiamento", "Tenho um carro na troca", "Pago à vista e quero negociar". Quem toca num botão escolheu uma ação concreta: isso é sinal moderado (interessado, score 45 a 59), não prova de comprador pronto; vira comprador se depois confirmar valor, pagamento ou horário de visita.
 - Julgue só pelo que o CLIENTE escreveu. O que o Vendedor diz não conta como sinal do cliente.
+- Cliente que só tocou em botão ("Pago à vista", "Quero ver o carro hoje", "Tenho um carro na troca") e nunca escreveu nada próprio NÃO é comprador: no máximo "interessado", score até 45.
 
 INTENÇÃO (intent)
 - "comprador": quer comprar e dá sinais concretos (aceitou o valor, disse como vai pagar, falou de entrada/troca, quer visitar, pediu simulação, pediu para reservar).
@@ -209,7 +210,29 @@ export async function analyzeLead(leadId: string): Promise<LeadProfile | null> {
   if (!raw) return null;
   const profile = parseProfile(raw);
   if (!profile) console.error("[INTEL] JSON inválido:", raw.slice(0, 200));
-  return profile;
+  return profile ? capButtonOnlyLead(profile, ordered) : profile;
+}
+
+// ── Toque em botão não é prova de compra ─────────────────────────────────────
+/** Frases que o WhatsApp envia sozinho quando o cliente toca num botão do anúncio, e cumprimentos soltos. */
+const NON_SUBSTANTIVE_RE =
+  /^(quero comprar meu ve[ií]culo\b|quero ver (a|o) .{0,50} hoje|quero simular (o )?financiamento|tenho (um )?(carro|ve[ií]culo) na troca|pago [àa] vista|tenho interesse|ol[aá]!? ?quero\b|(oi|ol[aá]|bom dia|boa tarde|boa noite|ok|top|blz|beleza|sim|tudo bem)[!?. ]*$)/i;
+
+export function isNonSubstantive(text: string | null | undefined): boolean {
+  return NON_SUBSTANTIVE_RE.test((text ?? "").trim());
+}
+
+/** Se o cliente só tocou em botões/cumprimentou (nunca escreveu algo próprio), o score não passa de 45 e ele não é "comprador". */
+export function capButtonOnlyLead(
+  profile: LeadProfile,
+  msgs: { text: string | null; from_me: boolean | null }[],
+): LeadProfile {
+  const substantive = msgs.filter((m) => !m.from_me && !isNonSubstantive(m.text)).length;
+  if (substantive > 0) return profile;
+  const capped: LeadProfile = { ...profile, score: Math.min(profile.score, 45) };
+  if (capped.intent === "comprador") capped.intent = "interessado";
+  capped.summary = `${capped.summary} (só tocou em botão do anúncio, ainda sem escrever)`.slice(0, 300);
+  return capped;
 }
 
 const PAYMENT_LABEL: Record<string, string> = {
