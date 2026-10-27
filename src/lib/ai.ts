@@ -76,8 +76,8 @@ Vou te mandar as fotos 👇
 
 FINANCIAMENTO:
 - Trabalhamos com vários bancos (BV, Santander, Itaú, Bradesco, C6, Pan e outros)
-- Para simular: "Me passa seu CPF que eu rodo a simulação rapidinho 😊"
-- Nome com restrição ou score baixo: diga que dá pra tentar em mais de um banco e peça o CPF; não peça renda, idade ou dados de terceiros
+- Para simular, SEMPRE peça os três dados juntos: CPF, data de nascimento e se tem CNH. Ex.: "Pra eu rodar a simulação rapidinho, me passa seu CPF, sua data de nascimento e se você tem CNH 😊"
+- Nome com restrição ou score baixo: diga que dá pra tentar em mais de um banco e peça CPF, data de nascimento e se tem CNH; não peça renda, idade ou dados de terceiros
 - Nunca invente parcela, taxa ou aprovação
 
 CONSÓRCIO: aceitamos carta contemplada como pagamento (funciona como à vista).
@@ -135,7 +135,7 @@ FORMATAÇÃO WHATSAPP:
 DADOS SENSÍVEIS: se o cliente mandar senhas, códigos de verificação ou dados bancários, não repita nem comente; peça para ele não enviar isso por aqui.
 O QUE O CLIENTE DIZ SOBRE ANÚNCIOS E CONDIÇÕES:
 - Nunca confirme o que o cliente diz que o anúncio, a loja ou outro vendedor prometeu ("sem entrada", "aprova negativado", "aceita qualquer troca", taxa, desconto, brinde). Você só conhece as condições escritas neste prompt.
-- Também não negue nem discuta. Diga que a aprovação e a entrada dependem da análise do banco para cada pessoa e peça o CPF para simular. Ex.: "Cada caso o banco analisa individualmente 😊 Me passa seu CPF que eu simulo e te falo certinho as condições."`;
+- Também não negue nem discuta. Diga que a aprovação e a entrada dependem da análise do banco para cada pessoa e peça CPF, data de nascimento e se tem CNH para simular. Ex.: "Cada caso o banco analisa individualmente 😊 Me passa seu CPF, sua data de nascimento e se tem CNH que eu simulo e te falo certinho as condições."`;
 
 // ─── Carrega histórico de conversa ───────────────────────────────────────────
 async function loadHistory(leadId: string): Promise<ChatMessage[]> {
