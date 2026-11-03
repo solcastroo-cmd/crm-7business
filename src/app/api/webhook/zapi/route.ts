@@ -202,22 +202,53 @@ async function sendImage(
   }).catch((e) => console.error("[ZAPI] Erro imagem:", e.message));
 }
 
+// ── Mensagem depois das fotos ─────────────────────────────────────────────────
+type PhotoVehicle = { brand: string | null; model: string | null; year: string | number | null; transmission: string | null };
+
+/** "Honda FIT LXL 1.4 2010 automático" — sem repetir a marca que já vem no modelo */
+function vehicleLabel(v: PhotoVehicle): string {
+  const brand = (v.brand ?? "").trim().replace(/\s+/g, " ");
+  let model   = (v.model ?? "").trim().replace(/\s+/g, " ");
+  if (brand && model.toLowerCase().startsWith(brand.toLowerCase())) model = model.slice(brand.length).trim();
+  const t = (v.transmission ?? "").toLowerCase();
+  const cambio = t.startsWith("autom") ? "automático" : t.startsWith("manual") ? "manual" : "";
+  return [brand, model, v.year ? String(v.year) : "", cambio].filter(Boolean).join(" ");
+}
+
+/** Primeiro nome do perfil, só se parecer nome de gente ("😎" ou frases ficam de fora) */
+function firstName(raw: string | null | undefined): string | null {
+  const words = (raw ?? "").trim().split(/\s+/).filter(Boolean);
+  // Perfil com frase ("Deus é o caminho e a vida"), emoji ou número não é nome
+  if (words.length === 0 || words.length > 4 || !words.every((w) => /^[A-Za-zÀ-ÿ.'-]+$/.test(w))) return null;
+  const first = words[0];
+  if (!/^[A-Za-zÀ-ÿ]{2,20}$/.test(first) || /^(deus|jesus|loja|auto|carros?|vendas?)$/i.test(first)) return null;
+  return first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
+}
+
+function afterPhotosMessage(name: string | null | undefined, v: PhotoVehicle): string {
+  const nome = firstName(name);
+  return `${nome ? `Oi, ${nome}!` : "Oi!"} *${vehicleLabel(v)}* disponível e trabalhamos com todos os bancos. ` +
+    `Posso simular a parcela agora: me passa CPF e data de nascimento? ` +
+    `Ou, se preferir, te ligo no horário que for melhor.`;
+}
+
 // ── Busca e envia fotos do veículo ────────────────────────────────────────────
+/** Retorna o veículo quando as fotos foram enviadas (para a mensagem seguinte) */
 async function sendVehiclePhotos(
   instance: string,
   token: string,
   clientToken: string,
   to: string,
   vehicleId: string,
-): Promise<void> {
+): Promise<PhotoVehicle | null> {
   try {
     const { data: v } = await supabaseAdmin
       .from("vehicles")
-      .select("brand, model, year, price, photos")
+      .select("brand, model, year, price, photos, transmission")
       .eq("id", vehicleId)
       .maybeSingle();
 
-    if (!v || !Array.isArray(v.photos) || v.photos.length === 0) return;
+    if (!v || !Array.isArray(v.photos) || v.photos.length === 0) return null;
 
     const photos  = v.photos.slice(0, 5);
     const caption = `${v.brand} ${v.model} ${v.year ?? ""}${v.price ? ` — R$ ${Number(v.price).toLocaleString("pt-BR")}` : ""}`;
@@ -227,8 +258,10 @@ async function sendVehiclePhotos(
       if (i < photos.length - 1) await new Promise(r => setTimeout(r, 700));
     }
     console.log(`[ZAPI] 📷 ${photos.length} foto(s) — ${caption}`);
+    return v;
   } catch (e) {
     console.error("[ZAPI] Erro fotos:", e);
+    return null;
   }
 }
 
@@ -826,12 +859,25 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const sentMsgId = await sendText(store.zapi_instance, store.zapi_token, store.zapi_client_token, phone, cleanReply);
 
     // Envia fotos se Paulo indicou veículo
-    if (vehicleId) {
-      await sendVehiclePhotos(store.zapi_instance, store.zapi_token, store.zapi_client_token, phone, vehicleId);
-    }
+    const photoVehicle = vehicleId
+      ? await sendVehiclePhotos(store.zapi_instance, store.zapi_token, store.zapi_client_token, phone, vehicleId)
+      : null;
 
     // ── 9. Salva resposta da IA com external_id — SentCallback detecta e ignora ─
     await saveMessage(leadId, cleanReply, true, sentMsgId ?? undefined);
+
+    // ── 9b. Depois das fotos: nome + carro + disponível + simulação (texto fixo da loja) ─
+    if (photoVehicle && !handoff.summary) {
+      const followUp = afterPhotosMessage((leadRecord.name as string | null) ?? senderName ?? null, photoVehicle);
+      const { count: alreadySent } = await supabaseAdmin
+        .from("messages").select("id", { count: "exact", head: true })
+        .eq("lead_id", leadId).eq("from_me", true).eq("text", followUp);
+      if (!alreadySent) {
+        await new Promise((r) => setTimeout(r, 1_500));
+        const followId = await sendText(store.zapi_instance, store.zapi_token, store.zapi_client_token, phone, followUp);
+        await saveMessage(leadId, followUp, true, followId ?? undefined);
+      }
+    }
 
     // ── 10. Passagem para o vendedor: a IA parou de responder esse lead ──────
     if (handoff.summary) {
