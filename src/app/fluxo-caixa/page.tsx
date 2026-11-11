@@ -2,7 +2,9 @@
 
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { useUserId } from "@/hooks/useUserId";
+import Link from "next/link";
 import { ResponsavelPicker, LancadoPor } from "@/components/ResponsavelPicker";
+import { STORE_EXPENSE_CATEGORIES } from "@/lib/storeExpenseCategories";
 
 /* ── Types ─────────────────────────────────────────────────────────── */
 type LedgerEntry = {
@@ -270,10 +272,31 @@ export default function FluxoCaixaPage() {
     setShowModal(true);
   }
 
+  const isDespesa = editingEntry?.source === "despesa_loja";
+  const baseCategories = isDespesa ? STORE_EXPENSE_CATEGORIES : CATEGORIES;
+  const modalCategories = form.category && !baseCategories.includes(form.category)
+    ? [form.category, ...baseCategories]
+    : baseCategories;
+
   async function saveForm() {
     if (!form.description || !form.amount || !form.responsavel) return;
     setSaving(true);
     const { responsavel, ...rest } = form;
+    if (isDespesa && editingEntry) {
+      const res = await fetch("/api/financeiro-loja", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: editingEntry.id, date: form.date, description: form.description,
+          category: form.category, amount: Number(form.amount), editado_por: responsavel,
+        }),
+      });
+      setSaving(false);
+      if (!res.ok) { alert("Erro ao salvar despesa"); return; }
+      setShowModal(false);
+      fetchAll();
+      return;
+    }
     const res = editingEntry
       ? await fetch("/api/fluxo-caixa", {
           method: "PATCH",
@@ -291,8 +314,8 @@ export default function FluxoCaixaPage() {
     fetchAll();
   }
 
-  async function deleteEntry(id: string) {
-    if (!confirm("Excluir este recebimento?")) return;
+  async function deleteEntry(id: string, description?: string) {
+    if (!confirm(`Excluir o recebimento${description ? ` "${description}"` : ""}?`)) return;
     await fetch(`/api/fluxo-caixa?id=${id}`, { method: "DELETE" });
     fetchAll();
   }
@@ -531,15 +554,27 @@ export default function FluxoCaixaPage() {
                           <button onClick={() => openEditEntry(e)}
                             className="rounded-lg px-2 py-1 text-xs font-semibold hover:opacity-80"
                             style={{ background: "#1f2937", color: "#9ca3af" }}>✏️</button>
-                          <button onClick={() => deleteEntry(e.id)}
+                          <button onClick={() => deleteEntry(e.id, e.description)}
                             className="rounded-lg px-2 py-1 text-xs font-semibold hover:opacity-80"
                             style={{ background: "#ef444415", color: "#ef4444" }}>🗑️</button>
                         </div>
                       ) : e.source === "despesa_loja" ? (
-                        <button onClick={() => cancelStoreExpense(e.id, e.description)}
-                          className="rounded-lg px-2 py-1 text-xs font-semibold hover:opacity-80"
-                          style={{ background: "#ef444415", color: "#ef4444" }}
-                          title="Cancelar despesa">🗑️ Cancelar</button>
+                        <div className="flex gap-2">
+                          <button onClick={() => openEditEntry(e)} title="Editar despesa"
+                            className="rounded-lg px-2 py-1 text-xs font-semibold hover:opacity-80"
+                            style={{ background: "#1f2937", color: "#9ca3af" }}>✏️</button>
+                          <button onClick={() => cancelStoreExpense(e.id, e.description)} title="Excluir despesa"
+                            className="rounded-lg px-2 py-1 text-xs font-semibold hover:opacity-80"
+                            style={{ background: "#ef444415", color: "#ef4444" }}>🗑️</button>
+                        </div>
+                      ) : e.source === "venda" ? (
+                        <Link href="/vendas" title="Corrigir na tela de Vendas (valor da venda, compra e despesas do carro formam o lucro)"
+                          className="rounded-lg px-2 py-1 text-xs font-semibold hover:opacity-80 whitespace-nowrap"
+                          style={{ background: "#1f2937", color: "#9ca3af" }}>✏️ Vendas</Link>
+                      ) : e.source === "despesa_implantacao" ? (
+                        <Link href="/despesas-implantacao" title="Corrigir na tela de Despesas de Implantação"
+                          className="rounded-lg px-2 py-1 text-xs font-semibold hover:opacity-80 whitespace-nowrap"
+                          style={{ background: "#1f2937", color: "#9ca3af" }}>✏️ Implantação</Link>
                       ) : (
                         <span className="text-[10px]" style={{ color: "#374151" }}>—</span>
                       )}
@@ -646,7 +681,7 @@ export default function FluxoCaixaPage() {
           onClick={e => { if (e.target === e.currentTarget) setShowModal(false); }}>
           <div className="w-full max-w-lg rounded-2xl overflow-hidden" style={{ background: "#111827", border: "1px solid #1f2937" }}>
             <div className="flex items-center justify-between px-6 py-4" style={{ borderBottom: "1px solid #1f2937" }}>
-              <h2 className="text-base font-black text-white">{editingEntry ? "✏️ Editar Recebimento" : "➕ Novo Recebimento"}</h2>
+              <h2 className="text-base font-black text-white">{isDespesa ? "✏️ Editar Despesa" : editingEntry ? "✏️ Editar Recebimento" : "➕ Novo Recebimento"}</h2>
               <button onClick={() => setShowModal(false)}
                 className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-400 hover:text-white"
                 style={{ background: "#1f2937" }}>✕</button>
@@ -669,7 +704,7 @@ export default function FluxoCaixaPage() {
                   <label className="block text-[10px] font-semibold mb-1" style={{ color: "#6b7280" }}>Categoria</label>
                   <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
                     className="w-full rounded-xl px-3 py-2 text-sm text-white border focus:outline-none" style={inputStyle}>
-                    {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                    {modalCategories.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
                 <div>
@@ -679,13 +714,13 @@ export default function FluxoCaixaPage() {
                     className="w-full rounded-xl px-3 py-2 text-sm text-white border focus:outline-none focus:border-green-500" style={inputStyle} />
                 </div>
               </div>
-              <div>
+              {!isDespesa && <div>
                 <label className="block text-[10px] font-semibold mb-1" style={{ color: "#6b7280" }}>Forma de Recebimento</label>
                 <select value={form.payment_method} onChange={e => setForm(f => ({ ...f, payment_method: e.target.value }))}
                   className="w-full rounded-xl px-3 py-2 text-sm text-white border focus:outline-none" style={inputStyle}>
                   {PAYMENT_METHODS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
                 </select>
-              </div>
+              </div>}
               <ResponsavelPicker label={editingEntry ? "Editado por" : "Lançado por"} value={form.responsavel}
                 onChange={v => setForm(f => ({ ...f, responsavel: v }))} />
             </div>

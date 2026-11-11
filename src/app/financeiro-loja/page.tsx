@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { getSupabaseBrowser } from "@/lib/supabaseBrowser";
+import { STORE_EXPENSE_CATEGORIES } from "@/lib/storeExpenseCategories";
 import { ResponsavelPicker, LancadoPor } from "@/components/ResponsavelPicker";
 
 const supabase = getSupabaseBrowser();
@@ -38,12 +39,7 @@ const PRO_LABORE_CATEGORY = "Pró-labore";
 const PROFIT_SHARE_CATEGORY = "Distribuição de Lucros";
 const NON_OPERATIONAL_CATEGORIES = new Set([PRO_LABORE_CATEGORY, PROFIT_SHARE_CATEGORY]);
 
-const CATEGORIES = [
-  "Aluguel", "Água/Luz/Internet", "Salários", "Pró-labore", "Distribuição de Lucros", "Benefícios (VT/VR)",
-  "Marketing — OLX", "Marketing — Webmotors", "Marketing — Na Pista", "Marketing — Tráfego Pago",
-  "CRM/Software", "Taxas Bancárias", "Contabilidade", "Imposto", "IPTU", "Segurança", "Uso e Consumo",
-  "Combustível Operacional", "Outros",
-];
+const CATEGORIES = STORE_EXPENSE_CATEGORIES;
 
 const PAYMENT_METHODS = [
   { value: "pix",           label: "PIX" },
