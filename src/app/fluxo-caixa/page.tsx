@@ -39,7 +39,7 @@ type Summary = {
 };
 
 const CATEGORIES = [
-  "Comissão", "Aluguel Recebido", "Serviço Avulso", "Reembolso", "Outros",
+  "Comissão", "Aporte de Sócio", "Aluguel Recebido", "Serviço Avulso", "Reembolso", "Outros",
 ];
 
 const PAYMENT_METHODS = [
