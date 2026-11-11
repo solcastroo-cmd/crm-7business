@@ -704,7 +704,19 @@ export default function FluxoCaixaPage() {
                   <label className="block text-[10px] font-semibold mb-1" style={{ color: "#6b7280" }}>Categoria</label>
                   <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
                     className="w-full rounded-xl px-3 py-2 text-sm text-white border focus:outline-none" style={inputStyle}>
-                    {modalCategories.map(c => <option key={c} value={c}>{c}</option>)}
+                    {isDespesa ? (
+                      modalCategories.map(c => <option key={c} value={c}>{c}</option>)
+                    ) : (
+                      <>
+                        <optgroup label="Recebimento">
+                          {modalCategories.map(c => <option key={c} value={c}>{c}</option>)}
+                        </optgroup>
+                        <optgroup label="Outras áreas">
+                          {STORE_EXPENSE_CATEGORIES.filter(c => !modalCategories.includes(c))
+                            .map(c => <option key={c} value={c}>{c}</option>)}
+                        </optgroup>
+                      </>
+                    )}
                   </select>
                 </div>
                 <div>
