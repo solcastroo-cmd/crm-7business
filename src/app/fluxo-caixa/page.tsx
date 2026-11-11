@@ -185,6 +185,7 @@ export default function FluxoCaixaPage() {
   const [tab, setTab] = useState<"movimentacoes" | "relatorio">("movimentacoes");
   const [filterCategory, setFilterCategory] = useState("todas");
   const [filterSource, setFilterSource] = useState("todos");
+  const [search, setSearch] = useState("");
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -208,7 +209,6 @@ export default function FluxoCaixaPage() {
       .catch(() => {});
   }, [userId]);
 
-  const reversed = useMemo(() => [...ledger].reverse(), [ledger]);
 
   const categoryOptions = useMemo(
     () => Array.from(new Set(ledger.map(e => e.category))).sort((a, b) => a.localeCompare(b)),
@@ -218,8 +218,15 @@ export default function FluxoCaixaPage() {
   const filtered = useMemo(() => ledger.filter(e => {
     if (filterCategory !== "todas" && e.category !== filterCategory) return false;
     if (filterSource   !== "todos" && e.source   !== filterSource)   return false;
+    if (search) {
+      const q = search.toLowerCase();
+      if (!e.description.toLowerCase().includes(q) && !e.category.toLowerCase().includes(q)) return false;
+    }
     return true;
-  }), [ledger, filterCategory, filterSource]);
+  }), [ledger, filterCategory, filterSource, search]);
+
+  const filteredReversed = useMemo(() => [...filtered].reverse(), [filtered]);
+  const hasFilter = filterCategory !== "todas" || filterSource !== "todos" || search !== "";
 
   const filteredTotals = useMemo(() => {
     const entradas = filtered.filter(e => e.type === "entrada").reduce((s, e) => s + Number(e.amount), 0);
@@ -461,6 +468,37 @@ export default function FluxoCaixaPage() {
             )}
           </div>
 
+          {/* Filtros das movimentações */}
+          <div className="rounded-2xl p-4" style={sectionBg}>
+            <div className="flex flex-wrap gap-3 items-center">
+              <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)}
+                className="rounded-xl px-3 py-2 text-sm text-white border focus:outline-none" style={inputStyle}>
+                <option value="todas">Todas categorias</option>
+                {categoryOptions.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <select value={filterSource} onChange={e => setFilterSource(e.target.value)}
+                className="rounded-xl px-3 py-2 text-sm text-white border focus:outline-none" style={inputStyle}>
+                <option value="todos">Todas origens</option>
+                {Object.entries(SOURCE_LABEL).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+              </select>
+              <input type="text" value={search} onChange={e => setSearch(e.target.value)}
+                placeholder="Buscar descrição..."
+                className="rounded-xl px-3 py-2 text-sm text-white border focus:outline-none flex-1 min-w-[160px]" style={inputStyle} />
+              {hasFilter && (
+                <button onClick={() => { setFilterCategory("todas"); setFilterSource("todos"); setSearch(""); }}
+                  className="rounded-xl px-3 py-2 text-xs font-semibold"
+                  style={{ background: "#1f2937", color: "#9ca3af" }}>
+                  Limpar
+                </button>
+              )}
+            </div>
+            {hasFilter && (
+              <p className="text-xs mt-3" style={{ color: "#9ca3af" }}>
+                {filtered.length} lançamento(s) · Entradas {brl(filteredTotals.entradas)} · Saídas {brl(filteredTotals.saidas)}
+              </p>
+            )}
+          </div>
+
           {/* Ledger */}
           <div className="rounded-2xl overflow-hidden" style={sectionBg}>
             <table className="w-full text-sm">
@@ -473,10 +511,10 @@ export default function FluxoCaixaPage() {
                 </tr>
               </thead>
               <tbody>
-                {reversed.length === 0 && (
+                {filteredReversed.length === 0 && (
                   <tr><td colSpan={7} className="text-center py-12 text-gray-600">Nenhuma movimentação no período</td></tr>
                 )}
-                {reversed.map(e => (
+                {filteredReversed.map(e => (
                   <tr key={`${e.source}-${e.id}`} className="hover:bg-white/[0.02]" style={{ borderBottom: "1px solid #1f293740" }}>
                     <td className="px-4 py-3 text-white">{fmtDate(e.date)}</td>
                     <td className="px-4 py-3 font-semibold text-white">{e.description}
