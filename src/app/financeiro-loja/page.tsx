@@ -37,7 +37,7 @@ type Sale = {
 /* ── Constants ─────────────────────────────────────────────────────── */
 const PRO_LABORE_CATEGORY = "Pró-labore";
 const PROFIT_SHARE_CATEGORY = "Distribuição de Lucros";
-const NON_OPERATIONAL_CATEGORIES = new Set([PRO_LABORE_CATEGORY, PROFIT_SHARE_CATEGORY]);
+const NON_OPERATIONAL_CATEGORIES = new Set([PRO_LABORE_CATEGORY, PROFIT_SHARE_CATEGORY, "Ressarcimento de Sócio"]);
 
 const CATEGORIES = STORE_EXPENSE_CATEGORIES;
 

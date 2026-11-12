@@ -77,6 +77,7 @@ function fmtDate(iso: string) {
 }
 
 const APORTE_CATEGORY = "Aporte de Sócio";
+const RESSARCIMENTO_CATEGORY = "Ressarcimento de Sócio";
 const SOCIOS_APORTE = ["Paulo Henrique", "Eduardo Maia", "Loja"];
 const MESES_CURTOS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 function mesLabel(k: string) {
@@ -131,7 +132,17 @@ function aportesPorSocio(entries: LedgerEntry[]) {
     ...Object.keys(tot).filter(n => !SOCIOS_APORTE.includes(n)).sort(),
   ];
   const total = ap.reduce((s, e) => s + Number(e.amount), 0);
-  return { nomes, tot, mat, total, count: ap.length };
+  // ressarcimento de sócio: devolução do que o sócio pagou pela loja, abate os aportes dele
+  const dev: Record<string, number> = {};
+  for (const e of entries) {
+    if (e.type === "saida" && e.category === RESSARCIMENTO_CATEGORY) {
+      const k = e.socio || "Não informado";
+      dev[k] = (dev[k] ?? 0) + Number(e.amount);
+      if (!nomes.includes(k)) nomes.push(k);
+    }
+  }
+  const devTotal = Object.values(dev).reduce((a, b) => a + b, 0);
+  return { nomes, tot, mat, total, count: ap.length, dev, devTotal };
 }
 
 /* ── PDF Report ─────────────────────────────────────────────────────── */
@@ -178,15 +189,15 @@ function printLedgerReport(
   const aporteHtml = ap.count === 0 ? "" : `
     <div class="section-title">Aportes de sócios — quem colocou dinheiro</div>
     <table>
-      <thead><tr><th>Sócio</th><th style="text-align:right">Valor aportado</th><th style="text-align:right">%</th></tr></thead>
-      <tbody>${ap.nomes.map(n => `<tr><td>${n}</td><td style="text-align:right;font-weight:700">${brl(ap.tot[n])}</td><td style="text-align:right">${ap.total ? (ap.tot[n] / ap.total * 100).toFixed(1) : "0"}%</td></tr>`).join("")}
-        <tr><td style="font-weight:700;background:#f3f4f6">Total</td><td style="text-align:right;font-weight:800;background:#f3f4f6">${brl(ap.total)}</td><td style="text-align:right;background:#f3f4f6">100%</td></tr></tbody>
+      <thead><tr><th>Sócio</th><th style="text-align:right">Aportou</th><th style="text-align:right">Devolvido (ressarcimento)</th><th style="text-align:right">Líquido</th></tr></thead>
+      <tbody>${ap.nomes.map(n => `<tr><td>${n}</td><td style="text-align:right">${brl(ap.tot[n] ?? 0)}</td><td style="text-align:right;color:#b91c1c">${ap.dev[n] ? "-" + brl(ap.dev[n]) : "—"}</td><td style="text-align:right;font-weight:700">${brl((ap.tot[n] ?? 0) - (ap.dev[n] ?? 0))}</td></tr>`).join("")}
+        <tr><td style="font-weight:700;background:#f3f4f6">Total</td><td style="text-align:right;font-weight:800;background:#f3f4f6">${brl(ap.total)}</td><td style="text-align:right;background:#f3f4f6;color:#b91c1c">${ap.devTotal ? "-" + brl(ap.devTotal) : "—"}</td><td style="text-align:right;font-weight:800;background:#f3f4f6">${brl(ap.total - ap.devTotal)}</td></tr></tbody>
     </table>
     <div class="section-title">Aportes por mês</div>
     <table>
       <thead><tr><th>Mês</th>${ap.nomes.map(n => `<th style="text-align:right">${curto(n)}</th>`).join("")}<th style="text-align:right">Total</th></tr></thead>
       <tbody>${Object.keys(ap.mat).sort().map(m => `<tr><td>${mesLabel(m)}</td>${ap.nomes.map(n => `<td style="text-align:right">${ap.mat[m][n] ? brl(ap.mat[m][n]) : "—"}</td>`).join("")}<td style="text-align:right;font-weight:700">${brl(Object.values(ap.mat[m]).reduce((a, b) => a + b, 0))}</td></tr>`).join("")}
-        <tr><td style="font-weight:700;background:#f3f4f6">Total</td>${ap.nomes.map(n => `<td style="text-align:right;font-weight:700;background:#f3f4f6">${brl(ap.tot[n])}</td>`).join("")}<td style="text-align:right;font-weight:800;background:#f3f4f6">${brl(ap.total)}</td></tr></tbody>
+        <tr><td style="font-weight:700;background:#f3f4f6">Total</td>${ap.nomes.map(n => `<td style="text-align:right;font-weight:700;background:#f3f4f6">${brl(ap.tot[n] ?? 0)}</td>`).join("")}<td style="text-align:right;font-weight:800;background:#f3f4f6">${brl(ap.total)}</td></tr></tbody>
     </table>`;
 
   const pl = prolaborePorSocio(ledger);
@@ -801,14 +812,20 @@ export default function FluxoCaixaPage() {
               <div className="rounded-2xl overflow-hidden" style={sectionBg}>
                 <div className="px-4 pt-4 pb-2">
                   <p className="text-sm font-bold text-white">👥 Aportes de sócios</p>
-                  <p className="text-[11px] mt-0.5" style={{ color: "#6b7280" }}>Quanto cada um colocou no período: {ap.count} aporte(s), {brl(ap.total)}</p>
+                  <p className="text-[11px] mt-0.5" style={{ color: "#6b7280" }}>Quanto cada um colocou no período: {ap.count} aporte(s), {brl(ap.total)}{ap.devTotal ? ` · devolvido aos sócios (ressarcimento): ${brl(ap.devTotal)}` : ""}</p>
                 </div>
                 <div className="grid gap-3 px-4 pb-4" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))" }}>
                   {ap.nomes.map(n => (
                     <div key={n} className="rounded-xl p-3" style={{ background: "#111827", border: "1px solid #1f2937" }}>
                       <p className="text-[11px] font-semibold" style={{ color: n === "Não informado" ? "#f59e0b" : "#9ca3af" }}>{n}</p>
-                      <p className="text-lg font-black text-white">{brl(ap.tot[n])}</p>
-                      <p className="text-[10px]" style={{ color: "#6b7280" }}>{ap.total ? (ap.tot[n] / ap.total * 100).toFixed(1) : "0"}% dos aportes</p>
+                      <p className="text-lg font-black text-white">{brl(ap.tot[n] ?? 0)}</p>
+                      <p className="text-[10px]" style={{ color: "#6b7280" }}>{ap.total ? ((ap.tot[n] ?? 0) / ap.total * 100).toFixed(1) : "0"}% dos aportes</p>
+                      {ap.dev[n] ? (
+                        <p className="text-[10px] mt-1" style={{ color: "#f87171" }}>
+                          Devolvido (ressarcimento): −{brl(ap.dev[n])}<br />
+                          <b className="text-white">Líquido: {brl((ap.tot[n] ?? 0) - ap.dev[n])}</b>
+                        </p>
+                      ) : null}
                     </div>
                   ))}
                 </div>
@@ -833,7 +850,7 @@ export default function FluxoCaixaPage() {
                       ))}
                       <tr style={{ background: "#111827" }}>
                         <td className="px-4 py-2.5 font-bold text-white">Total</td>
-                        {ap.nomes.map(n => <td key={n} className="px-4 py-2.5 font-bold text-white">{brl(ap.tot[n])}</td>)}
+                        {ap.nomes.map(n => <td key={n} className="px-4 py-2.5 font-bold text-white">{brl(ap.tot[n] ?? 0)}</td>)}
                         <td className="px-4 py-2.5 font-black text-white">{brl(ap.total)}</td>
                       </tr>
                     </tbody>
