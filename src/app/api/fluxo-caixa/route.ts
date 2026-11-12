@@ -14,6 +14,7 @@ type Entry = {
   status: "pago" | "pendente";
   lancado_por?: string | null;
   editado_por?: string | null;
+  socio?: string | null;
 };
 
 /* ── GET — ledger unificado (entradas + saídas) com saldo corrido ── */
@@ -43,7 +44,7 @@ export async function GET(req: NextRequest) {
       id: i.id, date: i.date, type: "entrada",
       description: i.description, category: i.category,
       amount: Number(i.amount), source: "recebimento", status: "pago",
-      lancado_por: i.lancado_por, editado_por: i.editado_por,
+      lancado_por: i.lancado_por, editado_por: i.editado_por, socio: i.socio ?? null,
     });
   }
 
@@ -152,7 +153,7 @@ export async function GET(req: NextRequest) {
 /* ── POST — lançar recebimento avulso ── */
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { store_id, date, description, category, amount, payment_method, status, notes, lancado_por } = body;
+  const { store_id, date, description, category, amount, payment_method, status, notes, lancado_por, socio } = body;
 
   if (!description || !amount) {
     return NextResponse.json({ error: "description e amount são obrigatórios" }, { status: 400 });
@@ -170,6 +171,7 @@ export async function POST(req: NextRequest) {
       status: status || "recebido",
       notes: notes ?? null,
       lancado_por: lancado_por ?? null,
+      socio: socio || null,
     })
     .select()
     .single();
@@ -184,7 +186,7 @@ export async function PATCH(req: NextRequest) {
   const { id, ...fields } = body;
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
-  const allowed = ["date", "description", "category", "amount", "payment_method", "status", "notes", "editado_por"];
+  const allowed = ["date", "description", "category", "amount", "payment_method", "status", "notes", "editado_por", "socio"];
   const payload: Record<string, unknown> = {};
   for (const k of allowed) {
     if (fields[k] !== undefined) payload[k] = fields[k];

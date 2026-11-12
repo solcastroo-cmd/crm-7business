@@ -18,6 +18,7 @@ type LedgerEntry = {
   saldo: number;
   lancado_por?: string | null;
   editado_por?: string | null;
+  socio?: string | null;
 };
 
 type Conta = {
@@ -58,6 +59,8 @@ const EMPTY_FORM = {
   description: "", category: CATEGORIES[0],
   amount: "", payment_method: "pix",
   responsavel: "",
+  socios: [] as string[],
+  partes: {} as Record<string, string>,
 };
 
 const EMPTY_ACCOUNT_FORM = {
@@ -70,6 +73,33 @@ function brl(v: number) {
 }
 function fmtDate(iso: string) {
   return new Date(iso + "T12:00:00").toLocaleDateString("pt-BR");
+}
+
+const APORTE_CATEGORY = "Aporte de Sócio";
+const SOCIOS_APORTE = ["Paulo Henrique", "Eduardo Maia", "Loja"];
+const MESES_CURTOS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+function mesLabel(k: string) {
+  const [y, m] = k.split("-");
+  return `${MESES_CURTOS[parseInt(m) - 1]}/${y.slice(2)}`;
+}
+
+// soma os aportes de sócio por pessoa e por mês
+function aportesPorSocio(entries: LedgerEntry[]) {
+  const ap = entries.filter(e => e.type === "entrada" && e.category === APORTE_CATEGORY);
+  const tot: Record<string, number> = {};
+  const mat: Record<string, Record<string, number>> = {};
+  for (const e of ap) {
+    const k = e.socio || "Não informado";
+    tot[k] = (tot[k] ?? 0) + Number(e.amount);
+    const m = e.date.slice(0, 7);
+    (mat[m] ??= {})[k] = (mat[m][k] ?? 0) + Number(e.amount);
+  }
+  const nomes = [
+    ...SOCIOS_APORTE.filter(n => tot[n]),
+    ...Object.keys(tot).filter(n => !SOCIOS_APORTE.includes(n)).sort(),
+  ];
+  const total = ap.reduce((s, e) => s + Number(e.amount), 0);
+  return { nomes, tot, mat, total, count: ap.length };
 }
 
 /* ── PDF Report ─────────────────────────────────────────────────────── */
@@ -86,7 +116,7 @@ function printLedgerReport(
   const rows = [...ledger].reverse().map(e => `
     <tr>
       <td>${fmtDate(e.date)}</td>
-      <td>${e.description}</td>
+      <td>${e.description}${e.socio ? ` <b style="color:#2563eb">· ${e.socio}</b>` : ""}</td>
       <td>${e.category}</td>
       <td>${SOURCE_LABEL[e.source]}</td>
       <td style="text-align:right;color:${e.type === "entrada" ? "#10b981" : "#ef4444"};font-weight:700">
@@ -110,6 +140,22 @@ function printLedgerReport(
         <td style="text-align:right;color:#ef4444">${v.saidas ? brl(v.saidas) : "—"}</td>
         <td style="text-align:right;font-weight:700">${brl(v.entradas - v.saidas)}</td>
       </tr>`).join("");
+
+  const ap = aportesPorSocio(ledger);
+  const curto = (n: string) => n === "Loja" || n === "Não informado" ? n : n.split(" ")[0];
+  const aporteHtml = ap.count === 0 ? "" : `
+    <div class="section-title">Aportes de sócios — quem colocou dinheiro</div>
+    <table>
+      <thead><tr><th>Sócio</th><th style="text-align:right">Valor aportado</th><th style="text-align:right">%</th></tr></thead>
+      <tbody>${ap.nomes.map(n => `<tr><td>${n}</td><td style="text-align:right;font-weight:700">${brl(ap.tot[n])}</td><td style="text-align:right">${ap.total ? (ap.tot[n] / ap.total * 100).toFixed(1) : "0"}%</td></tr>`).join("")}
+        <tr><td style="font-weight:700;background:#f3f4f6">Total</td><td style="text-align:right;font-weight:800;background:#f3f4f6">${brl(ap.total)}</td><td style="text-align:right;background:#f3f4f6">100%</td></tr></tbody>
+    </table>
+    <div class="section-title">Aportes por mês</div>
+    <table>
+      <thead><tr><th>Mês</th>${ap.nomes.map(n => `<th style="text-align:right">${curto(n)}</th>`).join("")}<th style="text-align:right">Total</th></tr></thead>
+      <tbody>${Object.keys(ap.mat).sort().map(m => `<tr><td>${mesLabel(m)}</td>${ap.nomes.map(n => `<td style="text-align:right">${ap.mat[m][n] ? brl(ap.mat[m][n]) : "—"}</td>`).join("")}<td style="text-align:right;font-weight:700">${brl(Object.values(ap.mat[m]).reduce((a, b) => a + b, 0))}</td></tr>`).join("")}
+        <tr><td style="font-weight:700;background:#f3f4f6">Total</td>${ap.nomes.map(n => `<td style="text-align:right;font-weight:700;background:#f3f4f6">${brl(ap.tot[n])}</td>`).join("")}<td style="text-align:right;font-weight:800;background:#f3f4f6">${brl(ap.total)}</td></tr></tbody>
+    </table>`;
 
   win.document.write(`<!DOCTYPE html><html><head>
     <meta charset="UTF-8"/>
@@ -144,6 +190,8 @@ function printLedgerReport(
       <div class="summary-card"><div class="label">Saldo do Filtro</div><div class="value" style="color:${totals.saldoPeriodo >= 0 ? "#10b981" : "#ef4444"}">${brl(totals.saldoPeriodo)}</div></div>
       <div class="summary-card"><div class="label">Saldo Acumulado</div><div class="value" style="color:${totals.saldoAcumulado >= 0 ? "#10b981" : "#ef4444"}">${brl(totals.saldoAcumulado)}</div></div>
     </div>
+
+    ${aporteHtml}
 
     <div class="section-title">Resumo por Categoria</div>
     <table>
@@ -267,6 +315,7 @@ export default function FluxoCaixaPage() {
     setForm({
       date: e.date, description: e.description, category: e.category,
       amount: String(e.amount), payment_method: "pix", responsavel: "",
+      socios: e.socio ? [e.socio] : [], partes: {},
     });
     setShowModal(true);
   }
@@ -277,10 +326,71 @@ export default function FluxoCaixaPage() {
     ? [form.category, ...baseCategories]
     : baseCategories;
 
+  const isAporteForm = !isDespesa && form.category === APORTE_CATEGORY;
+  const totalCent = Math.round(Number(form.amount || 0) * 100);
+  // divide o aporte entre os sócios marcados: valor digitado por pessoa, ou partes iguais
+  const rateio = useMemo(() => {
+    if (!form.socios.length) return [] as { socio: string; cent: number }[];
+    const manual = form.socios.filter(x => form.partes[x] !== undefined && form.partes[x] !== "");
+    const manualCent = manual.reduce((a, x) => a + Math.round(Number(form.partes[x]) * 100), 0);
+    const auto = form.socios.filter(x => !manual.includes(x));
+    const resto = totalCent - manualCent;
+    const base = auto.length ? Math.floor(resto / auto.length) : 0;
+    let sobra = auto.length ? resto - base * auto.length : 0;
+    return form.socios.map(x => {
+      if (manual.includes(x)) return { socio: x, cent: Math.round(Number(form.partes[x]) * 100) };
+      const c = base + sobra;
+      sobra = 0;
+      return { socio: x, cent: c };
+    });
+  }, [form.socios, form.partes, totalCent]);
+  const aporteOk = !isAporteForm || (rateio.length > 0 && rateio.every(r => r.cent > 0) && rateio.reduce((a, r) => a + r.cent, 0) === totalCent);
+
+  function toggleSocio(n: string) {
+    setForm(f => {
+      if (f.socios.includes(n)) {
+        const partes = { ...f.partes };
+        delete partes[n];
+        return { ...f, socios: f.socios.filter(x => x !== n), partes };
+      }
+      if (f.socios.length >= 3) return f;
+      return { ...f, socios: [...f.socios, n] };
+    });
+  }
+
   async function saveForm() {
-    if (!form.description || !form.amount || !form.responsavel) return;
+    if (!form.description || !form.amount || !form.responsavel || !aporteOk) return;
     setSaving(true);
-    const { responsavel, ...rest } = form;
+    const responsavel = form.responsavel;
+    const rest = { date: form.date, description: form.description, category: form.category, payment_method: form.payment_method };
+    if (isAporteForm) {
+      const nota = rateio.length > 1 ? `Aporte dividido entre ${form.socios.join(", ")} (total ${brl(totalCent / 100)})` : null;
+      const [primeiro, ...outros] = rateio;
+      let ok = true;
+      if (editingEntry) {
+        const r = await fetch("/api/fluxo-caixa", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: editingEntry.id, ...rest, socio: primeiro.socio, amount: primeiro.cent / 100, editado_por: responsavel, ...(nota ? { notes: nota } : {}) }),
+        });
+        ok = r.ok;
+      }
+      const novos = editingEntry ? outros : rateio;
+      for (const l of novos) {
+        if (!ok) break;
+        const r = await fetch("/api/fluxo-caixa", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...rest, socio: l.socio, amount: l.cent / 100, store_id: userId, lancado_por: responsavel, notes: nota }),
+        });
+        ok = r.ok;
+      }
+      setSaving(false);
+      if (!ok) { alert("Erro ao salvar aporte"); fetchAll(); return; }
+      setShowModal(false);
+      fetchAll();
+      return;
+    }
     if (isDespesa && editingEntry) {
       const res = await fetch("/api/financeiro-loja", {
         method: "PATCH",
@@ -300,7 +410,7 @@ export default function FluxoCaixaPage() {
       ? await fetch("/api/fluxo-caixa", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: editingEntry.id, ...rest, amount: Number(form.amount), editado_por: responsavel }),
+          body: JSON.stringify({ id: editingEntry.id, ...rest, socio: null, amount: Number(form.amount), editado_por: responsavel }),
         })
       : await fetch("/api/fluxo-caixa", {
           method: "POST",
@@ -541,6 +651,7 @@ export default function FluxoCaixaPage() {
                   <tr key={`${e.source}-${e.id}`} className="hover:bg-white/[0.02]" style={{ borderBottom: "1px solid #1f293740" }}>
                     <td className="px-4 py-3 text-white">{fmtDate(e.date)}</td>
                     <td className="px-4 py-3 font-semibold text-white">{e.description}
+                      {e.socio && <span className="text-xs font-bold" style={{ color: "#60a5fa" }}> · {e.socio}</span>}
                       <LancadoPor lancado={e.lancado_por} editado={e.editado_por} /></td>
                     <td className="px-4 py-3 text-xs" style={{ color: "#9ca3af" }}>{e.category}</td>
                     <td className="px-4 py-3 text-xs" style={{ color: "#6b7280" }}>{SOURCE_LABEL[e.source]}</td>
@@ -618,6 +729,57 @@ export default function FluxoCaixaPage() {
               </div>
             ))}
           </div>
+
+          {/* Aportes por sócio */}
+          {(() => {
+            const ap = aportesPorSocio(filtered);
+            if (!ap.count) return null;
+            const curto = (n: string) => n === "Loja" || n === "Não informado" ? n : n.split(" ")[0];
+            return (
+              <div className="rounded-2xl overflow-hidden" style={sectionBg}>
+                <div className="px-4 pt-4 pb-2">
+                  <p className="text-sm font-bold text-white">👥 Aportes de sócios</p>
+                  <p className="text-[11px] mt-0.5" style={{ color: "#6b7280" }}>Quanto cada um colocou no período: {ap.count} aporte(s), {brl(ap.total)}</p>
+                </div>
+                <div className="grid gap-3 px-4 pb-4" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))" }}>
+                  {ap.nomes.map(n => (
+                    <div key={n} className="rounded-xl p-3" style={{ background: "#111827", border: "1px solid #1f2937" }}>
+                      <p className="text-[11px] font-semibold" style={{ color: n === "Não informado" ? "#f59e0b" : "#9ca3af" }}>{n}</p>
+                      <p className="text-lg font-black text-white">{brl(ap.tot[n])}</p>
+                      <p className="text-[10px]" style={{ color: "#6b7280" }}>{ap.total ? (ap.tot[n] / ap.total * 100).toFixed(1) : "0"}% dos aportes</p>
+                    </div>
+                  ))}
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr style={{ borderBottom: "1px solid #1f2937", background: "#111827" }}>
+                        {["Mês", ...ap.nomes.map(curto), "Total"].map(h => (
+                          <th key={h} className="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wider" style={{ color: "#6b7280" }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Object.keys(ap.mat).sort().map(m => (
+                        <tr key={m} style={{ borderBottom: "1px solid #1f293740" }}>
+                          <td className="px-4 py-2.5 font-semibold text-white">{mesLabel(m)}</td>
+                          {ap.nomes.map(n => (
+                            <td key={n} className="px-4 py-2.5" style={{ color: ap.mat[m][n] ? "#10b981" : "#374151" }}>{ap.mat[m][n] ? brl(ap.mat[m][n]) : "—"}</td>
+                          ))}
+                          <td className="px-4 py-2.5 font-bold text-white">{brl(Object.values(ap.mat[m]).reduce((a, b) => a + b, 0))}</td>
+                        </tr>
+                      ))}
+                      <tr style={{ background: "#111827" }}>
+                        <td className="px-4 py-2.5 font-bold text-white">Total</td>
+                        {ap.nomes.map(n => <td key={n} className="px-4 py-2.5 font-bold text-white">{brl(ap.tot[n])}</td>)}
+                        <td className="px-4 py-2.5 font-black text-white">{brl(ap.total)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Resumo por categoria */}
           <div className="rounded-2xl overflow-hidden" style={sectionBg}>
@@ -722,6 +884,42 @@ export default function FluxoCaixaPage() {
                     className="w-full rounded-xl px-3 py-2 text-sm text-white border focus:outline-none focus:border-green-500" style={inputStyle} />
                 </div>
               </div>
+              {isAporteForm && (
+                <div className="space-y-2">
+                  <label className="block text-[10px] font-semibold" style={{ color: "#6b7280" }}>Quem aportou * (marque até 3)</label>
+                  <div className="flex flex-wrap gap-2">
+                    {SOCIOS_APORTE.map(n => {
+                      const on = form.socios.includes(n);
+                      return (
+                        <button key={n} type="button" onClick={() => toggleSocio(n)} aria-pressed={on}
+                          className="rounded-full px-3 py-1.5 text-xs font-semibold"
+                          style={{ background: on ? "#3b82f6" : "#1f2937", color: on ? "#fff" : "#9ca3af", border: `1px solid ${on ? "#3b82f6" : "#374151"}` }}>
+                          {on ? "✓ " : ""}{n}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {form.socios.length > 1 && (
+                    <div className="rounded-xl p-3 space-y-2" style={{ background: "#0f172a", border: "1px solid #1f2937" }}>
+                      <p className="text-[10px] font-semibold" style={{ color: "#6b7280" }}>Quanto cada um colocou. Deixe em branco para dividir igual.</p>
+                      {rateio.map((r, idx) => (
+                        <div key={r.socio} className="flex items-center gap-3">
+                          <span className="text-xs text-white flex-1 min-w-0 truncate">{r.socio}</span>
+                          <input id={`fc-parte-${idx}`} type="number" min="0" step="0.01" aria-label={`Valor de ${r.socio}`}
+                            placeholder={(r.cent / 100).toFixed(2)} value={form.partes[r.socio] ?? ""}
+                            onChange={ev => setForm(f => ({ ...f, partes: { ...f.partes, [r.socio]: ev.target.value } }))}
+                            className="w-32 rounded-xl px-3 py-1.5 text-sm text-white border focus:outline-none text-right" style={inputStyle} />
+                        </div>
+                      ))}
+                      {!aporteOk && totalCent > 0 && (
+                        <p className="text-[11px]" style={{ color: "#f87171" }}>
+                          A soma das partes ({brl(rateio.reduce((a, r) => a + r.cent, 0) / 100)}) precisa ser igual ao valor ({brl(totalCent / 100)}).
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
               {!isDespesa && <div>
                 <label className="block text-[10px] font-semibold mb-1" style={{ color: "#6b7280" }}>Forma de Recebimento</label>
                 <select value={form.payment_method} onChange={e => setForm(f => ({ ...f, payment_method: e.target.value }))}
@@ -733,7 +931,7 @@ export default function FluxoCaixaPage() {
                 onChange={v => setForm(f => ({ ...f, responsavel: v }))} />
             </div>
             <div className="flex gap-3 px-6 pb-6">
-              <button onClick={saveForm} disabled={saving || !form.description || !form.amount || !form.responsavel}
+              <button onClick={saveForm} disabled={saving || !form.description || !form.amount || !form.responsavel || !aporteOk}
                 className="flex-1 rounded-xl py-3 text-sm font-bold text-white hover:opacity-90 disabled:opacity-50"
                 style={{ background: "#10b981" }}>
                 {saving ? "Salvando…" : editingEntry ? "✓ Salvar Alterações" : "✓ Lançar Recebimento"}
