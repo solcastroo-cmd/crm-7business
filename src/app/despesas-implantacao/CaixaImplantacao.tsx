@@ -81,7 +81,8 @@ function parcelasDe<T extends DespesaCaixa>(d: T): Parcela<T>[] {
 const EMPTY = {
   data: new Date().toISOString().split("T")[0],
   origem: "venda_loja" as Entrada["origem"],
-  socio: "",
+  socios: [] as string[],
+  partes: {} as Record<string, string>,
   descricao: "",
   valor: "",
   observacao: "",
@@ -176,33 +177,87 @@ export default function CaixaImplantacao<T extends DespesaCaixa>({
   function openEdit(e: Entrada) {
     setEditing(e);
     setForm({
-      data: e.data, origem: e.origem, socio: e.socio ?? "", descricao: e.descricao,
+      data: e.data, origem: e.origem, socios: e.socio ? [e.socio] : [], partes: {}, descricao: e.descricao,
       valor: String(e.valor), observacao: e.observacao ?? "", responsavel: "",
     });
     setErro("");
     setShowModal(true);
   }
 
-  const podeSalvar = !!form.descricao && Number(form.valor) > 0 && !!form.responsavel &&
-    (form.origem !== "aporte_socio" || !!form.socio);
+  const MAX_SOCIOS = 3;
+  const isAporte = form.origem === "aporte_socio";
+  const totalCent = Math.round(Number(form.valor || 0) * 100);
+
+  // divide o total entre os sócios marcados: valor digitado por pessoa, ou partes iguais
+  // (os centavos que sobram ficam com o primeiro sem valor digitado)
+  const rateio = useMemo(() => {
+    if (!form.socios.length) return [] as { socio: string; cent: number }[];
+    const manual = form.socios.filter(x => form.partes[x] !== undefined && form.partes[x] !== "");
+    const manualCent = manual.reduce((a, x) => a + Math.round(Number(form.partes[x]) * 100), 0);
+    const auto = form.socios.filter(x => !manual.includes(x));
+    const resto = totalCent - manualCent;
+    const base = auto.length ? Math.floor(resto / auto.length) : 0;
+    let sobra = auto.length ? resto - base * auto.length : 0;
+    return form.socios.map(x => {
+      if (manual.includes(x)) return { socio: x, cent: Math.round(Number(form.partes[x]) * 100) };
+      const c = base + sobra;
+      sobra = 0;
+      return { socio: x, cent: c };
+    });
+  }, [form.socios, form.partes, totalCent]);
+  const rateioOk = !isAporte || (rateio.length > 0 && rateio.every(r => r.cent > 0) && rateio.reduce((a, r) => a + r.cent, 0) === totalCent);
+
+  function toggleSocio(n: string) {
+    setForm(f => {
+      if (editing) return { ...f, socios: [n], partes: {} };
+      if (f.socios.includes(n)) {
+        const partes = { ...f.partes };
+        delete partes[n];
+        return { ...f, socios: f.socios.filter(x => x !== n), partes };
+      }
+      if (f.socios.length >= MAX_SOCIOS) return f;
+      return { ...f, socios: [...f.socios, n] };
+    });
+  }
+
+  const podeSalvar = !!form.descricao && totalCent > 0 && !!form.responsavel && rateioOk;
 
   async function save() {
     if (!podeSalvar || !userId) return;
     setSaving(true);
     setErro("");
-    const payload = {
+    const base = {
       loja_id: userId, data: form.data, origem: form.origem,
-      socio: form.origem === "aporte_socio" ? form.socio : null,
-      descricao: form.descricao, valor: Number(form.valor), observacao: form.observacao || null,
+      descricao: form.descricao, observacao: form.observacao || null,
       ...(editing ? { editado_por: form.responsavel } : { lancado_por: form.responsavel }),
     };
-    const res = await fetch("/api/despesas-implantacao/entradas", {
-      method: editing ? "PATCH" : "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(editing ? { id: editing.id, ...payload } : payload),
-    });
+    let ok = true;
+    if (editing) {
+      const res = await fetch("/api/despesas-implantacao/entradas", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: editing.id, ...base, socio: isAporte ? form.socios[0] : null, valor: totalCent / 100 }),
+      });
+      ok = res.ok;
+    } else {
+      const nota = rateio.length > 1 ? `Aporte dividido entre ${form.socios.join(", ")} (total ${brl(totalCent / 100)})` : "";
+      const linhas = isAporte
+        ? rateio.map(r => ({
+            ...base, socio: r.socio, valor: r.cent / 100,
+            observacao: [form.observacao, nota].filter(Boolean).join(" · ") || null,
+          }))
+        : [{ ...base, socio: null, valor: totalCent / 100 }];
+      for (const l of linhas) {
+        const res = await fetch("/api/despesas-implantacao/entradas", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(l),
+        });
+        if (!res.ok) { ok = false; break; }
+      }
+    }
     setSaving(false);
-    if (!res.ok) { setErro("Não foi possível salvar a entrada. Confira os campos e tente de novo."); return; }
+    if (!ok) { setErro("Não foi possível salvar a entrada. Confira os campos e tente de novo."); fetchEntradas(); return; }
     setShowModal(false);
     fetchEntradas();
   }
@@ -453,17 +508,24 @@ export default function CaixaImplantacao<T extends DespesaCaixa>({
                   ))}
                 </div>
               </div>
-              {form.origem === "aporte_socio" && (
+              {isAporte && (
                 <div>
-                  <label className="block text-[10px] font-semibold mb-1" style={{ color: "#6b7280" }}>Sócio *</label>
+                  <label className="block text-[10px] font-semibold mb-1" style={{ color: "#6b7280" }}>
+                    {editing ? "Sócio *" : `Sócios * (marque até ${MAX_SOCIOS})`}
+                  </label>
                   <div className="flex flex-wrap gap-2">
-                    {RESPONSAVEIS.map(n => (
-                      <button key={n} type="button" onClick={() => setForm(f => ({ ...f, socio: n }))}
-                        className="rounded-full px-3 py-1.5 text-xs font-semibold"
-                        style={{ background: form.socio === n ? "#3b82f6" : "#1f2937", color: form.socio === n ? "#fff" : "#9ca3af", border: `1px solid ${form.socio === n ? "#3b82f6" : "#374151"}` }}>
-                        {n}
-                      </button>
-                    ))}
+                    {RESPONSAVEIS.map(n => {
+                      const on = form.socios.includes(n);
+                      const bloqueado = !on && !editing && form.socios.length >= MAX_SOCIOS;
+                      return (
+                        <button key={n} type="button" onClick={() => toggleSocio(n)} disabled={bloqueado}
+                          aria-pressed={on}
+                          className="rounded-full px-3 py-1.5 text-xs font-semibold disabled:opacity-40"
+                          style={{ background: on ? "#3b82f6" : "#1f2937", color: on ? "#fff" : "#9ca3af", border: `1px solid ${on ? "#3b82f6" : "#374151"}` }}>
+                          {on ? "✓ " : ""}{n}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -479,6 +541,29 @@ export default function CaixaImplantacao<T extends DespesaCaixa>({
                     className="w-full rounded-xl px-3 py-2 text-sm text-white border focus:outline-none" style={inputStyle} />
                 </div>
               </div>
+              {isAporte && !editing && form.socios.length > 1 && (
+                <div className="rounded-xl p-3 space-y-2" style={{ background: "#0f172a", border: "1px solid #1f2937" }}>
+                  <p className="text-[10px] font-semibold" style={{ color: "#6b7280" }}>
+                    Quanto cada um colocou. Deixe em branco para dividir igual.
+                  </p>
+                  {rateio.map((r, idx) => (
+                    <div key={r.socio} className="flex items-center gap-3">
+                      <span className="text-xs text-white flex-1 min-w-0 truncate">{r.socio}</span>
+                      <input id={`ci-parte-${idx}`} type="number" min="0" step="0.01"
+                        aria-label={`Valor de ${r.socio}`}
+                        placeholder={(r.cent / 100).toFixed(2)}
+                        value={form.partes[r.socio] ?? ""}
+                        onChange={ev => setForm(f => ({ ...f, partes: { ...f.partes, [r.socio]: ev.target.value } }))}
+                        className="w-32 rounded-xl px-3 py-1.5 text-sm text-white border focus:outline-none text-right" style={inputStyle} />
+                    </div>
+                  ))}
+                  {!rateioOk && totalCent > 0 && (
+                    <p className="text-[11px]" style={{ color: "#f87171" }}>
+                      A soma das partes ({brl(rateio.reduce((a, r) => a + r.cent, 0) / 100)}) precisa ser igual ao valor total ({brl(totalCent / 100)}), e cada parte maior que zero.
+                    </p>
+                  )}
+                </div>
+              )}
               <div>
                 <label htmlFor="ci-desc" className="block text-[10px] font-semibold mb-1" style={{ color: "#6b7280" }}>Descrição *</label>
                 <input id="ci-desc" type="text" value={form.descricao} onChange={ev => setForm(f => ({ ...f, descricao: ev.target.value }))}
