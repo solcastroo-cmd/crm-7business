@@ -209,7 +209,6 @@ export default function CaixaImplantacao<T extends DespesaCaixa>({
 
   function toggleSocio(n: string) {
     setForm(f => {
-      if (editing) return { ...f, socios: [n], partes: {} };
       if (f.socios.includes(n)) {
         const partes = { ...f.partes };
         delete partes[n];
@@ -232,19 +231,40 @@ export default function CaixaImplantacao<T extends DespesaCaixa>({
       ...(editing ? { editado_por: form.responsavel } : { lancado_por: form.responsavel }),
     };
     let ok = true;
+    const nota = isAporte && rateio.length > 1 ? `Aporte dividido entre ${form.socios.join(", ")} (total ${brl(totalCent / 100)})` : "";
+    const obsLimpa = form.observacao.split(" · ").filter(t => !t.startsWith("Aporte dividido entre")).join(" · ").trim();
+    const obsCom = (extra: string) => [obsLimpa, extra].filter(Boolean).join(" · ") || null;
     if (editing) {
+      // a linha editada fica com o primeiro sócio; os outros marcados viram linhas novas
+      const [primeiro, ...outros] = isAporte ? rateio : [];
       const res = await fetch("/api/despesas-implantacao/entradas", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: editing.id, ...base, socio: isAporte ? form.socios[0] : null, valor: totalCent / 100 }),
+        body: JSON.stringify({
+          id: editing.id, ...base,
+          socio: primeiro ? primeiro.socio : null,
+          valor: primeiro ? primeiro.cent / 100 : totalCent / 100,
+          observacao: obsCom(nota),
+        }),
       });
       ok = res.ok;
+      for (const r of outros) {
+        if (!ok) break;
+        const add = await fetch("/api/despesas-implantacao/entradas", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            loja_id: userId, data: form.data, origem: form.origem, descricao: form.descricao,
+            socio: r.socio, valor: r.cent / 100, observacao: obsCom(nota), lancado_por: form.responsavel,
+          }),
+        });
+        ok = add.ok;
+      }
     } else {
-      const nota = rateio.length > 1 ? `Aporte dividido entre ${form.socios.join(", ")} (total ${brl(totalCent / 100)})` : "";
       const linhas = isAporte
         ? rateio.map(r => ({
             ...base, socio: r.socio, valor: r.cent / 100,
-            observacao: [form.observacao, nota].filter(Boolean).join(" · ") || null,
+            observacao: obsCom(nota),
           }))
         : [{ ...base, socio: null, valor: totalCent / 100 }];
       for (const l of linhas) {
@@ -511,12 +531,12 @@ export default function CaixaImplantacao<T extends DespesaCaixa>({
               {isAporte && (
                 <div>
                   <label className="block text-[10px] font-semibold mb-1" style={{ color: "#6b7280" }}>
-                    {editing ? "Sócio *" : `Sócios * (marque até ${MAX_SOCIOS})`}
+                    {`Sócios * (marque até ${MAX_SOCIOS})`}
                   </label>
                   <div className="flex flex-wrap gap-2">
                     {RESPONSAVEIS.map(n => {
                       const on = form.socios.includes(n);
-                      const bloqueado = !on && !editing && form.socios.length >= MAX_SOCIOS;
+                      const bloqueado = !on && form.socios.length >= MAX_SOCIOS;
                       return (
                         <button key={n} type="button" onClick={() => toggleSocio(n)} disabled={bloqueado}
                           aria-pressed={on}
@@ -541,7 +561,7 @@ export default function CaixaImplantacao<T extends DespesaCaixa>({
                     className="w-full rounded-xl px-3 py-2 text-sm text-white border focus:outline-none" style={inputStyle} />
                 </div>
               </div>
-              {isAporte && !editing && form.socios.length > 1 && (
+              {isAporte && form.socios.length > 1 && (
                 <div className="rounded-xl p-3 space-y-2" style={{ background: "#0f172a", border: "1px solid #1f2937" }}>
                   <p className="text-[10px] font-semibold" style={{ color: "#6b7280" }}>
                     Quanto cada um colocou. Deixe em branco para dividir igual.
