@@ -5,7 +5,7 @@ import { ResponsavelPicker, LancadoPor, RESPONSAVEIS } from "@/components/Respon
 
 /*
  * Caixa da Implantação — um segundo caixa, separado do Fluxo de Caixa.
- * Entradas: aporte de cada sócio e dinheiro da venda da loja.
+ * Entradas: dinheiro da loja (lucro / distribuição) e aportes de sócios.
  * Saídas: só as baixas das despesas de implantação (parcelas de cartão e pix pagos).
  */
 
@@ -38,7 +38,7 @@ type Parcela<T> = { date: string; valor: number; label: string; parcela: number;
 
 const ORIGEM_LABEL: Record<Entrada["origem"], string> = {
   aporte_socio: "Aporte de sócio",
-  venda_loja: "Venda da loja",
+  venda_loja: "Loja (lucro / distribuição)",
   outro: "Outro",
 };
 
@@ -80,7 +80,7 @@ function parcelasDe<T extends DespesaCaixa>(d: T): Parcela<T>[] {
 
 const EMPTY = {
   data: new Date().toISOString().split("T")[0],
-  origem: "aporte_socio" as Entrada["origem"],
+  origem: "venda_loja" as Entrada["origem"],
   socio: "",
   descricao: "",
   valor: "",
@@ -131,7 +131,7 @@ export default function CaixaImplantacao<T extends DespesaCaixa>({
   const porSocio = useMemo(() => {
     const m: Record<string, number> = {};
     for (const e of entradas) {
-      const k = e.origem === "venda_loja" ? "Venda da loja" : (e.socio || (e.origem === "outro" ? "Outro" : "Sócio não informado"));
+      const k = e.origem === "venda_loja" ? "Loja (lucro / distribuição)" : (e.socio || (e.origem === "outro" ? "Outro" : "Sócio não informado"));
       m[k] = (m[k] ?? 0) + Number(e.valor);
     }
     return Object.entries(m).sort((a, b) => b[1] - a[1]);
@@ -221,15 +221,15 @@ export default function CaixaImplantacao<T extends DespesaCaixa>({
   return (
     <div className="space-y-5">
       <div className="rounded-2xl p-4 text-xs leading-relaxed" style={{ ...sectionBg, color: "#9ca3af" }}>
-        Este é o <b className="text-white">caixa da implantação</b>, separado do Fluxo de Caixa. Entram aqui os aportes de cada sócio e o
-        dinheiro da venda da loja usado na implantação. Saem só as baixas das despesas de implantação: parcelas de cartão e PIX pagos.
+        Este é o <b className="text-white">caixa da implantação</b>, separado do Fluxo de Caixa. Entram aqui o dinheiro da loja (lucro que seria
+        distribuído) e, se houver, aportes de sócios. Saem só as baixas das despesas de implantação: parcelas de cartão e PIX pagos.
         Para dar baixa, use a lista <b className="text-white">A pagar</b> abaixo ou a aba Despesas.
       </div>
 
       {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: "Entradas (aportes + venda)", value: kpi.entr, color: "#10b981", sub: `${entradas.length} lançamento(s)` },
+          { label: "Entradas (loja + aportes)", value: kpi.entr, color: "#10b981", sub: `${entradas.length} lançamento(s)` },
           { label: "Pagamentos realizados", value: kpi.pago, color: "#f87171", sub: `Cartão ${brl(kpi.pagoCartao)} · PIX e outros ${brl(kpi.pagoOutros)}` },
           { label: "Saldo do caixa", value: kpi.saldo, color: kpi.saldo >= 0 ? "#10b981" : "#ef4444", sub: kpi.saldo >= 0 ? "Entradas cobrem os pagamentos" : "Faltam entradas para cobrir o que já foi pago" },
           { label: "A pagar (cartão pendente)", value: kpi.aPagar, color: "#3b82f6", sub: `${pendentes.length} parcela(s)` },
@@ -246,7 +246,7 @@ export default function CaixaImplantacao<T extends DespesaCaixa>({
       <div className="rounded-2xl overflow-hidden" style={sectionBg}>
         <div className="px-4 pt-4 pb-2">
           <p className="text-sm font-bold text-white">📅 Mês a mês</p>
-          <p className="text-[11px] mt-0.5" style={{ color: "#6b7280" }}>Quanto foi pago em cada mês e quanto entrou para cobrir. Use para saber quanto cada sócio precisa aportar.</p>
+          <p className="text-[11px] mt-0.5" style={{ color: "#6b7280" }}>Quanto foi pago em cada mês e quanto a loja colocou para cobrir. A coluna A vencer mostra quanto vai sair nos próximos meses.</p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -282,7 +282,7 @@ export default function CaixaImplantacao<T extends DespesaCaixa>({
           <div className="flex items-center justify-between gap-3 px-4 pt-4 pb-2">
             <div>
               <p className="text-sm font-bold text-white">💵 Entradas do caixa</p>
-              <p className="text-[11px] mt-0.5" style={{ color: "#6b7280" }}>Aportes dos sócios e dinheiro da venda da loja</p>
+              <p className="text-[11px] mt-0.5" style={{ color: "#6b7280" }}>Dinheiro da loja (lucro / distribuição) e aportes de sócios</p>
             </div>
             <button onClick={openNew} className="rounded-xl px-4 py-2 text-xs font-bold text-white hover:opacity-90" style={{ background: "#10b981" }}>
               + Nova entrada
@@ -299,7 +299,7 @@ export default function CaixaImplantacao<T extends DespesaCaixa>({
                 {loading && <tr><td colSpan={5} className="text-center py-8" style={{ color: "#6b7280" }}>Carregando…</td></tr>}
                 {!loading && entradas.length === 0 && (
                   <tr><td colSpan={5} className="text-center py-8 px-4" style={{ color: "#6b7280" }}>
-                    Nenhuma entrada ainda. Lance o dinheiro da venda da loja que pagou o primeiro mês e os aportes de cada sócio.
+                    Nenhuma entrada ainda. Lance o dinheiro da loja que pagou cada mês e, se houver, os aportes de sócios.
                   </td></tr>
                 )}
                 {[...entradas].reverse().map(e => (
@@ -336,7 +336,7 @@ export default function CaixaImplantacao<T extends DespesaCaixa>({
         <div className="rounded-2xl p-4" style={sectionBg}>
           <p className="text-sm font-bold text-white mb-3">👥 Quem colocou dinheiro</p>
           {porSocio.length === 0 ? (
-            <p className="text-xs" style={{ color: "#6b7280" }}>As entradas aparecem aqui somadas por sócio e pela venda da loja.</p>
+            <p className="text-xs" style={{ color: "#6b7280" }}>As entradas aparecem aqui somadas: loja e cada sócio.</p>
           ) : (
             <div className="space-y-3">
               {porSocio.map(([nome, v]) => (
@@ -482,7 +482,7 @@ export default function CaixaImplantacao<T extends DespesaCaixa>({
               <div>
                 <label htmlFor="ci-desc" className="block text-[10px] font-semibold mb-1" style={{ color: "#6b7280" }}>Descrição *</label>
                 <input id="ci-desc" type="text" value={form.descricao} onChange={ev => setForm(f => ({ ...f, descricao: ev.target.value }))}
-                  placeholder={form.origem === "venda_loja" ? "Ex: Venda da loja — pagamento do 1º mês" : "Ex: Aporte para fatura do cartão de agosto"}
+                  placeholder={form.origem === "venda_loja" ? "Ex: Loja — pagamento da fatura do cartão de novembro" : "Ex: Aporte para fatura do cartão de agosto"}
                   className="w-full rounded-xl px-3 py-2 text-sm text-white border focus:outline-none" style={inputStyle} />
               </div>
               <div>
