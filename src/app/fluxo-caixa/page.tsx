@@ -14,7 +14,7 @@ type LedgerEntry = {
   description: string;
   category: string;
   amount: number;
-  source: "venda" | "recebimento" | "despesa_loja" | "despesa_veiculo" | "despesa_implantacao";
+  source: "venda" | "recebimento" | "despesa_loja" | "despesa_veiculo";
   saldo: number;
   lancado_por?: string | null;
   editado_por?: string | null;
@@ -51,7 +51,6 @@ const PAYMENT_METHODS = [
 
 const SOURCE_LABEL: Record<string, string> = {
   venda: "Venda", recebimento: "Recebimento", despesa_loja: "Despesa Loja", despesa_veiculo: "Despesa Veículo",
-  despesa_implantacao: "Despesa Implantação",
 };
 
 const EMPTY_FORM = {
@@ -380,7 +379,8 @@ export default function FluxoCaixaPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-black text-white">💵 Fluxo de Caixa</h1>
-          <p className="text-sm mt-1" style={{ color: "#6b7280" }}>Entradas, saídas e saldo em tempo real</p>
+          <p className="text-sm mt-1" style={{ color: "#6b7280" }}>Despesas fixas, lucro das vendas e aportes. A implantação tem caixa próprio em{" "}
+            <Link href="/despesas-implantacao" className="underline hover:text-white">Implantação</Link>.</p>
         </div>
         <button onClick={openNew}
           className="rounded-xl px-5 py-2.5 text-sm font-bold text-white hover:opacity-90"
@@ -571,10 +571,6 @@ export default function FluxoCaixaPage() {
                         <Link href="/vendas" title="Corrigir na tela de Vendas (valor da venda, compra e despesas do carro formam o lucro)"
                           className="rounded-lg px-2 py-1 text-xs font-semibold hover:opacity-80 whitespace-nowrap"
                           style={{ background: "#1f2937", color: "#9ca3af" }}>✏️ Vendas</Link>
-                      ) : e.source === "despesa_implantacao" ? (
-                        <Link href="/despesas-implantacao" title="Corrigir na tela de Despesas de Implantação"
-                          className="rounded-lg px-2 py-1 text-xs font-semibold hover:opacity-80 whitespace-nowrap"
-                          style={{ background: "#1f2937", color: "#9ca3af" }}>✏️ Implantação</Link>
                       ) : (
                         <span className="text-[10px]" style={{ color: "#374151" }}>—</span>
                       )}

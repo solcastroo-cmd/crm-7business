@@ -10,55 +10,11 @@ type Entry = {
   description: string;
   category: string;
   amount: number;
-  source: "venda" | "recebimento" | "despesa_loja" | "despesa_veiculo" | "despesa_implantacao";
+  source: "venda" | "recebimento" | "despesa_loja" | "despesa_veiculo";
   status: "pago" | "pendente";
   lancado_por?: string | null;
   editado_por?: string | null;
 };
-
-const IMPLANTACAO_CAT_LABEL: Record<string, string> = {
-  ativo_imobilizado: "Ativo Imobilizado",
-  uso_e_consumo: "Uso e Consumo",
-  outros: "Outros",
-};
-
-function addMonths(iso: string, n: number) {
-  const d = new Date(iso + "T12:00:00");
-  d.setMonth(d.getMonth() + n);
-  return d.toISOString().split("T")[0];
-}
-
-type DespesaImplantacao = {
-  id: string;
-  descricao: string;
-  categoria: string;
-  valor: number;
-  data_despesa: string;
-  forma_pagamento?: string;
-  parcelas?: number;
-  valor_parcela?: number;
-  data_vencimento?: string;
-  parcelas_pagas?: number[];
-  lancado_por?: string | null;
-  editado_por?: string | null;
-};
-
-function expandParcelasImplantacao(d: DespesaImplantacao) {
-  const parcelas = d.parcelas ?? 1;
-  const pagas = d.parcelas_pagas ?? [];
-  if (d.forma_pagamento === "cartao_credito" && d.data_vencimento && parcelas > 1) {
-    const valorParcela = d.valor_parcela ?? Number(d.valor) / parcelas;
-    return Array.from({ length: parcelas }, (_, i) => ({
-      date: addMonths(d.data_vencimento!, i),
-      valor: Number(valorParcela),
-      label: `${d.descricao} (parcela ${i + 1}/${parcelas})`,
-      parcela: i + 1,
-      paga: pagas.includes(i + 1),
-    }));
-  }
-  const dataBase = d.forma_pagamento === "cartao_credito" && d.data_vencimento ? d.data_vencimento : d.data_despesa;
-  return [{ date: dataBase, valor: Number(d.valor), label: d.descricao, parcela: 1, paga: pagas.includes(1) }];
-}
 
 /* ── GET — ledger unificado (entradas + saídas) com saldo corrido ── */
 export async function GET(req: NextRequest) {
@@ -66,17 +22,16 @@ export async function GET(req: NextRequest) {
   const dateFrom = url.searchParams.get("dateFrom") ?? "";
   const dateTo   = url.searchParams.get("dateTo") ?? "";
 
-  const [incomeRes, salesRes, storeExpRes, vehicleExpRes, bankRes, vehiclesRes, implantacaoRes] = await Promise.all([
+  const [incomeRes, salesRes, storeExpRes, vehicleExpRes, bankRes, vehiclesRes] = await Promise.all([
     supabaseAdmin.from("store_income").select("*").order("date", { ascending: true }),
     supabaseAdmin.from("sales").select("id,vehicle_id,total_value,closing_date,status,buyer_name").order("closing_date", { ascending: true }),
     supabaseAdmin.from("store_expenses").select("*").order("date", { ascending: true }),
     supabaseAdmin.from("vehicle_expenses").select("id,vehicle_id,date,category,description,amount").order("date", { ascending: true }),
     supabaseAdmin.from("bank_accounts").select("id,name,balance,reference_date").order("created_at", { ascending: true }),
     supabaseAdmin.from("vehicles").select("id,brand,model,purchase_price"),
-    supabaseAdmin.from("despesas_implantacao").select("id,descricao,categoria,valor,data_despesa,forma_pagamento,parcelas,valor_parcela,data_vencimento,parcelas_pagas,lancado_por,editado_por"),
   ]);
 
-  for (const [label, res] of Object.entries({ income: incomeRes, sales: salesRes, storeExp: storeExpRes, vehicleExp: vehicleExpRes, bank: bankRes, vehicles: vehiclesRes, implantacao: implantacaoRes })) {
+  for (const [label, res] of Object.entries({ income: incomeRes, sales: salesRes, storeExp: storeExpRes, vehicleExp: vehicleExpRes, bank: bankRes, vehicles: vehiclesRes })) {
     if (res.error) console.error(`[fluxo-caixa] ${label} query error:`, res.error.message);
   }
 
@@ -129,18 +84,8 @@ export async function GET(req: NextRequest) {
   // despesas de veículo (funilaria, pneus, etc.) não entram soltas no fluxo de caixa —
   // ficam só no módulo Financeiro e entram aqui embutidas no Lucro/Prejuízo, no fechamento da venda
 
-  // despesas de implantação só entram no fluxo de caixa quando a parcela é dada baixa
-  for (const d of (implantacaoRes.data ?? []) as DespesaImplantacao[]) {
-    for (const item of expandParcelasImplantacao(d)) {
-      if (!item.paga) continue;
-      entries.push({
-        id: `${d.id}-p${item.parcela}`, date: item.date, type: "saida",
-        description: item.label, category: IMPLANTACAO_CAT_LABEL[d.categoria] ?? d.categoria,
-        amount: item.valor, source: "despesa_implantacao", status: "pago",
-        lancado_por: d.lancado_por, editado_por: d.editado_por,
-      });
-    }
-  }
+  // despesas de implantação (cartão/pix) NÃO entram no fluxo de caixa: elas têm caixa
+  // próprio no módulo Implantação, pago por aportes dos sócios e pela venda da loja
 
   entries.sort((a, b) => a.date.localeCompare(b.date));
 

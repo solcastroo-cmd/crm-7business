@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { getSupabaseBrowser } from "@/lib/supabaseBrowser";
 import { ResponsavelPicker, LancadoPor } from "@/components/ResponsavelPicker";
+import CaixaImplantacao from "./CaixaImplantacao";
 
 const supabase = getSupabaseBrowser();
 
@@ -313,7 +314,7 @@ function printReport(
 export default function DespesasImplantacaoPage() {
   const [userId, setUserId]       = useState<string | null>(null);
   const [storeName, setStoreName] = useState("CRM 7Business");
-  const [tab, setTab]             = useState<"lista" | "relatorio">("lista");
+  const [tab, setTab]             = useState<"lista" | "caixa" | "relatorio">("lista");
 
   const [despesas, setDespesas] = useState<Despesa[]>([]);
   const [loading, setLoading]   = useState(true);
@@ -536,12 +537,12 @@ export default function DespesasImplantacaoPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-6 border-b" style={{ borderColor: "#1f2937" }}>
-        {(["lista", "relatorio"] as const).map(t => (
+      <div className="flex gap-1 mb-6 border-b overflow-x-auto" style={{ borderColor: "#1f2937" }}>
+        {(["lista", "caixa", "relatorio"] as const).map(t => (
           <button key={t} onClick={() => setTab(t)}
-            className="px-5 py-3 text-sm font-semibold capitalize transition-all"
+            className="px-5 py-3 text-sm font-semibold transition-all whitespace-nowrap"
             style={TAB_STYLE(tab === t)}>
-            {t === "lista" ? "📋 Despesas" : "📄 Relatório"}
+            {t === "lista" ? "📋 Despesas" : t === "caixa" ? "💰 Caixa da Implantação" : "📄 Relatório"}
           </button>
         ))}
       </div>
@@ -680,6 +681,10 @@ export default function DespesasImplantacaoPage() {
           )}
 
           {/* ══ TAB RELATÓRIO ══ */}
+          {tab === "caixa" && (
+            <CaixaImplantacao despesas={despesas} userId={userId} onBaixa={toggleBaixa} />
+          )}
+
           {tab === "relatorio" && (
             <div className="space-y-5">
               {/* Filtros */}
