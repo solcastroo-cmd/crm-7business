@@ -78,6 +78,93 @@ function parcelasDe<T extends DespesaCaixa>(d: T): Parcela<T>[] {
   return [{ date, valor: Number(d.valor), label: d.descricao, parcela: 1, total: 1, paga: pagas.includes(1), despesa: d }];
 }
 
+function esc(t: string) {
+  return t.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c] as string));
+}
+
+function nomeOrigem(e: Entrada) {
+  return e.origem === "venda_loja" ? "Loja (lucro / distribuição)" : (e.socio || (e.origem === "outro" ? "Outro" : "Sócio não informado"));
+}
+
+function imprimirRelatorio(
+  entradas: Entrada[],
+  meses: { mes: string; pago: number; entrada: number; aVencer: number; saldoMes: number; acumulado: number }[],
+  kpi: { entr: number; pago: number; aPagar: number; saldo: number },
+) {
+  const win = window.open("", "_blank");
+  if (!win) return;
+  const ord = [...entradas].sort((a, b) => a.data.localeCompare(b.data));
+  const quem: Record<string, number> = {};
+  const mat: Record<string, Record<string, number>> = {};
+  for (const e of ord) {
+    const k = nomeOrigem(e);
+    quem[k] = (quem[k] ?? 0) + Number(e.valor);
+    const m = e.data.slice(0, 7);
+    (mat[m] ??= {})[k] = (mat[m][k] ?? 0) + Number(e.valor);
+  }
+  const nomes = Object.entries(quem).sort((a, b) => b[1] - a[1]).map(([n]) => n);
+  const curto = (n: string) => n.startsWith("Loja") ? "Loja" : n.split(" ")[0];
+  const pct = (v: number) => kpi.entr ? `${(v / kpi.entr * 100).toFixed(1)}%` : "—";
+
+  const quemRows = nomes.map(n => `<tr><td>${esc(n)}</td><td class="r">${brl(quem[n])}</td><td class="r">${pct(quem[n])}</td></tr>`).join("");
+  const matHead = nomes.map(n => `<th class="r">${esc(curto(n))}</th>`).join("");
+  const matRows = Object.keys(mat).sort().map(m => {
+    const tot = Object.values(mat[m]).reduce((a, b) => a + b, 0);
+    return `<tr><td>${monthLabel(m)}</td>${nomes.map(n => `<td class="r">${mat[m][n] ? brl(mat[m][n]) : "—"}</td>`).join("")}<td class="r b">${brl(tot)}</td></tr>`;
+  }).join("");
+  const matTot = nomes.map(n => `<td class="r">${brl(quem[n])}</td>`).join("");
+  const entRows = ord.map(e => `<tr><td>${fmtDate(e.data)}</td><td>${ORIGEM_LABEL[e.origem]}</td><td>${esc(e.socio ?? "—")}</td><td>${esc(e.descricao)}</td><td class="r">${brl(Number(e.valor))}</td></tr>`).join("");
+  const mesRows = meses.filter(m => m.entrada || m.pago).map(m => `<tr><td>${monthLabel(m.mes)}</td><td class="r">${m.entrada ? brl(m.entrada) : "—"}</td><td class="r">${m.pago ? brl(m.pago) : "—"}</td><td class="r">${brl(m.saldoMes)}</td><td class="r b">${brl(m.acumulado)}</td></tr>`).join("");
+  const futRows = meses.filter(m => m.aVencer && !m.pago).map(m => `<tr><td>${monthLabel(m.mes)}</td><td class="r">${brl(m.aVencer)}</td></tr>`).join("");
+
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"/>
+  <title>Caixa da Implantação — entradas</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:Arial,sans-serif;padding:28px;color:#1a1a1a;font-size:12px}
+    h1{font-size:19px;color:#8b1e2d;font-weight:800}
+    .sub{font-size:11px;color:#666;margin:4px 0 14px}
+    h2{font-size:13px;margin:18px 0 6px;color:#222}
+    .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+    .kpi{border:1px solid #ddd;border-radius:6px;padding:8px 10px}
+    .kpi:first-child{border-color:#8b1e2d}
+    .kpi span{display:block;font-size:10px;color:#666}
+    .kpi b{font-size:15px}
+    table{width:100%;border-collapse:collapse;font-size:11px}
+    th{background:#8b1e2d;color:#fff;padding:6px 8px;text-align:left;font-size:10px}
+    td{padding:5px 8px;border-bottom:1px solid #eee}
+    .r{text-align:right}.b{font-weight:700}
+    tfoot td{background:#f3e3e6;font-weight:700}
+    .nota{font-size:10px;color:#777;margin-top:14px}
+    @media print{body{padding:0}}
+  </style></head><body>
+    <h1>Caixa da Implantação</h1>
+    <p class="sub">Relatório de entradas · Gerado em ${new Date().toLocaleDateString("pt-BR")} · Separado do Fluxo de Caixa</p>
+    <div class="kpis">
+      <div class="kpi"><span>Entradas</span><b>${brl(kpi.entr)}</b></div>
+      <div class="kpi"><span>Pagamentos realizados</span><b>${brl(kpi.pago)}</b></div>
+      <div class="kpi"><span>Saldo do caixa</span><b>${brl(kpi.saldo)}</b></div>
+      <div class="kpi"><span>A pagar (cartão)</span><b>${brl(kpi.aPagar)}</b></div>
+    </div>
+    <h2>Quem colocou dinheiro</h2>
+    <table><thead><tr><th>Origem</th><th class="r">Valor</th><th class="r">%</th></tr></thead>
+      <tbody>${quemRows}</tbody><tfoot><tr><td>Total</td><td class="r">${brl(kpi.entr)}</td><td class="r">100%</td></tr></tfoot></table>
+    <h2>Quem aportou em cada mês</h2>
+    <table><thead><tr><th>Mês</th>${matHead}<th class="r">Total</th></tr></thead>
+      <tbody>${matRows}</tbody><tfoot><tr><td>Total</td>${matTot}<td class="r">${brl(kpi.entr)}</td></tr></tfoot></table>
+    <h2>Entradas lançadas</h2>
+    <table><thead><tr><th>Data</th><th>Origem</th><th>Sócio</th><th>Descrição</th><th class="r">Valor</th></tr></thead>
+      <tbody>${entRows}</tbody><tfoot><tr><td colspan="4">Total</td><td class="r">${brl(kpi.entr)}</td></tr></tfoot></table>
+    <h2>Mês a mês: entradas x pagamentos</h2>
+    <table><thead><tr><th>Mês</th><th class="r">Entradas</th><th class="r">Pago no mês</th><th class="r">Saldo do mês</th><th class="r">Saldo acumulado</th></tr></thead>
+      <tbody>${mesRows}</tbody></table>
+    ${futRows ? `<h2>Próximos vencimentos do cartão</h2><table><thead><tr><th>Mês</th><th class="r">Valor</th></tr></thead><tbody>${futRows}</tbody><tfoot><tr><td>Total a pagar</td><td class="r">${brl(kpi.aPagar)}</td></tr></tfoot></table>` : ""}
+    <p class="nota">Pagamentos realizados = parcelas de cartão e PIX com baixa dada. Saldo do caixa = entradas − pagamentos realizados.</p>
+  </body></html>`);
+  win.document.close();
+  win.print();
+}
+
 const EMPTY = {
   data: new Date().toISOString().split("T")[0],
   origem: "venda_loja" as Entrada["origem"],
@@ -132,7 +219,7 @@ export default function CaixaImplantacao<T extends DespesaCaixa>({
   const porSocio = useMemo(() => {
     const m: Record<string, number> = {};
     for (const e of entradas) {
-      const k = e.origem === "venda_loja" ? "Loja (lucro / distribuição)" : (e.socio || (e.origem === "outro" ? "Outro" : "Sócio não informado"));
+      const k = nomeOrigem(e);
       m[k] = (m[k] ?? 0) + Number(e.valor);
     }
     return Object.entries(m).sort((a, b) => b[1] - a[1]);
@@ -295,6 +382,13 @@ export default function CaixaImplantacao<T extends DespesaCaixa>({
 
   return (
     <div className="space-y-5">
+      <div className="flex justify-end">
+        <button onClick={() => imprimirRelatorio(entradas, meses, kpi)} disabled={loading}
+          className="rounded-xl px-4 py-2 text-xs font-bold hover:opacity-90 disabled:opacity-50"
+          style={{ background: "#1f2937", color: "#e5e7eb", border: "1px solid #374151" }}>
+          📄 Relatório de entradas (PDF)
+        </button>
+      </div>
       <div className="rounded-2xl p-4 text-xs leading-relaxed" style={{ ...sectionBg, color: "#9ca3af" }}>
         Este é o <b className="text-white">caixa da implantação</b>, separado do Fluxo de Caixa. Entram aqui o dinheiro da loja (lucro que seria
         distribuído) e, se houver, aportes de sócios. Saem só as baixas das despesas de implantação: parcelas de cartão e PIX pagos.
