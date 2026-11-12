@@ -3,5 +3,5 @@ export const STORE_EXPENSE_CATEGORIES = [
   "Aluguel", "Água/Luz/Internet", "Salários", "Pró-labore", "Distribuição de Lucros", "Benefícios (VT/VR)",
   "Marketing — OLX", "Marketing — Webmotors", "Marketing — Na Pista", "Marketing — Tráfego Pago",
   "CRM/Software", "Taxas Bancárias", "Contabilidade", "Imposto", "IPTU", "Segurança", "Uso e Consumo",
-  "Combustível Operacional", "Outros",
+  "Combustível Operacional", "Pagamento Cartão Implantação", "Outros",
 ];
