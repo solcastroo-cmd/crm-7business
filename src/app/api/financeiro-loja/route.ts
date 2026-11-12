@@ -3,6 +3,14 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const dynamic = "force-dynamic";
 
+// pró-labore: descobre o sócio pela descrição quando não vier informado (PH/Paulo, Eduardo/Dudu)
+function inferirSocio(category?: string, description?: string): string | null {
+  if (category !== "Pró-labore" || !description) return null;
+  if (/\b(PH|PAULO)\b/i.test(description)) return "Paulo Henrique";
+  if (/(EDUARDO|DUDU)/i.test(description)) return "Eduardo Maia";
+  return null;
+}
+
 /* ── GET — lista despesas + consolidado opcional ── */
 export async function GET(req: NextRequest) {
   const url = req.nextUrl;
@@ -47,7 +55,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const {
     store_id, date, description, category, amount,
-    payment_method, status, receipt_url, notes, lancado_por,
+    payment_method, status, receipt_url, notes, lancado_por, socio,
   } = body;
 
   if (!description || !category || !amount) {
@@ -70,6 +78,7 @@ export async function POST(req: NextRequest) {
       receipt_url: receipt_url ?? null,
       notes: notes ?? null,
       lancado_por: lancado_por ?? null,
+      socio: socio || inferirSocio(category, description),
     })
     .select()
     .single();
@@ -86,11 +95,15 @@ export async function PATCH(req: NextRequest) {
 
   const allowed = [
     "date","description","category","amount",
-    "payment_method","status","receipt_url","notes","editado_por",
+    "payment_method","status","receipt_url","notes","editado_por","socio",
   ];
   const payload: Record<string, unknown> = {};
   for (const k of allowed) {
     if (fields[k] !== undefined) payload[k] = fields[k];
+  }
+  if (payload.socio === undefined && (fields.description !== undefined || fields.category !== undefined)) {
+    const inferido = inferirSocio(fields.category, fields.description);
+    if (inferido) payload.socio = inferido;
   }
 
   const { data, error } = await supabaseAdmin

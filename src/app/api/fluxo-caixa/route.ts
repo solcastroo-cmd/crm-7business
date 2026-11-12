@@ -79,7 +79,7 @@ export async function GET(req: NextRequest) {
       id: e.id, date: e.date, type: "saida",
       description: e.description, category: e.category,
       amount: Number(e.amount), source: "despesa_loja", status: "pago",
-      lancado_por: e.lancado_por, editado_por: e.editado_por, notes: e.notes ?? null,
+      lancado_por: e.lancado_por, editado_por: e.editado_por, notes: e.notes ?? null, socio: e.socio ?? null,
     });
   }
 

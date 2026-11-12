@@ -84,6 +84,30 @@ function mesLabel(k: string) {
   return `${MESES_CURTOS[parseInt(m) - 1]}/${y.slice(2)}`;
 }
 
+const PROLABORE_CATEGORY = "Pró-labore";
+function socioDoProlabore(e: LedgerEntry) {
+  if (e.socio) return e.socio;
+  if (/\b(PH|PAULO)\b/i.test(e.description)) return "Paulo Henrique";
+  if (/(EDUARDO|DUDU)/i.test(e.description)) return "Eduardo Maia";
+  return "Não informado";
+}
+// pró-labore (comissão) recebido por sócio, no total e por mês
+function prolaborePorSocio(entries: LedgerEntry[]) {
+  const itens = entries.filter(e => e.type === "saida" && e.category === PROLABORE_CATEGORY)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const tot: Record<string, number> = {};
+  const mat: Record<string, Record<string, number>> = {};
+  for (const e of itens) {
+    const k = socioDoProlabore(e);
+    tot[k] = (tot[k] ?? 0) + Number(e.amount);
+    const m = e.date.slice(0, 7);
+    (mat[m] ??= {})[k] = (mat[m][k] ?? 0) + Number(e.amount);
+  }
+  const ordem = ["Paulo Henrique", "Eduardo Maia"];
+  const nomes = [...ordem.filter(n => tot[n]), ...Object.keys(tot).filter(n => !ordem.includes(n)).sort()];
+  return { itens, nomes, tot, mat, total: itens.reduce((s, e) => s + Number(e.amount), 0) };
+}
+
 const DISTRIBUICAO_CATEGORY = "Distribuição de Lucros";
 function distribuicoes(entries: LedgerEntry[]) {
   const itens = entries.filter(e => e.type === "saida" && e.category === DISTRIBUICAO_CATEGORY)
@@ -165,6 +189,25 @@ function printLedgerReport(
         <tr><td style="font-weight:700;background:#f3f4f6">Total</td>${ap.nomes.map(n => `<td style="text-align:right;font-weight:700;background:#f3f4f6">${brl(ap.tot[n])}</td>`).join("")}<td style="text-align:right;font-weight:800;background:#f3f4f6">${brl(ap.total)}</td></tr></tbody>
     </table>`;
 
+  const pl = prolaborePorSocio(ledger);
+  const plHtml = pl.itens.length === 0 ? "" : `
+    <div class="section-title">Comissão / pró-labore por sócio</div>
+    <table>
+      <thead><tr><th>Sócio</th><th style="text-align:right">Recebeu</th><th style="text-align:right">%</th></tr></thead>
+      <tbody>${pl.nomes.map(n => `<tr><td>${n}</td><td style="text-align:right;font-weight:700">${brl(pl.tot[n])}</td><td style="text-align:right">${pl.total ? (pl.tot[n] / pl.total * 100).toFixed(1) : "0"}%</td></tr>`).join("")}
+        <tr><td style="font-weight:700;background:#f3f4f6">Total</td><td style="text-align:right;font-weight:800;background:#f3f4f6">${brl(pl.total)}</td><td style="text-align:right;background:#f3f4f6">100%</td></tr></tbody>
+    </table>
+    <div class="section-title">Comissão / pró-labore por mês</div>
+    <table>
+      <thead><tr><th>Mês</th>${pl.nomes.map(n => `<th style="text-align:right">${n.split(" ")[0]}</th>`).join("")}<th style="text-align:right">Total</th></tr></thead>
+      <tbody>${Object.keys(pl.mat).sort().map(m => `<tr><td>${mesLabel(m)}</td>${pl.nomes.map(n => `<td style="text-align:right">${pl.mat[m][n] ? brl(pl.mat[m][n]) : "—"}</td>`).join("")}<td style="text-align:right;font-weight:700">${brl(Object.values(pl.mat[m]).reduce((a, b) => a + b, 0))}</td></tr>`).join("")}
+        <tr><td style="font-weight:700;background:#f3f4f6">Total</td>${pl.nomes.map(n => `<td style="text-align:right;font-weight:700;background:#f3f4f6">${brl(pl.tot[n])}</td>`).join("")}<td style="text-align:right;font-weight:800;background:#f3f4f6">${brl(pl.total)}</td></tr></tbody>
+    </table>
+    <div class="section-title">Comissão / pró-labore — lançamentos</div>
+    <table>
+      <thead><tr><th>Data</th><th>Sócio</th><th>Lançamento</th><th>Venda / observação</th><th style="text-align:right">Valor</th></tr></thead>
+      <tbody>${pl.itens.map(e => `<tr><td>${fmtDate(e.date)}</td><td>${socioDoProlabore(e)}</td><td>${e.description}</td><td style="color:#555">${e.notes ?? ""}</td><td style="text-align:right;font-weight:700">${brl(e.amount)}</td></tr>`).join("")}</tbody>
+    </table>`;
   const dist = distribuicoes(ledger);
   const distHtml = dist.itens.length === 0 ? "" : `
     <div class="section-title">Distribuição de Lucros — de onde veio</div>
@@ -209,6 +252,7 @@ function printLedgerReport(
     </div>
 
     ${aporteHtml}
+    ${plHtml}
     ${distHtml}
 
     <div class="section-title">Resumo por Categoria</div>
@@ -795,6 +839,74 @@ export default function FluxoCaixaPage() {
                     </tbody>
                   </table>
                 </div>
+              </div>
+            );
+          })()}
+
+          {/* Comissão / pró-labore por sócio */}
+          {(() => {
+            const pl = prolaborePorSocio(filtered);
+            if (!pl.itens.length) return null;
+            return (
+              <div className="rounded-2xl overflow-hidden" style={sectionBg}>
+                <div className="px-4 pt-4 pb-2">
+                  <p className="text-sm font-bold text-white">💼 Comissão / pró-labore por sócio</p>
+                  <p className="text-[11px] mt-0.5" style={{ color: "#6b7280" }}>Quanto cada sócio recebeu no período: {pl.itens.length} lançamento(s), {brl(pl.total)}</p>
+                </div>
+                <div className="grid gap-3 px-4 pb-4" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))" }}>
+                  {pl.nomes.map(n => (
+                    <div key={n} className="rounded-xl p-3" style={{ background: "#111827", border: "1px solid #1f2937" }}>
+                      <p className="text-[11px] font-semibold" style={{ color: n === "Não informado" ? "#f59e0b" : "#9ca3af" }}>{n}</p>
+                      <p className="text-lg font-black text-white">{brl(pl.tot[n])}</p>
+                      <p className="text-[10px]" style={{ color: "#6b7280" }}>{pl.total ? (pl.tot[n] / pl.total * 100).toFixed(1) : "0"}% do total</p>
+                    </div>
+                  ))}
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr style={{ borderBottom: "1px solid #1f2937", background: "#111827" }}>
+                        {["Mês", ...pl.nomes.map(n => n.split(" ")[0]), "Total"].map(h => (
+                          <th key={h} className="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wider" style={{ color: "#6b7280" }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Object.keys(pl.mat).sort().map(m => (
+                        <tr key={m} style={{ borderBottom: "1px solid #1f293740" }}>
+                          <td className="px-4 py-2.5 font-semibold text-white">{mesLabel(m)}</td>
+                          {pl.nomes.map(n => (
+                            <td key={n} className="px-4 py-2.5" style={{ color: pl.mat[m][n] ? "#f59e0b" : "#374151" }}>{pl.mat[m][n] ? brl(pl.mat[m][n]) : "—"}</td>
+                          ))}
+                          <td className="px-4 py-2.5 font-bold text-white">{brl(Object.values(pl.mat[m]).reduce((a, b) => a + b, 0))}</td>
+                        </tr>
+                      ))}
+                      <tr style={{ background: "#111827" }}>
+                        <td className="px-4 py-2.5 font-bold text-white">Total</td>
+                        {pl.nomes.map(n => <td key={n} className="px-4 py-2.5 font-bold text-white">{brl(pl.tot[n])}</td>)}
+                        <td className="px-4 py-2.5 font-black text-white">{brl(pl.total)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <details className="px-4 py-3" style={{ borderTop: "1px solid #1f2937" }}>
+                  <summary className="text-xs font-semibold cursor-pointer" style={{ color: "#9ca3af" }}>Ver os {pl.itens.length} lançamentos</summary>
+                  <div className="overflow-x-auto mt-2">
+                    <table className="w-full text-xs">
+                      <tbody>
+                        {pl.itens.map(e => (
+                          <tr key={e.id} style={{ borderBottom: "1px solid #1f293740" }}>
+                            <td className="py-2 pr-3 text-white whitespace-nowrap">{fmtDate(e.date)}</td>
+                            <td className="py-2 pr-3 whitespace-nowrap" style={{ color: "#60a5fa" }}>{socioDoProlabore(e)}</td>
+                            <td className="py-2 pr-3 text-white">{e.description}</td>
+                            <td className="py-2 pr-3" style={{ color: "#9ca3af" }}>{e.notes ?? ""}</td>
+                            <td className="py-2 text-right font-bold whitespace-nowrap" style={{ color: "#f59e0b" }}>{brl(e.amount)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </details>
               </div>
             );
           })()}
