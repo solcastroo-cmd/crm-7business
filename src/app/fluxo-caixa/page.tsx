@@ -19,6 +19,7 @@ type LedgerEntry = {
   lancado_por?: string | null;
   editado_por?: string | null;
   socio?: string | null;
+  notes?: string | null;
 };
 
 type Conta = {
@@ -81,6 +82,13 @@ const MESES_CURTOS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "S
 function mesLabel(k: string) {
   const [y, m] = k.split("-");
   return `${MESES_CURTOS[parseInt(m) - 1]}/${y.slice(2)}`;
+}
+
+const DISTRIBUICAO_CATEGORY = "Distribuição de Lucros";
+function distribuicoes(entries: LedgerEntry[]) {
+  const itens = entries.filter(e => e.type === "saida" && e.category === DISTRIBUICAO_CATEGORY)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  return { itens, total: itens.reduce((s, e) => s + Number(e.amount), 0) };
 }
 
 // soma os aportes de sócio por pessoa e por mês
@@ -157,6 +165,15 @@ function printLedgerReport(
         <tr><td style="font-weight:700;background:#f3f4f6">Total</td>${ap.nomes.map(n => `<td style="text-align:right;font-weight:700;background:#f3f4f6">${brl(ap.tot[n])}</td>`).join("")}<td style="text-align:right;font-weight:800;background:#f3f4f6">${brl(ap.total)}</td></tr></tbody>
     </table>`;
 
+  const dist = distribuicoes(ledger);
+  const distHtml = dist.itens.length === 0 ? "" : `
+    <div class="section-title">Distribuição de Lucros — de onde veio</div>
+    <table>
+      <thead><tr><th>Data</th><th>Lançamento</th><th>De onde veio</th><th style="text-align:right">Valor</th></tr></thead>
+      <tbody>${dist.itens.map(e => `<tr><td>${fmtDate(e.date)}</td><td>${e.description}</td><td style="color:#444">${e.notes || "<span style='color:#d97706'>Origem não informada</span>"}</td><td style="text-align:right;font-weight:700">${brl(e.amount)}</td></tr>`).join("")}
+        <tr><td colspan="3" style="font-weight:700;background:#f3f4f6">Total distribuído</td><td style="text-align:right;font-weight:800;background:#f3f4f6">${brl(dist.total)}</td></tr></tbody>
+    </table>`;
+
   win.document.write(`<!DOCTYPE html><html><head>
     <meta charset="UTF-8"/>
     <title>Fluxo de Caixa — ${storeName}</title>
@@ -192,6 +209,7 @@ function printLedgerReport(
     </div>
 
     ${aporteHtml}
+    ${distHtml}
 
     <div class="section-title">Resumo por Categoria</div>
     <table>
@@ -773,6 +791,45 @@ export default function FluxoCaixaPage() {
                         <td className="px-4 py-2.5 font-bold text-white">Total</td>
                         {ap.nomes.map(n => <td key={n} className="px-4 py-2.5 font-bold text-white">{brl(ap.tot[n])}</td>)}
                         <td className="px-4 py-2.5 font-black text-white">{brl(ap.total)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Distribuição de lucros: de onde veio */}
+          {(() => {
+            const dist = distribuicoes(filtered);
+            if (!dist.itens.length) return null;
+            return (
+              <div className="rounded-2xl overflow-hidden" style={sectionBg}>
+                <div className="px-4 pt-4 pb-2">
+                  <p className="text-sm font-bold text-white">💸 Distribuição de Lucros — de onde veio</p>
+                  <p className="text-[11px] mt-0.5" style={{ color: "#6b7280" }}>{dist.itens.length} lançamento(s), {brl(dist.total)} no período. A origem vem da observação de cada lançamento.</p>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr style={{ borderBottom: "1px solid #1f2937", background: "#111827" }}>
+                        {["Data", "Lançamento", "De onde veio", "Valor"].map(h => (
+                          <th key={h} className="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wider" style={{ color: "#6b7280" }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {dist.itens.map(e => (
+                        <tr key={e.id} style={{ borderBottom: "1px solid #1f293740" }}>
+                          <td className="px-4 py-2.5 text-white whitespace-nowrap">{fmtDate(e.date)}</td>
+                          <td className="px-4 py-2.5 font-semibold text-white">{e.description}</td>
+                          <td className="px-4 py-2.5 text-xs" style={{ color: e.notes ? "#9ca3af" : "#f59e0b", minWidth: 220 }}>{e.notes || "Origem não informada: escreva na observação do lançamento em Fin. da Loja"}</td>
+                          <td className="px-4 py-2.5 font-bold whitespace-nowrap" style={{ color: "#f87171" }}>{brl(e.amount)}</td>
+                        </tr>
+                      ))}
+                      <tr style={{ background: "#111827" }}>
+                        <td className="px-4 py-2.5 font-bold text-white" colSpan={3}>Total distribuído</td>
+                        <td className="px-4 py-2.5 font-black text-white whitespace-nowrap">{brl(dist.total)}</td>
                       </tr>
                     </tbody>
                   </table>

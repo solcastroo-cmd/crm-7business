@@ -15,6 +15,7 @@ type Entry = {
   lancado_por?: string | null;
   editado_por?: string | null;
   socio?: string | null;
+  notes?: string | null;
 };
 
 /* ── GET — ledger unificado (entradas + saídas) com saldo corrido ── */
@@ -44,7 +45,7 @@ export async function GET(req: NextRequest) {
       id: i.id, date: i.date, type: "entrada",
       description: i.description, category: i.category,
       amount: Number(i.amount), source: "recebimento", status: "pago",
-      lancado_por: i.lancado_por, editado_por: i.editado_por, socio: i.socio ?? null,
+      lancado_por: i.lancado_por, editado_por: i.editado_por, socio: i.socio ?? null, notes: i.notes ?? null,
     });
   }
 
@@ -78,7 +79,7 @@ export async function GET(req: NextRequest) {
       id: e.id, date: e.date, type: "saida",
       description: e.description, category: e.category,
       amount: Number(e.amount), source: "despesa_loja", status: "pago",
-      lancado_por: e.lancado_por, editado_por: e.editado_por,
+      lancado_por: e.lancado_por, editado_por: e.editado_por, notes: e.notes ?? null,
     });
   }
 
