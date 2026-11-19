@@ -33,31 +33,53 @@ const INTENTS: LeadIntent[] = ["comprador", "interessado", "curioso", "sem_inter
 // ── Veículo do anúncio ───────────────────────────────────────────────────────
 export type AdVehicle = { id: string | null; label: string };
 
-/** Descobre o carro de um anúncio: tabela meta_ads primeiro, depois casa marca+modelo+ano no texto. */
+type StockVehicle = { id: string; brand: string | null; model: string | null; year: string | number | null };
+
+function stockLabel(v: StockVehicle): string {
+  return `${v.brand} ${String(v.model).trim()} ${v.year ?? ""}`.trim();
+}
+
+/** Carro do estoque citado no texto. strict = exige marca + modelo (+ ano); senão basta o modelo (+ ano). */
+function matchStock(vehicles: StockVehicle[], text: string, strict: boolean): StockVehicle | null {
+  const haystack = text.toLowerCase();
+  if (!haystack.trim()) return null;
+  const matches = vehicles.filter((v) => {
+    const brand = String(v.brand ?? "").trim().toLowerCase();
+    const model = String(v.model ?? "").trim().toLowerCase().replace(new RegExp(`^${brand}\\s+`), "");
+    const word  = model.split(/\s+/)[0];
+    const year  = v.year ? String(v.year) : "";
+    if (!word || word.length < 3 || !haystack.includes(word)) return false;
+    if (strict && (!brand || !haystack.includes(brand))) return false;
+    return !year || haystack.includes(year);
+  });
+  return matches.length === 1 ? matches[0] : null;
+}
+
+/**
+ * Descobre o carro de um anúncio. Ordem:
+ * 1. Carro que o CLIENTE escreveu na mensagem (o anúncio pode ter trocado de carro — ex.: "BF Civic"
+ *    com mensagem do Kia Soul). 2. Tabela meta_ads. 3. Marca+modelo+ano no título/texto do anúncio.
+ */
 export async function resolveAdVehicle(
-  adId:  string,
-  title: string | null,
-  body:  string | null,
+  adId:    string,
+  title:   string | null,
+  body:    string | null,
+  message: string | null = null,
 ): Promise<AdVehicle | null> {
   try {
+    const { data: vehicles } = await supabaseAdmin
+      .from("vehicles").select("id, brand, model, year").eq("status", "disponivel");
+    const stock = (vehicles ?? []) as StockVehicle[];
+
+    const fromMessage = message ? matchStock(stock, message, false) : null;
+    if (fromMessage) return { id: fromMessage.id, label: stockLabel(fromMessage) };
+
     const { data: mapped } = await supabaseAdmin
       .from("meta_ads").select("vehicle_id, vehicle_label").eq("ad_id", adId).maybeSingle();
     if (mapped?.vehicle_label) return { id: mapped.vehicle_id ?? null, label: mapped.vehicle_label };
 
-    const haystack = `${title ?? ""} ${body ?? ""}`.toLowerCase();
-    if (!haystack.trim()) return null;
-
-    const { data: vehicles } = await supabaseAdmin
-      .from("vehicles").select("id, brand, model, year").eq("status", "disponivel");
-    const matches = (vehicles ?? []).filter((v) => {
-      const brand = String(v.brand ?? "").trim().toLowerCase();
-      const word  = String(v.model ?? "").trim().toLowerCase().split(/\s+/)[0];
-      const year  = v.year ? String(v.year) : "";
-      return brand && word && haystack.includes(brand) && haystack.includes(word) && (!year || haystack.includes(year));
-    });
-    if (matches.length !== 1) return null;
-    const v = matches[0];
-    return { id: v.id, label: `${v.brand} ${String(v.model).trim()} ${v.year ?? ""}`.trim() };
+    const fromAd = matchStock(stock, `${title ?? ""} ${body ?? ""}`, true);
+    return fromAd ? { id: fromAd.id, label: stockLabel(fromAd) } : null;
   } catch {
     return null;
   }

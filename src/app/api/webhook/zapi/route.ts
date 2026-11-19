@@ -395,8 +395,8 @@ async function runLeadIntel(ctx: {
 }
 
 // ── Passagem para o vendedor ──────────────────────────────────────────────────
-// O Paulo respondeu uma vez e sinalizou [VENDEDOR:resumo]: desliga a IA no lead, anota o pedido
-// em leads.notes e avisa o vendedor. Daqui em diante só humano responde esse cliente.
+// O Paulo sinalizou [VENDEDOR:resumo]: anota o pedido em leads.notes e avisa o vendedor.
+// O Paulo CONTINUA atendendo: ele só para quando o vendedor escreve na conversa (handoff fromMe).
 async function handoffToSeller(ctx: {
   leadId:  string;
   phone:   string;
@@ -409,8 +409,7 @@ async function handoffToSeller(ctx: {
   const stamp = new Date().toLocaleString("pt-BR", { timeZone: "America/Fortaleza", dateStyle: "short", timeStyle: "short" });
   const line  = `[Paulo → vendedor, ${stamp}] ${ctx.summary}`;
   await supabaseAdmin.from("leads").update({
-    ai_enabled: false,
-    notes:      ctx.notes ? `${ctx.notes}\n${line}` : line,
+    notes: ctx.notes ? `${ctx.notes}\n${line}` : line,
   }).eq("id", ctx.leadId);
   console.log(`[ZAPI] Passagem p/ vendedor — lead:${ctx.leadId} | ${ctx.summary}`);
 
@@ -422,7 +421,7 @@ async function handoffToSeller(ctx: {
       `📱 https://wa.me/55${ctx.phone}`,
       ctx.vehicle ? `🚗 ${ctx.vehicle}` : null,
       `📌 ${ctx.summary}`,
-      `👉 O Paulo parou de responder esse cliente. Assuma a conversa.`,
+      `👉 O Paulo segue atendendo até você escrever na conversa. Quando você responder, ele para.`,
     ].filter(Boolean).join("\n");
     await sendText(s.zapi_instance, s.zapi_token, s.zapi_client_token, s.notify_phone, alerta);
   }
@@ -492,7 +491,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   };
   // Liga o anúncio ao carro do estoque (tabela meta_ads, ou marca+modelo+ano no texto)
   if (adId) {
-    const veh = await resolveAdVehicle(adId, externalAdReply?.title ?? null, externalAdReply?.body ?? null);
+    const veh = await resolveAdVehicle(adId, externalAdReply?.title ?? null, externalAdReply?.body ?? null, textObj?.message ?? null);
     if (veh) {
       if (veh.id) adFields.veiculo_interesse_id = veh.id;
       adFields.vehicle_name = veh.label;
