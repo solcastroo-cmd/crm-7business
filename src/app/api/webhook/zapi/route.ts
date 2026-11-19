@@ -395,8 +395,8 @@ async function runLeadIntel(ctx: {
 }
 
 // ── Passagem para o vendedor ──────────────────────────────────────────────────
-// O Paulo sinalizou [VENDEDOR:resumo]: anota o pedido em leads.notes e avisa o vendedor.
-// O Paulo CONTINUA atendendo: ele só para quando o vendedor escreve na conversa (handoff fromMe).
+// O Paulo respondeu uma vez e sinalizou [VENDEDOR:resumo]: desliga a IA no lead, anota o pedido
+// em leads.notes e avisa o vendedor. Daqui em diante só humano responde esse cliente.
 async function handoffToSeller(ctx: {
   leadId:  string;
   phone:   string;
@@ -409,7 +409,8 @@ async function handoffToSeller(ctx: {
   const stamp = new Date().toLocaleString("pt-BR", { timeZone: "America/Fortaleza", dateStyle: "short", timeStyle: "short" });
   const line  = `[Paulo → vendedor, ${stamp}] ${ctx.summary}`;
   await supabaseAdmin.from("leads").update({
-    notes: ctx.notes ? `${ctx.notes}\n${line}` : line,
+    ai_enabled: false,
+    notes:      ctx.notes ? `${ctx.notes}\n${line}` : line,
   }).eq("id", ctx.leadId);
   console.log(`[ZAPI] Passagem p/ vendedor — lead:${ctx.leadId} | ${ctx.summary}`);
 
@@ -421,7 +422,7 @@ async function handoffToSeller(ctx: {
       `📱 https://wa.me/55${ctx.phone}`,
       ctx.vehicle ? `🚗 ${ctx.vehicle}` : null,
       `📌 ${ctx.summary}`,
-      `👉 O Paulo segue atendendo até você escrever na conversa. Quando você responder, ele para.`,
+      `👉 O Paulo parou de responder esse cliente. Assuma a conversa.`,
     ].filter(Boolean).join("\n");
     await sendText(s.zapi_instance, s.zapi_token, s.zapi_client_token, s.notify_phone, alerta);
   }
