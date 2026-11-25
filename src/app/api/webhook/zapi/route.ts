@@ -237,12 +237,40 @@ function firstName(raw: string | null | undefined): string | null {
   return first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
 }
 
-/** Separa o texto antes das fotos ("Vou te mandar as fotos 👇") do que a IA escreveu depois */
-function splitAtPhotos(text: string): { head: string; tail: string } {
-  const m = /mandar as fotos[^\n]*/i.exec(text);
-  if (!m) return { head: text, tail: "" };
-  const end = m.index + m[0].length;
-  return { head: text.slice(0, end).trim(), tail: text.slice(end).trim() };
+// Convite (visita, horário ou simulação) e pergunta: é o que não pode sair repetido
+const INVITE_RE = /te receber|te esperamos|visita|agendar|marcar|dar um pulo|d[aá] pra vir|consegue vir|quer vir|vem conhecer|qual (dia|hor[aá]rio|fica)|fica melhor|simul|mandar? (mais )?fotos\?|\?/i;
+
+/** Quebra em frases, mantendo as linhas */
+function sentences(line: string): string[] {
+  return line.split(/(?<=[.!?])\s+/).filter((x) => x.trim());
+}
+
+/**
+ * Mensagem que vai ANTES das fotos: só a apresentação. O convite vem uma vez, depois das fotos.
+ * tail = o que foi tirado (só é usado se o convite fixo não sair).
+ */
+function splitInvite(text: string): { head: string; tail: string } {
+  const head: string[] = [];
+  const tail: string[] = [];
+  for (const line of text.split("\n")) {
+    const keep = sentences(line).filter((x) => !INVITE_RE.test(x));
+    const drop = sentences(line).filter((x) => INVITE_RE.test(x));
+    if (keep.length > 0) head.push(keep.join(" "));
+    if (drop.length > 0) tail.push(drop.join(" "));
+  }
+  return { head: head.join("\n").trim() || "Vou te mandar as fotos 👇", tail: tail.join("\n").trim() };
+}
+
+/** A última mensagem da loja já convidou: responde sem repetir o convite, a menos que o cliente fale de dia, hora ou visita */
+function dropRepeatedInvite(reply: string, lastFromStore: string | null, clientMessage: string): string {
+  const repeated = /te receber/i.test(reply) && /te receber/i.test(lastFromStore ?? "");
+  if (!repeated) return reply;
+  const aboutVisit = /\b(hoje|amanh[aã]|segunda|ter[cç]a|quarta|quinta|sexta|s[aá]bado|domingo|manh[aã]|tarde|noite|hor[aá]rio|horas?|dia|visita|ir a[ií]|vou|posso|consigo|\d{1,2} ?(h|:))/i.test(clientMessage);
+  if (aboutVisit) return reply;
+  const kept = reply.split("\n")
+    .map((line) => sentences(line).filter((x) => !/te receber|qual (dia|hor[aá]rio|fica)|fica melhor/i.test(x)).join(" "))
+    .join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  return kept || "Fico no aguardo, qualquer dúvida sobre o carro é só me chamar 😊";
 }
 
 /** Convite para a visita com os dois horários abertos mais próximos */
@@ -879,7 +907,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     // ── 8. Processa tag [VEICULO:uuid] ────────────────────────────────────
     const handoff = parseHandoffTag(rawReply);
-    const { message: cleanReply, vehicleId } = parseVehicleTag(handoff.message);
+    const { message: parsedReply, vehicleId } = parseVehicleTag(handoff.message);
+    const { data: lastOut } = await supabaseAdmin
+      .from("messages").select("text").eq("lead_id", leadId).eq("from_me", true)
+      .order("created_at", { ascending: false }).limit(1).maybeSingle();
+    const cleanReply = dropRepeatedInvite(parsedReply, (lastOut?.text as string | null) ?? null, message);
 
     // Releitura: se o vendedor assumiu enquanto a IA gerava a resposta, não envia nada
     const { data: fresh } = await supabaseAdmin
@@ -890,8 +922,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     // Envia texto — captura messageId para salvar como external_id (previne SentCallback dup)
-    // Com fotos, o texto para em "mandar as fotos": o convite da IA sairia repetido com o convite fixo
-    const { head, tail } = vehicleId && !handoff.summary ? splitAtPhotos(cleanReply) : { head: cleanReply, tail: "" };
+    // Com fotos, vai só a apresentação: o convite sai uma única vez, depois das fotos
+    const { head, tail } = vehicleId && !handoff.summary ? splitInvite(cleanReply) : { head: cleanReply, tail: "" };
     const sentMsgId = await sendText(store.zapi_instance, store.zapi_token, store.zapi_client_token, phone, head);
 
     // Envia fotos se Paulo indicou veículo
@@ -921,8 +953,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         invited = true;
       }
     }
-    // Carro sem fotos (ou convite já enviado antes): manda o restante que a IA escreveu
-    if (tail && !invited) {
+    // Carro sem fotos: o convite fixo não sai, então manda o que a IA escreveu
+    if (tail && !invited && !photoVehicle) {
       const { data: still } = await supabaseAdmin
         .from("leads").select("ai_enabled").eq("id", leadId).maybeSingle();
       if (still?.ai_enabled !== false) {
