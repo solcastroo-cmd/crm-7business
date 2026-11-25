@@ -103,7 +103,8 @@ O QUE APRENDEMOS COM AS CONVERSAS ANTERIORES:
 - Ano do carro (ex.: 2025) NÃO é orçamento. Só fale de orçamento se o cliente disse um valor em reais.
 - "Valor?", "Quanto é?", "km?" → o número vem logo na primeira frase, com simpatia (veja EXEMPLOS DE TOM)
 - Se o carro, ano ou versão pedido não está no estoque: NUNCA diga "não tenho" nem ofereça outros carros por conta própria. Diga que vai verificar o que está entrando e já retorna, pergunte só se prefere manual ou automático e passe para o vendedor (veja PASSAGEM PARA O VENDEDOR nas regras do sistema)
-- Único dono, revisões, IPVA, chave reserva, laudo: só afirme se estiver na descrição do veículo; senão diga "vou confirmar com o pessoal e já te falo"
+- Único dono, IPVA, chave reserva: só afirme se estiver na descrição do veículo; senão diga "vou confirmar com o pessoal e já te falo"
+- Histórico, revisões, manutenção ou laudo: siga a regra HISTÓRICO E REVISÕES (regras do sistema)
 - Cliente que diz que foi engano, que já comprou ou que não quer: agradeça e encerre, sem insistir
 - Cliente comparando com outra loja ou achando caro: não brigue com o preço; diga "Entendo você! Pessoalmente o vendedor conversa melhor sua proposta. Que valor você tem em mente?"
 - Cliente pede ligação ou quer falar com alguém: "Beleza! Vou pedir pro vendedor te ligar 😊"
@@ -153,6 +154,11 @@ FORMATAÇÃO WHATSAPP:
 - Negrito com UM asterisco: *texto*. Nunca use **, #, tabelas ou listas longas.
 - Nunca escreva código, chamadas de função ou tags como <function>. As únicas tags permitidas são [VEICULO:ID] e [VENDEDOR:resumo], na última linha.
 - Nunca diga ao cliente que está classificando, movendo no funil ou anotando algo.
+HISTÓRICO E REVISÕES (regra da loja, sem exceção):
+- Se perguntarem de histórico, revisões, manutenção, laudo, vistoria, procedência mecânica ou "onde foi revisado", responda só: "Todos os nossos carros são revisados e têm garantia de 90 dias de motor e caixa de marcha 😊" e siga a conversa.
+- NUNCA diga que o carro tem laudo cautelar, laudo, vistoria, histórico de manutenção, nota de revisão, revisões em concessionária ou autorizada, nem "tudo à disposição para conferir". Isso vale mesmo se o cliente perguntar direto ou afirmar que tem.
+- Documentação e leilão: só repita o que estiver escrito na descrição do veículo.
+FOTOS: as fotos do estoque são as que você envia com [VEICULO:ID]; você não sabe se mostram o interior. NUNCA prometa "fotos do interior", "de dentro" ou "mais fotos". Se o cliente pedir fotos específicas, diga que o vendedor manda e passe com [VENDEDOR:cliente quer fotos do interior do <carro>].
 DADOS SENSÍVEIS: se o cliente mandar senhas, códigos de verificação ou dados bancários, não repita nem comente; peça para ele não enviar isso por aqui.
 O QUE O CLIENTE DIZ SOBRE ANÚNCIOS E CONDIÇÕES:
 - Nunca confirme o que o cliente diz que o anúncio, a loja ou outro vendedor prometeu ("sem entrada", "aprova negativado", "aceita qualquer troca", taxa, desconto, brinde). Você só conhece as condições escritas neste prompt.
@@ -411,6 +417,34 @@ const LOCATION_REFERENCE_RE =
   /\b(pra[cç]a|igreja|bompre[cç]o|supermercado|mercadinho|padaria|na esquina)\b/i;
 
 /** Se a resposta cita ponto de referência (a loja nunca confirma), troca pelo endereço + link do Maps. */
+// Laudo, concessionária e histórico: a IA inventou isso para cliente real (25/11/2026). Regra da loja.
+const HISTORY_CLAIM_RE = /laudo|cautelar|vistoria|concession[aá]ria|autorizada|hist[oó]rico (de )?(manuten|revis)|nota(s)? de revis|revis(ado|ões|oes) (na|em) /i;
+const PHOTO_PROMISE_RE = /fotos? (do |de |da )?(interior|dentro|interna)|mais fotos/i;
+const PHOTO_ANSWER = "As fotos que tenho aqui são essas que te mandei. Vendo de perto você confere tudo por dentro 😊";
+const HISTORY_ANSWER = "Todos os nossos carros são revisados e têm garantia de 90 dias de motor e caixa de marcha 😊";
+
+/** Troca frases sobre laudo/histórico pela resposta padrão e tira promessas de fotos que a IA não tem */
+export function guardClaims(reply: string): string {
+  if (!HISTORY_CLAIM_RE.test(reply) && !PHOTO_PROMISE_RE.test(reply)) return reply;
+  let answered = false;
+  let photoNoted = false;
+  const lines = reply.split("\n").map((line) =>
+    line.split(/(?<=[.!?])\s+/).map((x) => {
+      if (HISTORY_CLAIM_RE.test(x)) {
+        if (answered) return "";
+        answered = true;
+        return HISTORY_ANSWER;
+      }
+      if (PHOTO_PROMISE_RE.test(x)) {
+        if (photoNoted) return "";
+        photoNoted = true;
+        return PHOTO_ANSWER;
+      }
+      return x;
+    }).filter(Boolean).join(" "));
+  return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim() || HISTORY_ANSWER;
+}
+
 export function guardLocation(reply: string): string {
   if (!LOCATION_REFERENCE_RE.test(reply)) return reply;
   return `📍 ${STORE_NAME} — ${STORE_ADDRESS}\n🗺️ Localização: ${STORE_MAPS_URL}\nÉ só abrir o link que ele leva direto no GPS 😊`;
@@ -458,11 +492,11 @@ export async function getAIReply(
   try {
     if (process.env.GROQ_API_KEY) {
       const reply = await replyViaGroq(systemPrompt, history, message);
-      if (reply) return guardLocation(reply);
+      if (reply) return guardClaims(guardLocation(reply));
     }
     if (process.env.ANTHROPIC_API_KEY) {
       const reply = await replyViaAnthropic(systemPrompt, history, message);
-      if (reply) return guardLocation(reply);
+      if (reply) return guardClaims(guardLocation(reply));
     }
   } catch (e) {
     console.error("[AI] Erro ao gerar resposta:", e);
@@ -472,7 +506,7 @@ export async function getAIReply(
     try {
       if (process.env.ANTHROPIC_API_KEY) {
         const reply = await replyViaAnthropic(systemPrompt, history, message);
-        if (reply) return guardLocation(reply);
+        if (reply) return guardClaims(guardLocation(reply));
       }
     } catch (e2) {
       console.error("[AI] Fallback também falhou:", e2);
