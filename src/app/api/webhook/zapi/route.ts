@@ -32,6 +32,7 @@ import {
   QUALIFIED_MIN_SCORE,
   type CAPIUserData,
 } from "@/lib/capi";
+import { nextVisitSlots } from "@/lib/visitSlots";
 
 export const dynamic = "force-dynamic";
 // Espera para juntar mensagens seguidas + IA + envio de fotos
@@ -221,15 +222,18 @@ function firstName(raw: string | null | undefined): string | null {
   // Perfil com frase ("Deus é o caminho e a vida"), emoji ou número não é nome
   if (words.length === 0 || words.length > 4 || !words.every((w) => /^[A-Za-zÀ-ÿ.'-]+$/.test(w))) return null;
   const first = words[0];
-  if (!/^[A-Za-zÀ-ÿ]{2,20}$/.test(first) || /^(deus|jesus|loja|auto|carros?|vendas?)$/i.test(first)) return null;
+  if (!/^[A-Za-zÀ-ÿ]{3,20}$/.test(first)) return null;
+  // Perfil de comércio ("Mercadinho São José", "KM Estofados") não é nome de pessoa
+  if (words.some((w) => /^(deus|jesus|loja|autos?|carros?|vendas?|mercad\w*|mercearia|oficina|estofados|motors?|ve[ií]culos|sal[aã]o|bar|restaurante|pizzaria|padaria|farm[aá]cia|studio|est[uú]dio|store|shop|oficial|eng)\.?$/i.test(w))) return null;
   return first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
 }
 
-function afterPhotosMessage(name: string | null | undefined, v: PhotoVehicle): string {
+/** Convite para a visita com os dois horários abertos mais próximos */
+function afterPhotosMessage(name: string | null | undefined, v: PhotoVehicle, now: Date): string {
   const nome = firstName(name);
-  return `${nome ? `Oi, ${nome}!` : "Oi!"} *${vehicleLabel(v)}* disponível e trabalhamos com todos os bancos. ` +
-    `Posso simular a parcela agora: me passa CPF e data de nascimento? ` +
-    `Ou, se preferir, te ligo no horário que for melhor.`;
+  return `${nome ? `${nome}, ` : ""}*${vehicleLabel(v)}* disponível 😊 ` +
+    `Foto ajuda, mas ao vivo é outra coisa! ` +
+    `Consigo te receber ${nextVisitSlots(now).join(" ou ")}. Qual fica melhor pra você?`;
 }
 
 // ── Busca e envia fotos do veículo ────────────────────────────────────────────
@@ -866,13 +870,18 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // ── 9. Salva resposta da IA com external_id — SentCallback detecta e ignora ─
     await saveMessage(leadId, cleanReply, true, sentMsgId ?? undefined);
 
-    // ── 9b. Depois das fotos: nome + carro + disponível + simulação (texto fixo da loja) ─
+    // ── 9b. Depois das fotos: convite para a visita com os horários mais próximos ─
     if (photoVehicle && !handoff.summary) {
-      const followUp = afterPhotosMessage((leadRecord.name as string | null) ?? senderName ?? null, photoVehicle);
+      const followUp = afterPhotosMessage((leadRecord.name as string | null) ?? senderName ?? null, photoVehicle, new Date());
+      // As datas mudam a cada dia: procura pelo carro, não pelo texto inteiro
       const { count: alreadySent } = await supabaseAdmin
         .from("messages").select("id", { count: "exact", head: true })
-        .eq("lead_id", leadId).eq("from_me", true).eq("text", followUp);
-      if (!alreadySent) {
+        .eq("lead_id", leadId).eq("from_me", true)
+        .ilike("text", `%${vehicleLabel(photoVehicle)}%Consigo te receber%`);
+      // O envio das fotos leva alguns segundos: se o vendedor entrou nesse meio tempo, não manda
+      const { data: still } = await supabaseAdmin
+        .from("leads").select("ai_enabled").eq("id", leadId).maybeSingle();
+      if (!alreadySent && still?.ai_enabled !== false) {
         await new Promise((r) => setTimeout(r, 1_500));
         const followId = await sendText(store.zapi_instance, store.zapi_token, store.zapi_client_token, phone, followUp);
         await saveMessage(leadId, followUp, true, followId ?? undefined);
