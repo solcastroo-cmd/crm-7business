@@ -96,6 +96,8 @@ CONSÓRCIO: aceitamos carta contemplada como pagamento (funciona como à vista).
 
 TROCA: aceitamos troca. Pergunte uma coisa por vez (modelo e ano; depois km; depois se está quitado) e convide para trazer o carro. Carro com parcelas em aberto também pode ser avaliado. A avaliação é feita pela loja; não prometa valor nem prazo.
 
+GARANTIA: todos os carros da loja têm garantia de 90 dias de motor e caixa de marcha. Diga isso quando o cliente perguntar de garantia, procedência ou segurança, ou como motivo real para vir ver o carro. Não amplie a garantia: se perguntarem de outra peça, outro prazo ou como acionar, diga que o vendedor explica os detalhes.
+
 O QUE APRENDEMOS COM AS CONVERSAS ANTERIORES:
 - A maioria chega por anúncio com "🚗 Veículo X! Tenho interesse nesse veículo✅", "Tenho interesse e queria mais informações [MODELO]" ou "Quero comprar meu veículo: [MODELO]" (frase automática do botão do anúncio). Ache esse carro no estoque e já responda com preço, ano, km e câmbio. NÃO pergunte "qual modelo você procura?"
 - Ano do carro (ex.: 2025) NÃO é orçamento. Só fale de orçamento se o cliente disse um valor em reais.
@@ -321,11 +323,18 @@ async function buildSystemPrompt(baseSystem: string, lead: LeadContext): Promise
 }
 
 // ─── Groq ─────────────────────────────────────────────────────────────────────
-async function replyViaGroq(
-  systemPrompt: string,
-  history: ChatMessage[],
-  currentMessage: string,
-): Promise<string> {
+const GROQ_MAIN   = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
+const GROQ_BACKUP = "openai/gpt-oss-20b";   // limite por minuto separado do principal
+
+/** Últimas mensagens, cada uma encurtada: conversa longa estourava o limite de tokens e a IA ficava muda */
+function trimHistory(history: ChatMessage[], count: number, chars: number): ChatMessage[] {
+  return history.slice(-count).map((m) => ({
+    role:    m.role,
+    content: m.content.length > chars ? `${m.content.slice(0, chars)}…` : m.content,
+  }));
+}
+
+async function callGroq(model: string, systemPrompt: string, history: ChatMessage[], currentMessage: string): Promise<string> {
   const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -333,9 +342,8 @@ async function replyViaGroq(
       "Authorization": `Bearer ${process.env.GROQ_API_KEY}`,
     },
     body: JSON.stringify({
-      // llama-3.3-70b-versatile virou exclusivo do plano Enterprise no Groq (out/2026)
-      model:            process.env.GROQ_MODEL || "openai/gpt-oss-120b",
-      max_tokens:       1500,
+      model,
+      max_tokens:       900,
       temperature:      0.65,
       reasoning_effort: "low",
       messages: [
@@ -344,15 +352,38 @@ async function replyViaGroq(
         { role: "user", content: currentMessage },
       ],
     }),
-    signal: AbortSignal.timeout(15_000),
+    signal: AbortSignal.timeout(10_000),
   });
 
   if (!res.ok) {
     const err = await res.text();
-    throw new Error(`Groq ${res.status}: ${err}`);
+    throw new Error(`Groq ${res.status} (${model}): ${err}`);
   }
   const data = await res.json() as { choices: { message: { content: string } }[] };
-  return data.choices[0]?.message?.content?.trim() ?? "";
+  const text = data.choices[0]?.message?.content?.trim() ?? "";
+  if (!text) throw new Error(`Groq resposta vazia (${model})`);
+  return text;
+}
+
+/** Principal → reserva com menos histórico → espera curta e principal de novo */
+async function replyViaGroq(
+  systemPrompt: string,
+  history: ChatMessage[],
+  currentMessage: string,
+): Promise<string> {
+  const current = currentMessage.slice(0, 1_500);
+  try {
+    return await callGroq(GROQ_MAIN, systemPrompt, trimHistory(history, 14, 400), current);
+  } catch (e) {
+    console.error("[AI] Principal falhou:", e);
+  }
+  try {
+    return await callGroq(GROQ_BACKUP, systemPrompt, trimHistory(history, 6, 250), current);
+  } catch (e) {
+    console.error("[AI] Reserva falhou:", e);
+  }
+  await new Promise((r) => setTimeout(r, 8_000));
+  return callGroq(GROQ_MAIN, systemPrompt, trimHistory(history, 6, 250), current);
 }
 
 // ─── Anthropic ───────────────────────────────────────────────────────────────
@@ -391,6 +422,7 @@ export async function getAIReply(
   lead:               LeadContext,
   customPersonality?: string | null,
   agentName?:         string | null,
+  onFailure?:         (reason: string) => void,
 ): Promise<string> {
   const name     = agentName ?? "Paulo";
   const greeting = `Oi! 😊 Aqui é o ${name} da ${STORE_NAME}. Você já sabe qual modelo procura ou quer ajuda pra escolher?`;
@@ -434,6 +466,8 @@ export async function getAIReply(
     }
   } catch (e) {
     console.error("[AI] Erro ao gerar resposta:", e);
+    // Só o código, sem o corpo do erro
+    onFailure?.(/^(Groq \d{3}|Groq resposta vazia)/.exec(e instanceof Error ? e.message : "")?.[1] ?? "IA fora do ar");
     // Tenta o próximo provider se o primeiro falhou
     try {
       if (process.env.ANTHROPIC_API_KEY) {

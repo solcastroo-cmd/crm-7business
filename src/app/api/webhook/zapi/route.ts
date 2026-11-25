@@ -40,6 +40,15 @@ export const maxDuration = 60;
 
 const REPLY_DEBOUNCE_MS = 8_000;
 
+/** No máximo um aviso de falha da IA por cliente a cada 30 min */
+const _aiFailureAlerts = new Map<string, number>();
+function shouldAlertAIFailure(leadId: string): boolean {
+  const last = _aiFailureAlerts.get(leadId) ?? 0;
+  if (Date.now() - last < 30 * 60 * 1000) return false;
+  _aiFailureAlerts.set(leadId, Date.now());
+  return true;
+}
+
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 type ZApiBody = {
   instanceId?: string;
@@ -838,12 +847,25 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       veiculo_interesse_id: (leadRecord.veiculo_interesse_id as string | null) ?? null,
     };
 
+    const ai = { failure: null as string | null };
     const rawReply = await getAIReply(
       message,
       leadCtx,
       store.ai_personality ?? null,
       store.ai_name ?? "Paulo",
+      (reason) => { ai.failure = reason; },
     );
+
+    // IA falhou: o cliente não pode ficar sem resposta sem ninguém saber
+    if (ai.failure && store.notify_phone && shouldAlertAIFailure(leadId)) {
+      await sendText(store.zapi_instance, store.zapi_token, store.zapi_client_token, store.notify_phone, [
+        `⚠️ *PAULO NÃO CONSEGUIU RESPONDER* (${ai.failure})`,
+        `👤 ${(leadRecord.name as string | null) ?? senderName ?? phone}`,
+        `📱 https://wa.me/55${phone.replace(/^55/, "")}`,
+        `💬 "${message.slice(0, 120)}"`,
+        `👉 Responda esse cliente.`,
+      ].join("\n")).catch((e) => console.error("[ZAPI] Erro alerta IA:", e));
+    }
 
     if (!rawReply) return NextResponse.json({ ok: true, ai: "no_reply" });
 
