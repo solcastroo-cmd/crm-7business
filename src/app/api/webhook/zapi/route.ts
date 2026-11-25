@@ -237,6 +237,14 @@ function firstName(raw: string | null | undefined): string | null {
   return first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
 }
 
+/** Separa o texto antes das fotos ("Vou te mandar as fotos 👇") do que a IA escreveu depois */
+function splitAtPhotos(text: string): { head: string; tail: string } {
+  const m = /mandar as fotos[^\n]*/i.exec(text);
+  if (!m) return { head: text, tail: "" };
+  const end = m.index + m[0].length;
+  return { head: text.slice(0, end).trim(), tail: text.slice(end).trim() };
+}
+
 /** Convite para a visita com os dois horários abertos mais próximos */
 function afterPhotosMessage(name: string | null | undefined, v: PhotoVehicle, now: Date): string {
   const nome = firstName(name);
@@ -882,7 +890,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     // Envia texto — captura messageId para salvar como external_id (previne SentCallback dup)
-    const sentMsgId = await sendText(store.zapi_instance, store.zapi_token, store.zapi_client_token, phone, cleanReply);
+    // Com fotos, o texto para em "mandar as fotos": o convite da IA sairia repetido com o convite fixo
+    const { head, tail } = vehicleId && !handoff.summary ? splitAtPhotos(cleanReply) : { head: cleanReply, tail: "" };
+    const sentMsgId = await sendText(store.zapi_instance, store.zapi_token, store.zapi_client_token, phone, head);
 
     // Envia fotos se Paulo indicou veículo
     const photoVehicle = vehicleId
@@ -890,9 +900,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       : null;
 
     // ── 9. Salva resposta da IA com external_id — SentCallback detecta e ignora ─
-    await saveMessage(leadId, cleanReply, true, sentMsgId ?? undefined);
+    await saveMessage(leadId, head, true, sentMsgId ?? undefined);
 
     // ── 9b. Depois das fotos: convite para a visita com os horários mais próximos ─
+    let invited = false;
     if (photoVehicle && !handoff.summary) {
       const followUp = afterPhotosMessage((leadRecord.name as string | null) ?? senderName ?? null, photoVehicle, new Date());
       // As datas mudam a cada dia: procura pelo carro, não pelo texto inteiro
@@ -907,6 +918,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         await new Promise((r) => setTimeout(r, 1_500));
         const followId = await sendText(store.zapi_instance, store.zapi_token, store.zapi_client_token, phone, followUp);
         await saveMessage(leadId, followUp, true, followId ?? undefined);
+        invited = true;
+      }
+    }
+    // Carro sem fotos (ou convite já enviado antes): manda o restante que a IA escreveu
+    if (tail && !invited) {
+      const { data: still } = await supabaseAdmin
+        .from("leads").select("ai_enabled").eq("id", leadId).maybeSingle();
+      if (still?.ai_enabled !== false) {
+        const tailId = await sendText(store.zapi_instance, store.zapi_token, store.zapi_client_token, phone, tail);
+        await saveMessage(leadId, tail, true, tailId ?? undefined);
       }
     }
 
