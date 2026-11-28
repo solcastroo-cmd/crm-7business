@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ResponsavelPicker, LancadoPor, RESPONSAVEIS } from "@/components/ResponsavelPicker";
+import { ResponsavelPicker, LancadoPor, SOCIOS } from "@/components/ResponsavelPicker";
 
 /*
  * Caixa da Implantação — um segundo caixa, separado do Fluxo de Caixa.
@@ -628,7 +628,7 @@ export default function CaixaImplantacao<T extends DespesaCaixa>({
                     {`Sócios * (marque até ${MAX_SOCIOS})`}
                   </label>
                   <div className="flex flex-wrap gap-2">
-                    {RESPONSAVEIS.map(n => {
+                    {SOCIOS.map(n => {
                       const on = form.socios.includes(n);
                       const bloqueado = !on && form.socios.length >= MAX_SOCIOS;
                       return (

@@ -1,7 +1,10 @@
 "use client";
 
 /* Quem lança / edita registros financeiros — seleção por clique no nome */
-export const RESPONSAVEIS = ["Eduardo Maia", "Paulo Henrique", "Barbara Maia", "Soraya de Castro"];
+export const RESPONSAVEIS = ["Paulo Henrique", "Soraya de Castro"];
+
+/* Sócios que podem fazer aporte — lista própria, independente de quem lança */
+export const SOCIOS = ["Eduardo Maia", "Paulo Henrique", "Barbara Maia", "Soraya de Castro"];
 
 export function ResponsavelPicker({
   value, onChange, label,
